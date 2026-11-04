@@ -1,26 +1,65 @@
 import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
+import type { ConnectionState, Item, ModelState, SessionHeader, SessionListItem } from './viewModel.ts';
 
 /**
- * Host ↔ Webview 消息。所有消息都是 `{ type, payload }`，收到后先用 schema 校验再处理。
- * M0 只包含启动握手和运行时状态，后续里程碑逐步扩充（见 docs/DESIGN.md 5.6）。
+ * Host ↔ Webview 消息。所有消息都是 `{ type, payload }`；Host 收到 Webview 消息后先用 schema 校验再处理。
+ * 设计见 docs/DESIGN.md 5.6。
  */
 
+const empty = z.object({});
+
 export const webviewToHostSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('ready'), payload: z.object({}) }),
-  z.object({ type: z.literal('restartRuntime'), payload: z.object({}) }),
-  z.object({ type: z.literal('showLogs'), payload: z.object({}) }),
+  z.object({ type: z.literal('ready'), payload: empty }),
+  z.object({ type: z.literal('sendMessage'), payload: z.object({ text: z.string().min(1).max(200_000) }) }),
+  z.object({ type: z.literal('interrupt'), payload: empty }),
+  z.object({ type: z.literal('newSession'), payload: empty }),
+  z.object({ type: z.literal('switchSession'), payload: z.object({ sessionId: z.string().min(1) }) }),
+  z.object({ type: z.literal('loadOlder'), payload: empty }),
+  z.object({
+    type: z.literal('selectModel'),
+    payload: z.object({ provider: z.string().min(1), model: z.string().min(1), reasoningEffort: z.string().optional() }),
+  }),
+  z.object({ type: z.literal('retryPending'), payload: z.object({ requestId: z.string().min(1) }) }),
+  z.object({ type: z.literal('discardPending'), payload: z.object({ requestId: z.string().min(1) }) }),
+  z.object({ type: z.literal('openExternal'), payload: z.object({ url: z.string().url() }) }),
+  z.object({ type: z.literal('restartRuntime'), payload: empty }),
+  z.object({ type: z.literal('showLogs'), payload: empty }),
+  z.object({ type: z.literal('openWebUI'), payload: empty }),
 ]);
 
 export type WebviewToHost = z.infer<typeof webviewToHostSchema>;
 
 export interface HostSnapshot {
   readonly runtime: RuntimeStatus;
+  readonly connection: ConnectionState;
+  readonly sessions: readonly SessionListItem[];
+  readonly session: SessionHeader;
+  readonly items: readonly Item[];
+  readonly models: ModelState;
+}
+
+/**
+ * 条目增量。`sessionKey` 标识当前会话（新对话为空字符串），Webview 丢弃不属于当前会话的增量。
+ * `reset` 为 true 时 `upsert` 是完整列表；否则按 `order` 排列，`upsert` 中的条目替换同 id 的旧条目。
+ */
+export interface ItemsPatch {
+  readonly sessionKey: string;
+  readonly reset: boolean;
+  readonly order: readonly string[];
+  readonly upsert: readonly Item[];
 }
 
 export type HostToWebview =
   | { readonly type: 'snapshot'; readonly payload: HostSnapshot }
-  | { readonly type: 'runtimeStatus'; readonly payload: RuntimeStatus };
+  | { readonly type: 'runtimeStatus'; readonly payload: RuntimeStatus }
+  | { readonly type: 'connection'; readonly payload: ConnectionState }
+  | { readonly type: 'sessions'; readonly payload: readonly SessionListItem[] }
+  | { readonly type: 'session'; readonly payload: SessionHeader }
+  | { readonly type: 'items'; readonly payload: ItemsPatch }
+  | { readonly type: 'models'; readonly payload: ModelState }
+  | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }
+  | { readonly type: 'focusComposer'; readonly payload: Record<string, never> };
 
 /**
  * 解析来自 Webview 的消息；格式不对时返回 undefined，由调用方记录日志并丢弃。

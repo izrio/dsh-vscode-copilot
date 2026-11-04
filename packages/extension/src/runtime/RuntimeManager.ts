@@ -64,6 +64,11 @@ export class RuntimeManager {
     return this.current?.endpoint;
   }
 
+  /** 插件启动的 dsh 进程号（用于日志和测试）。 */
+  get pid(): number | undefined {
+    return this.current?.child.pid;
+  }
+
   onStatus(listener: Listener<RuntimeStatus>): () => void {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);

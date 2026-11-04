@@ -10,10 +10,13 @@
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
     "smoke": "pnpm --filter dsh-copilot run smoke",
-    "package": "pnpm run build && pnpm --filter dsh-copilot run package"
+    "package": "pnpm run build && pnpm --filter dsh-copilot run package",
+    "dev": "pnpm --parallel --filter @dsh-copilot/webview-ui --filter dsh-copilot run watch"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.10.0",
+    "jsdom": "^26.1.0",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"

@@ -1,107 +1,159 @@
 /**
- * 插件入口。M0：注册侧边栏视图、启动 dsh、建立 Remote 连接、在界面上显示运行时状态。
+ * 插件入口：把运行时管理、连接、对话控制器和侧边栏视图串起来。
+ *
+ *   RuntimeManager ──endpoint──▶ DshConnection ──client──▶ ChatController ◀──messages──▶ ChatViewProvider
  */
 import { homedir } from 'node:os';
 import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@dsh-copilot/shared';
-import { DshClient } from './dsh/DshClient.ts';
+import { DshConnection } from './dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from './runtime/RuntimeManager.ts';
+import { ChatController } from './vm/ChatController.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 
+const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
+
 let runtime: RuntimeManager | undefined;
-let client: DshClient | undefined;
+let connection: DshConnection | undefined;
+let controller: ChatController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('DSH', { log: true });
   const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
+  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? homedir();
+
   const manager = new RuntimeManager({
-    getConfig: readRuntimeConfig,
+    getConfig: () => readRuntimeConfig(workspacePath),
     log: (line) => output.info(line),
     runtimeLog: (line, stream) => (stream === 'stderr' ? runtimeOutput.warn(line) : runtimeOutput.info(line)),
   });
   runtime = manager;
+  const dsh = new DshConnection({ log: (line) => output.info(line) });
+  connection = dsh;
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   status.command = 'dsh.openChat';
   context.subscriptions.push(status);
+  let modelLabel: string | undefined;
 
   const currentStatus = (): RuntimeStatus => (vscode.workspace.isTrusted ? manager.currentStatus : { kind: 'untrusted' });
+
+  const openExternal = (url: string): void => {
+    const uri = vscode.Uri.parse(url);
+    if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
+  };
+
+  let provider: ChatViewProvider | undefined;
+  const chat = new ChatController({
+    workspacePath,
+    post: (message) => provider?.post(message),
+    log: (line) => output.info(line),
+    loadActiveSessionId: () => context.workspaceState.get<string>(ACTIVE_SESSION_KEY),
+    saveActiveSessionId: (sessionId) => void context.workspaceState.update(ACTIVE_SESSION_KEY, sessionId),
+    openExternal,
+    restartRuntime: () => void manager.restart(),
+    showLogs: () => output.show(),
+    openWebUI: () => {
+      const endpoint = manager.endpoint;
+      if (!endpoint) {
+        void vscode.window.showWarningMessage('dsh 还没有启动');
+        return;
+      }
+      // 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持会话
+      openExternal(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
+    },
+    onModelChange: (label) => {
+      modelLabel = label;
+      renderStatusBar(status, currentStatus(), modelLabel);
+    },
+  });
+  controller = chat;
 
   const startIfTrusted = (): void => {
     if (!vscode.workspace.isTrusted) {
       output.info('工作区未受信任，不启动 dsh');
-      provider.postRuntimeStatus(currentStatus());
+      chat.setRuntimeStatus(currentStatus());
       return;
     }
     void manager.start();
   };
 
-  const provider = new ChatViewProvider(context.extensionUri, {
-    runtimeStatus: currentStatus,
+  provider = new ChatViewProvider(context.extensionUri, {
+    onMessage: (message) => void chat.handle(message),
     onViewVisible: startIfTrusted,
-    restartRuntime: () => void manager.restart(),
-    showLogs: () => output.show(),
     log: (line) => output.info(line),
   });
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider));
+
+  const disposers = [
+    manager.onStatus((value) => {
+      chat.setRuntimeStatus(currentStatus());
+      renderStatusBar(status, value, modelLabel);
+    }),
+    // Host 每次就绪（包括重启后令牌变化）都重新连接
+    manager.onEndpoint((endpoint) => dsh.setEndpoint(endpoint)),
+    dsh.onClient((client) => chat.setClient(client)),
+    dsh.onStatus((value) => chat.setConnectionStatus(value)),
+  ];
+  context.subscriptions.push({ dispose: () => disposers.forEach((dispose) => dispose()) });
+  renderStatusBar(status, manager.currentStatus, modelLabel);
+
+  const focusView = () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider),
-  );
-
-  const statusDisposer = manager.onStatus((value) => {
-    provider.postRuntimeStatus(currentStatus());
-    renderStatusBar(status, value);
-  });
-  context.subscriptions.push({ dispose: statusDisposer });
-  renderStatusBar(status, manager.currentStatus);
-
-  // Host 每次就绪（包括重启后，令牌会变）都重新建立 Remote 连接。
-  // 代次号保证迟到的旧连接不会覆盖新连接。
-  let generation = 0;
-  const endpointDisposer = manager.onEndpoint((endpoint) => {
-    const current = ++generation;
-    client?.close();
-    client = undefined;
-    if (!endpoint) return;
-    void DshClient.connect({ origin: endpoint.origin, token: endpoint.token, log: (line) => output.debug(line) }).then(
-      async (connected) => {
-        if (current !== generation) {
-          connected.close();
-          return;
-        }
-        client = connected;
-        const sessions = await connected.listSessions();
-        output.info(`已连接 dsh Remote API（clientId ${connected.ready.clientId}），已有会话 ${sessions.length} 个`);
-      },
-      (error: unknown) => output.error(`连接 dsh Remote API 失败：${error instanceof Error ? error.message : String(error)}`),
-    );
-  });
-  context.subscriptions.push({ dispose: endpointDisposer });
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('dsh.openChat', () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`)),
+    vscode.commands.registerCommand('dsh.openChat', focusView),
+    vscode.commands.registerCommand('dsh.newSession', async () => {
+      await focusView();
+      await chat.handle({ type: 'newSession', payload: {} });
+    }),
+    vscode.commands.registerCommand('dsh.interrupt', () => chat.handle({ type: 'interrupt', payload: {} })),
+    vscode.commands.registerCommand('dsh.selectModel', async () => {
+      const models = chat.modelState();
+      if (models.options.length === 0) {
+        void vscode.window.showInformationMessage('dsh 还没有可用的模型');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        models.options.flatMap((option) =>
+          (option.efforts.length > 1 ? option.efforts : [undefined]).map((effort) => ({
+            label: option.name,
+            description: [option.group, effort?.name].filter(Boolean).join(' · '),
+            detail: option.description,
+            picked: option.provider === models.current?.provider && option.model === models.current?.model,
+            option,
+            effort: effort?.id ?? option.efforts[0]?.id,
+          })),
+        ),
+        { placeHolder: '选择模型' },
+      );
+      if (picked) {
+        await chat.handle({
+          type: 'selectModel',
+          payload: { provider: picked.option.provider, model: picked.option.model, ...(picked.effort ? { reasoningEffort: picked.effort } : {}) },
+        });
+      }
+    }),
     vscode.commands.registerCommand('dsh.restartRuntime', () => manager.restart()),
+    vscode.commands.registerCommand('dsh.openWebUI', () => chat.handle({ type: 'openWebUI', payload: {} })),
     vscode.commands.registerCommand('dsh.showLogs', () => output.show()),
     vscode.workspace.onDidGrantWorkspaceTrust(startIfTrusted),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('dsh.runtime')) {
-        output.info('dsh 运行时设置已修改，重启后生效');
-      }
+      if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
     }),
   );
 }
 
 export async function deactivate(): Promise<void> {
-  client?.close();
-  client = undefined;
+  controller?.dispose();
+  connection?.dispose();
   await runtime?.stop();
 }
 
-function readRuntimeConfig(): RuntimeConfig {
+function readRuntimeConfig(workspacePath: string): RuntimeConfig {
   const config = vscode.workspace.getConfiguration('dsh.runtime');
   const env: Record<string, string | undefined> = { ...process.env };
-  // 把 VS Code 的代理设置传给 dsh（dsh 的模型请求由它自己发出）
+  // 把 VS Code 的代理设置传给 dsh（模型请求由 dsh 自己发出）
   const proxy = vscode.workspace.getConfiguration('http').get<string>('proxy');
   if (proxy) {
     env.HTTPS_PROXY ??= proxy;
@@ -110,24 +162,24 @@ function readRuntimeConfig(): RuntimeConfig {
   return {
     configuredPath: config.get<string>('path', ''),
     profile: config.get<string>('profile', 'web') || 'web',
-    cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? homedir(),
+    cwd: workspacePath,
     env,
   };
 }
 
-function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus): void {
+function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus, modelLabel: string | undefined): void {
   const text: Record<RuntimeStatus['kind'], string> = {
     idle: '$(circle-outline) DSH',
     locating: '$(loading~spin) DSH',
     starting: '$(loading~spin) DSH 启动中',
-    connected: '$(check) DSH',
-    reconnecting: '$(loading~spin) DSH 重连中',
+    connected: `$(check) DSH${modelLabel ? ` · ${modelLabel}` : ''}`,
+    reconnecting: '$(loading~spin) DSH 重启中',
     notInstalled: '$(warning) DSH 未安装',
     unsupportedVersion: '$(warning) DSH 版本过低',
     failed: '$(error) DSH',
     untrusted: '$(shield) DSH',
   };
   item.text = text[status.kind];
-  item.tooltip = status.kind === 'connected' ? `dsh ${status.version}` : undefined;
+  item.tooltip = status.kind === 'connected' ? `dsh ${status.version}` : status.kind === 'failed' ? status.message : undefined;
   item.show();
 }

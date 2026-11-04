@@ -1,6 +1,29 @@
-/* 只使用 VS Code 主题变量，自动适配亮色、暗色和高对比度主题。 */
+/*
+ * 只使用 VS Code 主题变量，自动适配亮色、暗色和高对比度主题。
+ * 布局原则见 docs/DESIGN.md 3.1：对话是主角，其他元素有内容才出现。
+ */
 :root {
   color-scheme: light dark;
+  --gap: 12px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
+  --surface: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+  --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+  /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
+  --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
@@ -10,20 +33,224 @@ body {
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
+  line-height: 1.55;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 
 .app {
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
+/* ---------- 顶栏 ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 8px;
+  min-height: 34px;
+}
+
+.header__title-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.header__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.header__title:hover {
+  background: var(--hover);
+}
+
+.header__title-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.header__more {
+  position: relative;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--hover);
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dot--running {
+  background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ---------- 弹出层与菜单 ---------- */
+
+.popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-menu-background, var(--surface));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+.sessions-menu {
+  left: 0;
+  width: min(340px, calc(100vw - 16px));
+}
+
+.more-menu {
+  right: 0;
+}
+
+.model-menu {
+  bottom: calc(100% + 6px);
+  top: auto;
+  left: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.sessions-menu__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 2px 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--muted);
+}
+
+.sessions-menu__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+}
+
+.sessions-menu__list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+.menu-item--active {
+  font-weight: 600;
+}
+
+.menu-item__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menu-item__hint {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.menu-heading {
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.menu-empty {
+  padding: 8px;
+  color: var(--muted);
+}
+
+/* ---------- 状态提示 ---------- */
+
 .banner {
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: 6px;
-  padding: 10px 12px;
+  margin: 4px 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .banner--warn {
   border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
+}
+
+.banner--inline {
+  color: var(--muted);
 }
 
 .banner__title {
@@ -32,20 +259,18 @@ body {
 }
 
 .banner__detail {
-  margin: 6px 0 0;
-  color: var(--vscode-descriptionForeground);
-  line-height: 1.5;
+  margin: 4px 0 0;
+  color: var(--muted);
 }
 
 .banner__actions {
   display: flex;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
-button {
-  font: inherit;
-  padding: 4px 10px;
+.button {
+  padding: 3px 10px;
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: 4px;
   color: var(--vscode-button-foreground);
@@ -53,20 +278,567 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+.button:hover {
   background: var(--vscode-button-hoverBackground);
 }
 
-button.secondary {
+.button--secondary {
   color: var(--vscode-button-secondaryForeground);
   background: var(--vscode-button-secondaryBackground);
 }
 
-button.secondary:hover {
+.button--secondary:hover {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
-button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: 2px;
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ---------- 空状态 ---------- */
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.empty__title {
+  margin: 0 0 6px;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.empty__hint {
+  margin: 0 auto;
+  max-width: 280px;
+  color: var(--muted);
+}
+
+/* ---------- 对话流 ---------- */
+
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.thread__older {
+  text-align: center;
+  font-size: 0.9em;
+}
+
+.user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 15%;
+}
+
+.user__bubble {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--bubble);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user--sending .user__bubble,
+.user--queued .user__bubble {
+  opacity: 0.65;
+}
+
+.user--failed .user__bubble {
+  outline: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.user__meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.user__meta--error {
+  color: var(--vscode-errorForeground);
+}
+
+.assistant {
+  min-width: 0;
+}
+
+.cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--vscode-editorCursor-foreground, var(--vscode-foreground));
+  animation: blink 1s steps(2, start) infinite;
+}
+
+.reasoning {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.reasoning__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.reasoning__body {
+  margin: 4px 0 0 18px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.chevron {
+  transition: transform 0.12s ease;
+}
+
+.chevron--open {
+  transform: rotate(90deg);
+}
+
+.thinking {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.shimmer {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* 工具调用：一行活动 */
+.activity {
+  margin: -6px 0;
+  font-size: 0.92em;
+}
+
+.activity + .activity {
+  margin-top: -10px;
+}
+
+.activity__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity__row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.activity__row:disabled {
+  cursor: default;
+}
+
+.activity__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.activity--error .activity__icon,
+.activity--error .activity__name {
+  color: var(--vscode-errorForeground);
+}
+
+.activity__name {
+  flex: none;
+  color: var(--vscode-foreground);
+}
+
+.activity__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
+.activity__output {
+  margin: 4px 0 4px 20px;
+  padding: 6px 8px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, var(--surface));
+  font-family: var(--mono);
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.notice--warning {
+  color: var(--vscode-editorWarning-foreground, var(--muted));
+}
+
+.notice--error {
+  color: var(--vscode-errorForeground);
+}
+
+/* ---------- Markdown ---------- */
+
+.markdown {
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote {
+  margin: 0.5em 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 0.9em 0 0.4em;
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.markdown h1 {
+  font-size: 1.2em;
+}
+
+.markdown a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.markdown a:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--border));
+  color: var(--muted);
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.inline-code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--surface));
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown th,
+.markdown td {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.md-image-placeholder {
+  color: var(--muted);
+}
+
+.code-block {
+  margin: 0.6em 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, var(--surface));
+  overflow: hidden;
+}
+
+.code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 0 10px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.code-block__bar .icon-button {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.code-block:hover .icon-button,
+.code-block .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.code-block__body {
+  margin: 0;
+  padding: 0 10px 8px;
+  overflow-x: auto;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 0.92em);
+  line-height: 1.5;
+}
+
+/* VS Code 给 Webview 注入的默认样式会给 code 加底色和内边距，代码块里不需要 */
+.code-block__body code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* shiki 双主题：根据 VS Code 设置在 body 上的主题类选择配色 */
+.vscode-light .shiki span,
+.vscode-high-contrast-light .shiki span {
+  color: var(--shiki-light);
+}
+
+.vscode-dark .shiki span,
+.vscode-high-contrast .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* ---------- 输入框 ---------- */
+
+.composer {
+  margin: 0 10px 10px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--vscode-input-background);
+}
+
+.composer:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.composer__input {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  max-height: 200px;
+  padding: 9px 12px 4px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+  line-height: 1.5;
+}
+
+.composer__input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--muted));
+}
+
+.composer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 6px;
+}
+
+.composer__spacer {
+  flex: 1;
+}
+
+.model-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.toolbar-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--vscode-foreground);
+}
+
+.toolbar-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.toolbar-button__text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.context-usage {
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  cursor: pointer;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.send-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- 通知 ---------- */
+
+.toasts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 10px 6px;
+}
+
+.toast {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.toast--error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+/* ---------- 动画 ---------- */
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .shimmer,
+  .dot--running,
+  .cursor {
+    animation: none;
+  }
 }

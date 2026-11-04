@@ -4,14 +4,25 @@
 
 Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
 
-> 当前阶段：**M0 已完成**（协议客户端在真实 dsh 上跑通），对话界面在 M1 开发。
+> 当前阶段：**M1 已完成**，基础对话可用：流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复。审批卡片、Diff 等在 M2 开发。
+
+![在 VS Code 中使用](docs/images/m1-vscode.png)
+
+<table>
+  <tr>
+    <td><img src="docs/images/m1-sidebar-dark.png" alt="深色主题" width="320"></td>
+    <td><img src="docs/images/m1-sidebar-light.png" alt="浅色主题" width="320"></td>
+  </tr>
+</table>
+
+截图使用本地假模型，内容仅为演示。
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/DESIGN.md](./docs/DESIGN.md) | 整体方案：对接方式、界面设计原则、架构、模块、运行时管理、安全、工程结构、里程碑 |
-| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研结果、参考项目分析、启动与认证、线上格式、Remote 方法、会话事件、版本策略、M0 验证结果 |
+| [docs/DESIGN.md](./docs/DESIGN.md) | 整体方案：对接方式、界面设计原则、架构、模块、运行时管理、安全、工程结构、测试、里程碑 |
+| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研结果、参考项目分析、启动与认证、线上格式、Remote 方法、会话事件、版本策略、M0/M1 验证结果 |
 
 ## 工作方式
 
@@ -25,7 +36,7 @@ dsh Host 子进程（dsh --profile web --no-open --host 127.0.0.1 --port 0）
 模型 API（DeepSeek 等）
 ```
 
-使用前需要能在终端运行 `dsh`（支持 `0.2.1-rc.5` 及以上）：推荐安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/) 并在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令（自带运行时），也可以 `npm install -g @deepseek-ai/dsh`（需要 Node ≥ 24.9）。
+使用前需要能在终端运行 `dsh`（支持 `0.2.1-rc.5` 及以上，已测试到 `0.2.2-alpha.3`）：推荐安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/) 并在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令（自带运行时），也可以 `npm install -g @deepseek-ai/dsh`（需要 Node ≥ 24.9）。模型 API Key 在 dsh 里配置（插件的「更多 → 在浏览器中打开 dsh」进入 dsh 的模型设置页）。
 
 ## 开发
 
@@ -51,28 +62,43 @@ pnpm build
 pnpm package
 ```
 
-`pnpm package` 产出 `packages/extension/dsh-copilot-<版本>.vsix`。调试时用 VS Code 打开 `packages/extension` 并按 F5 启动扩展开发宿主（先执行一次 `pnpm build`）。
+`pnpm package` 产出 `packages/extension/dsh-copilot-<版本>.vsix`。调试时先执行 `pnpm dev`（监听并重新构建），再用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。
 
-### 用真实 dsh 跑冒烟测试
+### 用真实 dsh 测试
 
-冒烟测试用临时 `DSH_HOME` 和本地假模型，不需要 API Key，也不会读取你的会话：
+下面的测试都使用临时 `DSH_HOME` 和本地假模型，不需要 API Key，也不会读取你的会话。本机 Node 低于 24.9 时，用 `--node-bin <Node 24 的 bin 目录>` 指定 dsh 使用的 Node。
+
+冒烟测试（协议客户端，无界面；加 `--record` 重新录制 fixture）：
 
 ```bash
 pnpm smoke -- --dsh "$(command -v dsh)"
 ```
 
-本机 Node 低于 24.9 时，可以用 `--node-bin <Node 24 的 bin 目录>` 指定 dsh 使用的 Node；加 `--record` 会重新录制 `packages/extension/test/fixtures/m0/` 下的 fixture。
+界面端到端测试（真实 dsh + 插件的 Host 侧逻辑 + Chromium 中的界面，需要先 `pnpm build`，本机装有 playwright 和 Chromium）：
+
+```bash
+pnpm --filter dsh-copilot e2e -- --dsh "$(command -v dsh)"
+```
+
+在真实 VS Code 中验证（需要先 `pnpm package`，并安装 code-server）：
+
+```bash
+pnpm --filter dsh-copilot vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
+```
+
+截图默认保存在仓库根目录的 `.e2e-screenshots/`（已忽略）。
 
 ### 目录结构
 
 ```
 packages/
-├── shared/        Host 与 Webview 共用的消息类型和校验
+├── shared/        Host 与 Webview 共用的视图模型和消息类型
 ├── extension/     VS Code 插件（Extension Host）
 │   ├── src/runtime/      定位、版本检查、启动和监控 dsh
-│   ├── src/dsh/          dsh 协议客户端（唯一了解 dsh 协议的目录）
+│   ├── src/dsh/          dsh 协议客户端、会话事件日志、连接与会话服务（唯一了解 dsh 协议的目录）
+│   ├── src/vm/           事件 → 界面条目的投影、对话控制器
 │   ├── src/webview/      侧边栏视图宿主
-│   ├── scripts/          构建脚本、M0 冒烟测试
+│   ├── scripts/          构建、冒烟测试、界面端到端、真实 VS Code 验证
 │   └── test/             单元测试、假模型、录制的 fixture
 └── webview-ui/    侧边栏界面（React + Vite）
 ```
@@ -86,10 +112,10 @@ packages/
 | 里程碑 | 内容 | 状态 |
 | --- | --- | --- |
 | M0 | 技术验证 + 脚手架：协议客户端、运行时管理、假模型、冒烟测试、CI | ✅ |
-| M1 | 运行时管理完善 + 基础对话界面 | |
-| M2 | 工具活动行、审批与提问、Diff、未保存保护 | |
+| M1 | 基础对话界面、follow 完整语义、断线重连、会话切换、模型选择 | ✅ |
+| M2 | 工具活动行细化、审批与提问、Diff、未保存保护 | |
 | M3 | VS Code 上下文：选区、`@文件`、右键菜单、斜杠命令 | |
-| M4 | 排队消息、计划审阅、状态条、引导与性能 | |
-| M5 | 测试、多版本兼容 CI、发布 | |
+| M4 | 排队消息、计划审阅、状态条、API Key 引导、长会话性能 | |
+| M5 | 测试、多版本兼容 CI、三平台验收、发布 | |
 
 详见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)。

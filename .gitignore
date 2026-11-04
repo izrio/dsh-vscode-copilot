@@ -6,3 +6,4 @@ out/
 coverage/
 *.log
 .DS_Store
+.e2e-screenshots/

@@ -271,3 +271,25 @@ describe('DshClient', () => {
     client.close();
   });
 });
+
+describe('session/control 帧兼容', () => {
+  it('rc.5 的单键更新和 alpha 的批量更新都统一成 changes', async () => {
+    const frames = [
+      { type: 'projection', sessionId: 's', key: 'title', value: 'A', seq: 3 },
+      { type: 'projection', sessionId: 's', seq: 4, changes: [{ key: 'title', val: 'B' }, { key: 'todos', val: null }] },
+      { type: 'baseline', value: { projections: {} } },
+      { type: 'unknown-kind' },
+    ];
+    const fakeMux = { async *open() { yield* frames; } };
+    // 只替换 mux，直接测试 control() 的解析和归一化
+    const client = Object.create(DshClient.prototype) as DshClient;
+    Object.assign(client, { mux: fakeMux });
+    const seen: unknown[] = [];
+    for await (const frame of client.control()) seen.push(frame);
+    expect(seen).toEqual([
+      { type: 'projection', sessionId: 's', seq: 3, changes: [{ key: 'title', value: 'A' }] },
+      { type: 'projection', sessionId: 's', seq: 4, changes: [{ key: 'title', value: 'B' }, { key: 'todos', value: null }] },
+      { type: 'baseline', value: { projections: {} } },
+    ]);
+  });
+});

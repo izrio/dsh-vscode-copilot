@@ -19,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DshClient } from '../src/dsh/DshClient.ts';
 import { isMethodUnavailable } from '../src/dsh/remote/errors.ts';
-import { applyFollowFrame, initialFollowState, liveText, type FollowFrame, type FollowState } from '../src/dsh/remote/follow.ts';
+import { liveBlocksText, type FollowFrame } from '../src/dsh/remote/follow.ts';
+import { SessionJournal } from '../src/dsh/session/journal.ts';
 import type { WaterfallRequest } from '../src/dsh/remote/events.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { startMockModel } from '../test/mock-model/server.ts';
@@ -213,7 +214,9 @@ try {
   check('session/create', sessionId.length > 0);
 
   // 后台跟随会话
-  let state: FollowState = initialFollowState;
+  const journal = new SessionJournal();
+  const rebaselines: string[] = [];
+  const liveText = (): string => liveBlocksText(journal.live?.blocks ?? new Map());
   const frames: FollowFrame[] = [];
   const liveSamples: string[] = [];
   let snapshotSeen = false;
@@ -224,8 +227,8 @@ try {
       for await (const frame of client.follow(sessionId, followAbort.signal, (line) => console.log(`  [follow] ${line}`))) {
         frames.push(frame);
         if (frame.type === 'snapshot') snapshotSeen = true;
-        state = applyFollowFrame(state, frame);
-        const text = liveText(state);
+        if (journal.accept(frame) === 'rebaseline') rebaselines.push(frame.type === 'assistant-stream' ? `stream:${frame.frame.type}` : frame.type);
+        const text = liveText();
         if (text) liveSamples.push(text);
         for (const wake of waiters) wake();
       }
@@ -249,14 +252,14 @@ try {
       };
       waiters.add(wake);
     });
-  const turnEnds = (): number => state.events.filter((event) => event.type === 'turn/end').length;
-  const eventsSince = (seq: number) => state.events.filter((event) => event.seq > seq);
+  const turnEnds = (): number => journal.events.filter((event) => event.type === 'turn/end').length;
+  const eventsSince = (seq: number) => journal.events.filter((event) => event.seq > seq);
 
   check('session/follow 收到开场快照', await waitFor(() => snapshotSeen, 10_000));
 
   async function scenario(name: string, prompt: string, timeoutMs = 60_000) {
     const startFrame = frames.length;
-    const startSeq = state.cursor;
+    const startSeq = journal.lastSeq;
     const endsBefore = turnEnds();
     const samplesBefore = liveSamples.length;
     await client!.prompt(sessionId, prompt);
@@ -285,7 +288,11 @@ try {
     findings.userMessageSources = result.events
       .filter((event) => event.type === 'user/message')
       .map((event) => sanitize((event.data as { source?: unknown; content?: unknown }).source ?? event.data));
-    findings.seqContiguous = state.gap === undefined;
+    check('场景 hello：follow 过程中没有出现 rebaseline', rebaselines.length === 0, rebaselines);
+    // 会话列表、投影和标题的结构（M1 做会话列表和模型选择要用）
+    findings.sessionTitleEvents = journal.events.filter((event) => event.type === 'session/title').map((event) => sanitize(event.data));
+    findings.sessionListAfterHello = sanitize(await client.listSessions());
+    findings.projectionsAfterHello = sanitize(await client.unary.call('session/projections', { request: { sessionId } }));
   }
 
   // 2. 写文件：tool/call、tool/result.meta 中的 diff 展示数据、workspace/changes
@@ -304,8 +311,8 @@ try {
     const fsMeta = meta as { operation?: string; diffs?: unknown[] } | undefined;
     check('场景 write：tool/result.meta 为 { operation: create, diffs: [] }', fsMeta?.operation === 'create' && Array.isArray(fsMeta.diffs), meta);
     findings.writeApprovals = approvals.slice(approvalsBefore).map((a) => sanitize(a));
-    const changes = await waitFor(() => state.events.some((event) => event.type === 'workspace/changes'), 10_000);
-    findings.workspaceChangesEvent = sanitize(state.events.find((event) => event.type === 'workspace/changes'));
+    const changes = await waitFor(() => journal.events.some((event) => event.type === 'workspace/changes'), 10_000);
+    findings.workspaceChangesEvent = sanitize(journal.events.find((event) => event.type === 'workspace/changes'));
     check('场景 write：收到 workspace/changes 事件', changes);
     findings.writeEventTypes = result.events.map((event) => event.type);
   }
@@ -378,10 +385,10 @@ try {
   // 5. 停止：挂起的流式回复 + session/cancel
   {
     const startFrame = frames.length;
-    const startSeq = state.cursor;
+    const startSeq = journal.lastSeq;
     const endsBefore = turnEnds();
     await client.prompt(sessionId, 'M0_HOLD 慢慢回答');
-    const streaming = await waitFor(() => liveText(state).includes('正在'), 20_000);
+    const streaming = await waitFor(() => liveText().includes('正在'), 20_000);
     check('场景 cancel：挂起前收到部分逐字流', streaming);
     await client.cancel(sessionId);
     const ended = await waitFor(() => turnEnds() > endsBefore, 20_000);
@@ -389,7 +396,7 @@ try {
     const turnEnd = eventsSince(startSeq).find((event) => event.type === 'turn/end');
     findings.cancelTurnEnd = turnEnd?.data;
     findings.cancelEventTypes = eventsSince(startSeq).map((event) => event.type);
-    check('场景 cancel：live 文本已清除', liveText(state) === '');
+    check('场景 cancel：live 文本已清除', liveText() === '');
     if (cli.record) {
       await writeFile(join(fixtureDir, 'cancel.json'), `${JSON.stringify(sanitize(frames.slice(startFrame)), null, 2)}\n`);
     }
@@ -398,9 +405,9 @@ try {
   // 能力探测：后续里程碑要用的方法在当前版本是否存在
   const probes: Record<string, () => Promise<unknown>> = {
     'session/page': () =>
-      client!.unary.call('session/page', { request: { address: { kind: 'session', sessionId }, throughSeq: state.cursor, maxMessages: 10 } }),
+      client!.unary.call('session/page', { request: { address: { kind: 'session', sessionId }, throughSeq: journal.lastSeq, maxMessages: 10 } }),
     'session/events': () =>
-      client!.unary.call('session/events', { request: { address: { kind: 'session', sessionId }, throughSeq: state.cursor, maxMessages: 10 } }),
+      client!.unary.call('session/events', { request: { address: { kind: 'session', sessionId }, throughSeq: journal.lastSeq, maxMessages: 10 } }),
     'session/modelCatalog': () => client!.unary.call('session/modelCatalog', {}),
     'permissionPresets/catalog': () => client!.unary.call('permissionPresets/catalog', {}),
     'commands/list': () => client!.unary.call('commands/list', { agentId: sessionId }),
@@ -421,6 +428,7 @@ try {
   findings.emittedEvents = [...new Set(emitted)];
   findings.modelRequests = model.requests.filter((r) => r.path === '/v1/messages').length;
   check('能力探测完成', true, capabilities);
+  check('整个会话没有出现 rebaseline', rebaselines.length === 0, rebaselines);
 
   followAbort.abort();
 } catch (error) {

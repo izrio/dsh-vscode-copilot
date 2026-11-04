@@ -32,7 +32,8 @@
 | --- | --- |
 | v0.1 | 假设 dsh 是一个协议未知的远程服务，插件自己执行工具、做审批、改文件，自定义一套协议 |
 | v0.2 | 调研 dsh 源码和参考项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 后重写。dsh（DeepSeek Harness）是**完整的开源 Agent 运行时**，插件改为**薄壳**：启动 dsh、连接 dsh、把 dsh 的会话数据转换成 Codex 风格界面，再补上 VS Code 集成。删除自研的工具层、审批引擎、改文件和执行命令模块、本地 Agent 循环、自定义协议（原 `PROTOCOL.md`）。新增界面设计原则（针对参考项目的界面问题） |
-| **v0.3** | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
+| v0.3 | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
+| **v0.4** | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
 
 ---
 
@@ -365,29 +366,42 @@ sequenceDiagram
 
 ### 5.1 Extension Host 模块
 
+已实现的模块（M1）：
+
 | 模块 | 职责 |
 | --- | --- |
-| `extension.ts` | `activate`：注册视图、命令、配置监听；`deactivate`：断开连接，退出 dsh 进程 |
-| `runtime/RuntimeManager` | 定位 dsh、版本检查、启动、就绪检测、崩溃重启、退出（见第 6 节） |
-| `dsh/remote/connect` | `/connect` 握手，管理 API Cookie |
-| `dsh/remote/unary` | `POST /api` 一元调用，错误码映射 |
-| `dsh/remote/mux` | `/api/remote.mux` WebSocket：多路复用流、上行、取消、转发事件订阅 |
-| `dsh/remote/follow` | 会话历史分页 + follow 流：live chunk、`settle-assistant` 结算、序号缺口修复、重连 |
-| `dsh/remote/schemas` | 所有入站数据的 zod schema，宽松解析（忽略未知字段） |
-| `dsh/capabilities` | 记录 dsh 版本和各方法是否可用，供 UI 决定显示哪些功能 |
-| `dsh/WorkspaceBinding` | VS Code 工作区文件夹 ↔ dsh Workspace；多根工作区时让用户选择 |
-| `dsh/SessionService` | 会话增删改查、发送 prompt、取消、排队消息、模型选择、权限预设 |
-| `dsh/projector/*` | 把 dsh 事件转换为视图模型条目（见 5.2、5.3），每类工具一个映射文件 |
-| `dsh/InteractionService` | 审批、提问、计划审阅：收到请求后挂到视图模型，等用户答复后回传 |
-| `dsh/ChangesService` | 收集单次工具调用的改动片段和每轮改动汇总，还原改动前内容（见 5.4） |
-| `vm/ViewModelStore` | 视图状态的唯一来源，产生增量推给 Bridge |
-| `webview/ChatViewProvider` | `WebviewViewProvider` / `WebviewPanel`，生成带 CSP 的 HTML |
-| `webview/WebviewBridge` | 带类型的消息收发和校验 |
-| `vscode/DiffContentProvider` | `dsh-diff:` 虚拟文档 |
-| `vscode/DirtyGuard` | 检查目标文件在 VS Code 中是否有未保存内容 |
-| `vscode/ContextCollector` | 当前文件、选区、诊断信息，转成 prompt 附加内容 |
-| `vscode/StatusBar`、`vscode/Commands` | 状态栏和命令 |
-| `util/logger` | 插件日志（"DSH"）和 dsh 进程输出（"DSH Runtime"）两个 `LogOutputChannel`；令牌脱敏 |
+| `extension.ts` | 组装：`RuntimeManager` → `DshConnection` → `ChatController` ↔ `ChatViewProvider`；注册命令、状态栏 |
+| `runtime/RuntimeManager` | 定位 dsh、版本检查、启动、就绪检测、崩溃重启（稳定运行 60 秒后才清零失败计数）、退出（见第 6 节） |
+| `runtime/launch`、`locate`、`version` | 启动参数与就绪 URL 解析、PATH 查找、SemVer 比较 |
+| `dsh/remote/connect`、`unary`、`mux`、`events` | `/connect` 握手、`POST /api` 一元调用、`/api/remote.mux` 多路复用流、`$events` 转发事件（emit / waterfall 回答） |
+| `dsh/remote/follow` | follow 帧的 zod schema（宽松解析，保留未知字段）和流片段合并 |
+| `dsh/session/journal` | 单个会话的事件日志：按官方语义结算逐字流（暂存到 `end` 帧再发布）、序号/revision/下标检查、历史分页合并 |
+| `dsh/session/SessionStream` | 单个会话的 follow 生命周期：要求 rebaseline 时重开（带退避）、加载更早的历史 |
+| `dsh/DshConnection` | 连接管理：端点变化换连接、mux 断开后按退避重连、迟到的旧连接丢弃 |
+| `dsh/SessionService` | 绑定在一次连接上：工作区注册、会话列表（只列当前目录、非子 Agent、非空白）、`session/control` 投影、发送/停止/选择模型、本地回显 |
+| `dsh/DshClient` | 组合上面的协议模块，提供插件用到的方法；`session/page` 与 `session/events`、两种 control 帧格式的兼容在这里处理 |
+| `vm/projector` | 事件 → 界面条目（纯函数，见 5.2、5.3） |
+| `vm/ChatController` | 对话面板的控制器：会话切换、新对话延迟创建、断线期间保留旧内容、按 id 计算增量、错误翻译成提示 |
+| `webview/ChatViewProvider` | `WebviewViewProvider`：生成带 CSP 的 HTML，校验并转发 Bridge 消息 |
+| `util/redact` | 令牌和认证 Cookie 脱敏 |
+
+后续里程碑要加的模块：
+
+| 模块 | 职责 | 里程碑 |
+| --- | --- | --- |
+| `dsh/capabilities` | 记录各方法是否可用，供 UI 决定显示哪些功能 | M2 |
+| `dsh/InteractionService` | 审批、提问、计划审阅：收到请求后挂到视图模型，等用户答复后回传 | M2 |
+| `dsh/ChangesService` | 收集单次工具调用的改动片段和每轮改动汇总，还原改动前内容（见 5.4） | M2 |
+| `vscode/DiffContentProvider`、`vscode/DirtyGuard` | `dsh-diff:` 虚拟文档；未保存内容检查 | M2 |
+| `vscode/ContextCollector` | 当前文件、选区、诊断信息，转成 prompt 附加内容 | M3 |
+| `dsh/WorkspaceBinding` | 多根工作区时让用户选择对应的 dsh Workspace（M1 固定用第一个文件夹） | M3 |
+
+M1 中确定的几条规则：
+
+- **运行状态**：当前会话的 follow 流就绪后，只看事件日志里的 `turn/start` / `turn/end`；会话列表里的 `running` 靠通知触发刷新，会滞后，只在 follow 就绪前使用。
+- **新对话**：第一条消息发送时才在 dsh 里创建会话，避免每次打开面板都留下空会话。
+- **断线重连**：连接断开时只停止旧会话服务和 follow 的 I/O，继续显示旧内容；新连接初始化完成、follow 拿到快照后再替换。
+- **恢复上次的会话**：每个工作区记住上次打开的会话（`workspaceState`）；只校验恢复时的那个会话是否还存在，初始化期间新建的会话不参与校验。
 
 ### 5.2 会话事件 → 界面条目
 
@@ -616,7 +630,7 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | 不受信任的工作区 | 声明 `capabilities.untrustedWorkspaces: { supported: false }`；未受信任时不启动 dsh |
 | 误开最高权限 | 切换到 `danger-full-access` 时插件弹出确认框 |
 | 覆盖用户未保存的修改 | 审批写文件前检查未保存内容（[3.4](#34-权限与审批)） |
-| Webview 注入 | 严格 CSP（`default-src 'none'`，脚本只允许带 nonce 的本地资源）；Markdown 渲染禁用原始 HTML；链接由 Host 校验后再用 `vscode.env.openExternal` 打开 |
+| Webview 注入 | 严格 CSP：`default-src 'none'`；入口脚本带 nonce，按需加载的高亮语言包只允许插件目录；样式只允许插件目录，**不开 `'unsafe-inline'`**。Markdown 渲染禁用原始 HTML，不用 `innerHTML`（代码高亮用 React 元素渲染，颜色通过 CSSOM 设置，不受 CSP 拦截）；链接由 Host 校验后再用 `vscode.env.openExternal` 打开 |
 | 消息伪造 | Host 用 zod 校验 Webview 消息；审批和提问的 ID 一次性有效，过期答复丢弃 |
 | 绕过 dsh 安全边界 | 插件本身不写工作区文件、不执行命令（[D6](#d6-插件不读写工作区文件不执行命令)） |
 | 数据外发 | 模型请求由 dsh 发出；插件说明哪些上下文会被附加，并允许关闭"自动附带当前文件" |
@@ -666,43 +680,44 @@ pnpm workspace 管理多包：
 
 ```
 dsh-vscode-copilot/
-├── package.json                 # workspace 根：统一脚本、lint、格式化
+├── package.json                 # workspace 根：build、test、typecheck、smoke、package、dev
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
+├── vitest.config.ts
 ├── docs/
 │   ├── DESIGN.md                # 本文档
-│   └── DSH-INTEGRATION.md       # dsh 对接说明
+│   ├── DSH-INTEGRATION.md       # dsh 对接说明
+│   └── images/                  # 界面截图
 ├── packages/
-│   ├── shared/                  # 视图模型类型、Bridge 消息、zod schema（Host 和 Webview 共用）
+│   ├── shared/                  # 视图模型类型、Bridge 消息与校验（Host 和 Webview 共用）
 │   ├── extension/               # VS Code 插件主体（Extension Host）
-│   │   ├── package.json         # 插件清单：contributes、activationEvents 等
+│   │   ├── package.json         # 插件清单：contributes 等
 │   │   ├── src/
 │   │   │   ├── extension.ts
-│   │   │   ├── runtime/         # RuntimeManager：定位、版本检查、启动、监控 dsh
+│   │   │   ├── runtime/         # RuntimeManager、启动、定位、版本
 │   │   │   ├── dsh/             # dsh 适配层（唯一了解 dsh 协议的目录）
-│   │   │   │   ├── remote/              # connect、unary、mux、follow、schemas
-│   │   │   │   ├── capabilities.ts
-│   │   │   │   ├── sessions.ts
-│   │   │   │   ├── projector/           # 事件 → 视图模型；每类工具一个文件
-│   │   │   │   ├── interactions.ts
-│   │   │   │   └── changes.ts           # 改动片段收集、改动前内容还原
-│   │   │   ├── vm/              # ViewModelStore
-│   │   │   ├── webview/         # ViewProvider、Bridge、HTML/CSP
-│   │   │   ├── vscode/          # Diff、未保存检查、上下文、命令、状态栏
-│   │   │   └── util/            # logger、config
+│   │   │   │   ├── remote/              # connect、unary、mux、events、follow schema
+│   │   │   │   ├── session/             # journal（事件日志与结算）、SessionStream
+│   │   │   │   ├── DshClient.ts
+│   │   │   │   ├── DshConnection.ts
+│   │   │   │   └── SessionService.ts
+│   │   │   ├── vm/              # projector（事件 → 条目）、ChatController
+│   │   │   ├── webview/         # ChatViewProvider（HTML/CSP、消息校验）
+│   │   │   └── util/            # 脱敏
+│   │   ├── scripts/             # 构建、冒烟测试、界面端到端、真实 VS Code 验证
 │   │   ├── media/
 │   │   └── test/
-│   │       ├── fixtures/        # 从真实 dsh 录制的事件序列
-│   │       └── mock-model/      # 本地假模型服务，供集成测试用
+│   │       ├── fixtures/m0/     # 从真实 dsh 录制的 follow 帧
+│   │       ├── mock-model/      # 本地假模型服务
+│   │       └── support/         # 隔离的 dsh 测试环境
 │   └── webview-ui/              # React + Vite，构建产物输出到 extension/dist/webview
 │       └── src/
-│           ├── components/
-│           ├── activity/        # 各工具的活动行渲染
-│           ├── store/
-│           └── i18n/
+│           ├── components/      # Header、Thread、Items、Composer、Markdown、CodeBlock 等
+│           ├── store.ts         # Host 快照与增量的合并
+│           └── styles.css
 └── .github/workflows/
     ├── ci.yml
-    └── dsh-compat.yml           # 定时用多个 dsh 版本跑兼容测试
+    └── dsh-compat.yml           # 定时用多个 dsh 版本跑冒烟测试
 ```
 
 ### 9.2 技术选型
@@ -713,28 +728,32 @@ dsh-vscode-copilot/
 | 包管理 | pnpm workspace | 多包共享类型 |
 | 插件打包 | esbuild（CJS，`vscode` 设为 external） | 快，产物单文件 |
 | Webview 构建 | Vite | 开发时热更新，生产构建体积小 |
-| UI | React 18 + zustand | 生态成熟，适合流式增量更新 |
-| Markdown / 高亮 | react-markdown + remark-gfm + shiki | 与 VS Code 高亮效果一致 |
+| UI | React 18，状态用 `useSyncExternalStore` | 状态由 Host 推送，Webview 只做按 id 的增量合并，不需要状态库 |
+| Markdown / 高亮 | react-markdown + remark-gfm + shiki（JS 正则引擎，语言包按需加载，输出 token 由 React 渲染） | 与 VS Code 高亮效果一致；不用 innerHTML，不受 CSP 的内联样式限制 |
 | dsh 协议 | 自写精简客户端 + `ws` | 见 [D5](#d5-自写精简-remote-客户端兼容一个版本范围) |
 | 数据校验 | zod | dsh 入站数据和 Bridge 消息都校验 |
 | 单元测试 | vitest | — |
 | 集成测试 | `@vscode/test-cli` + `@vscode/test-electron` | 官方方案 |
 | 代码规范 | ESLint + Prettier | — |
 | 发布 | `@vscode/vsce` | 产出 `.vsix` |
-| VS Code 版本 | `engines.vscode: ^1.106.0` | 参考项目同版本，已支持 `secondarySidebar` |
+| VS Code 版本 | `engines.vscode: ^1.106.0` | 参考项目同版本，已支持 `secondarySidebar`；M1 在 VS Code 1.144（code-server 4.144）中实测 |
 
 ---
 
 ## 10. 测试策略
 
-| 层级 | 范围 | 做法 |
-| --- | --- | --- |
-| 单元测试 | 协议客户端（connect、mux 分帧、follow 结算与缺口修复）、事件 → 视图模型转换、工具映射、改动前内容还原、URL/令牌解析、重启退避 | vitest；输入用从真实 dsh 录制的事件序列（fixture） |
-| 组件测试 | 各类活动行和卡片、Composer、流式渲染 | vitest + Testing Library |
-| 集成测试 | 插件真实启动 dsh，跑完对话、审批、提问、改动 Diff、停止、重启恢复 | `@vscode/test-cli`；dsh 使用临时 `DSH_HOME`，模型提供方指向本地假模型服务（`test/mock-model/`），按脚本返回回复和工具调用，不需要真实 API Key（参考项目也是这样联调的） |
-| 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑集成测试 | GitHub Actions 定时任务，失败只提 issue，不阻塞主线 |
-| 界面验收 | 按 [3.1](#31-界面设计原则) 的原则逐条检查；亮色/暗色/高对比度主题截图对比 | 手工 + Playwright 截图 |
-| 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH |
+所有用到真实 dsh 的测试都使用临时 `DSH_HOME` 和本地假模型服务（`test/mock-model/`，兼容 Anthropic Messages API，按消息里的标记返回回复和工具调用），不需要真实 API Key，也不读取用户数据（`test/support/dshEnv.ts`）。
+
+| 层级 | 范围 | 做法 | 命令 |
+| --- | --- | --- | --- |
+| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态）、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
+| 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、工具活动行、停止、新对话与切换、Webview 重载、杀掉 dsh 后自动恢复、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
+| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
+| 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
+| 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
+
+`@vscode/test-electron` 需要从 `update.code.visualstudio.com` 下载 VS Code，M1 的开发环境访问不了，所以用 code-server 代替；能访问时可以补上基于 `@vscode/test-cli` 的集成测试。
 
 fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、跑命令、审批、提问、计划模式、子 Agent、中途停止），通过 `session/page` 导出事件，存到 `packages/extension/test/fixtures/`。dsh 升级时重新录制并比较差异。
 
@@ -742,7 +761,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 
 ## 11. 构建、发布与 CI
 
-- **本地开发**：`pnpm dev` 同时启动 esbuild watch 和 Vite watch；按 F5 打开扩展开发宿主。本机需要能运行 `dsh` 并配置好 API Key（或使用假模型服务）
+- **本地开发**：`pnpm dev` 同时启动 esbuild watch 和 Vite watch；用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。本机需要能运行 `dsh` 并配置好 API Key（或使用假模型服务）
 - **打包**：`pnpm package` → 构建 webview-ui → 构建 extension → `vsce package --no-dependencies`（依赖已由 esbuild 打进产物）
 - **不打包 dsh 运行时**：由 6.1 的方式获取
 - **CI**（GitHub Actions）：
@@ -768,16 +787,25 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 
 **留给 M1**：follow 流完整结算语义、在真实 VS Code 中加载验证、多窗口并发（[对接说明 9.3](./DSH-INTEGRATION.md#93-留给后续里程碑确认的事项)）。
 
-### M1：运行时 + 基础对话（约 2 周）
+### M1：运行时 + 基础对话（已完成）
 
-- [ ] `RuntimeManager`：定位、版本检查、启动、就绪检测、重启、退出、安装引导
-- [ ] follow 流：历史分页、逐字流结算、缺口修复、断线重连
-- [ ] `SessionService`：新建、列表、切换、发送、停止
-- [ ] 视图模型：用户消息、流式回复、完整回复、推理
-- [ ] UI：Header、ThreadView、Composer、RuntimeBanner、状态栏；按 3.1 原则完成视觉设计
-- [ ] 模型选择
+- [x] `RuntimeManager`：定位、版本检查、启动、就绪检测、重启、退出、安装引导（找不到 dsh 时面板内提示安装方式）
+- [x] follow 流：逐字流结算（与官方语义对齐）、序号/revision/下标缺口时重新打开、断线重连、加载更早的历史
+- [x] `SessionService`：新建、列表、切换、发送、停止；本地回显
+- [x] 视图模型：用户消息、流式回复、完整回复、推理、工具活动行（通用样式）、轮次结束提示
+- [x] UI：Header、ThreadView、Composer、RuntimeBanner、Toast、状态栏；按 3.1 原则完成视觉设计
+- [x] 模型选择（输入框工具条 + 命令面板）
+- [x] 错误提示：缺少 API Key 时给出中文提示和"打开 dsh 设置"入口；会话被其他窗口占用等常见错误翻译成可操作的提示
 
-**验收**：装好 dsh 后打开面板即可流式对话、停止、切换会话；dsh 进程被杀掉后能自动恢复。
+**验收结果**：界面端到端测试 27/27（dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3`）、真实 VS Code 7/7、冒烟测试 33/33、单元测试 95 个，覆盖流式对话、停止、新对话与切换、Webview 重载、杀掉 dsh 后自动恢复。截图见 `docs/images/`。
+
+**没有做到或推迟的**：
+
+- 长会话的"加载更早的消息"已实现，但测试用的会话都不长，还没在真实长会话上验证（M4 性能工作一并处理）
+- 长会话虚拟列表、推送合并以外的性能优化（M4）
+- API Key 配置引导目前跳转到 dsh Web UI，插件内配置放在 M4
+- 多根工作区固定用第一个文件夹（M3）
+- Windows、macOS 和 Remote-SSH 手工验收（M5）
 
 ### M2：工具、交互与改动（约 2 周）
 

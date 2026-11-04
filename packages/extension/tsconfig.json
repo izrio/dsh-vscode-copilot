@@ -1,6 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // 端到端脚本里有在浏览器中执行的回调（document、window），所以带上 DOM 类型
+    "lib": ["ES2023", "DOM"],
     "types": ["node", "vscode"]
   },
   "include": ["src", "test", "scripts"]

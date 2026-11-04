@@ -1,6 +1,7 @@
 **
 !dist/extension.cjs
 !dist/webview/index.js
+!dist/webview/chunks/*.js
 !dist/webview/index.css
 !media/**
 !package.json

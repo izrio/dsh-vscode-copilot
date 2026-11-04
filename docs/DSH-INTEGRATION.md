@@ -1,6 +1,6 @@
 # dsh 对接说明
 
-> 状态：v0.3（M0 已验证）｜ 日期：2026-11-04
+> 状态：v0.4（M1 已验证）｜ 日期：2026-11-04
 >
 > 本文记录调研到的 dsh 事实、参考项目的做法、插件与 dsh 的对接细节，以及 M0 的实测结果。设计决策见 [DESIGN.md](./DESIGN.md)。
 >
@@ -8,7 +8,7 @@
 > - dsh：[`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)。M0 实测了 npm 上的 `0.2.1-rc.5`（`latest`）和 `0.2.2-alpha.3`（`alpha`），源码对照 tag `dsh-v0.2.1-rc.5`
 > - 参考项目：[`HarcoChen/dsh-vsc-integration`](https://github.com/HarcoChen/dsh-vsc-integration) `v0.11.1`（2026-10-21），目标 dsh 版本 `0.2.0-rc.2`
 >
-> 下文路径没有特别说明的都相对于 dsh 仓库根目录。标 **✅ 已验证** 的内容由 M0 冒烟测试在真实 dsh 上跑通（[第 9 节](#9-m0-验证结果)）；标 **【待验证】** 的只读过文档或代码。
+> 下文路径没有特别说明的都相对于 dsh 仓库根目录。标 **✅ 已验证** 的内容由冒烟测试或端到端测试在真实 dsh 上跑通（[第 9 节](#9-m0-验证结果)）；标 **【待验证】** 的只读过文档或代码。
 
 ---
 
@@ -208,7 +208,7 @@ dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 | 注册工作区 | `workspace/create` | `{ request: { path } }` → `{ workspace: { workspaceId, … }, created }` | ✅ |
 | 新建会话 | `session/create` | `{ request: { workspaceId, agentPreset? } }` → `{ sessionId }` | ✅ |
 | 会话列表 | `session/list` | `{ _request: { cursor? } }` → `{ items: SessionSummary[] }` | ✅ |
-| 历史与流式跟随 | `session/follow`（流） | `{ request: { address: { kind: 'session', sessionId }, assistantStream: true } }` | ✅ |
+| 历史与流式跟随 | `session/follow`（流） | `{ request: { address: { kind: 'session', sessionId }, assistantStream: true, turnWindow: { minMessages: 50, minTurns: 2 } } }` | ✅ |
 | 历史分页 | `session/page`（rc.5、alpha.3）/ `session/events`（alpha.3 起） | `{ request: { address, throughSeq, beforeSeq?, maxMessages? } }` | ✅ |
 | 发送消息 | `session/prompt` | `{ request: { requestId, sessionId, mode: 'queue' \| 'steer', content: [{ type: 'text', text }] } }` | ✅ |
 | 停止 | `session/cancel` | `{ request: { sessionId } }` | ✅ |
@@ -219,7 +219,7 @@ dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 | `@` 文件引用 | `fileReferences/list` | `{ agentId, query }` | ✅ |
 | 审批 | `approval/request`（waterfall） | 回答 `{ kind: 'result', value: 'allowed-once' \| 'rejected' \| 'cancelled' }` | ✅ |
 | 向用户提问 | `user-questions/request`（waterfall） | 回答 `{ kind: 'result', value: { answers: [{ id, selected: [label], custom? }] } }` | ✅ |
-| 会话状态 | `session/control`（流） | `{}` | |
+| 会话投影实时更新 | `session/control`（流） | `{}`；先发 `baseline`，之后是 `projection` 更新（两个版本格式不同，见 9.4） | ✅ |
 | 排队消息 | `session/updateQueue` | `{ request: { sessionId, itemId, action } }` | |
 | 重命名、fork | `session/rename`、`session/fork` | `{ request: { sessionId, … } }` | |
 | 选择模型 | `session/selectModel` | `{ request: { sessionId, provider, model, reasoningEffort? } }` | |
@@ -274,7 +274,12 @@ dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 
 - `chunk.chunk` 是原始流片段：`block-start`、`text-delta { index, text }`、`reasoning-delta`、`tool-call-delta { index, id, name?, argumentsDelta }`、`block-end`、`usage`、`finish`。
 - 逐字帧的 `index` 连续递增；不连续时要重新打开 follow。
-- M0 实现了能跑通展示的最小合并规则（`packages/extension/src/dsh/remote/follow.ts`）；完整的结算语义（成功消息的临时条目保留到 `step/end`、版本号检查、缺口修复）在 M1 对照 `SessionEventStream` 补齐。
+- 插件的实现在 `packages/extension/src/dsh/session/journal.ts`，规则对照官方 `packages/api/session-controller/src/client/sessions/assistant-stream.ts`：
+  - 与当前流式尝试匹配的 `assistant/message` / `assistant/attempt`（seq 晚于 `startedAfterSeq`、轮次和步骤相同）先暂存，等 `end` 帧确认后再发布，同时撤掉临时文本；
+  - `start` 时还有未结算的内容、`revision` 跳号（同一个 follow 内逐帧加一）、下标跳号、`end` 对不上暂存的事件，都重新打开 follow；
+  - 与官方的一处差别：官方把成功消息的临时行保留到 `step/end`（给它的工具卡片用），插件从持久消息渲染工具调用，在 `end` 时直接撤掉；
+  - 没收到 `end` 帧时，暂存的结算在本步或本轮结束时一并发布，作为安全网。
+- 开场窗口：首次 follow 要带 `turnWindow`（官方客户端用 `{ minMessages: 50, minTurns: 2 }`），否则 0.2.2-alpha 起只给最近一小段历史。
 
 ### 7.3 改动数据
 
@@ -298,7 +303,8 @@ dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 - **支持范围**：最低 `0.2.1-rc.5`，已测试到 `0.2.2-alpha.3`（`packages/extension/src/runtime/version.ts`）。更早的版本没有测过，暂不支持；需要时再往下扩。
 - **启动检查**：执行 `dsh --version`。低于最低版本时提示升级，不启动；高于已测试的最高版本时照常启动，并提示"版本较新"。
 - **宽松解析**：入站数据用 zod 校验必需字段，未知字段保留或忽略，未知事件跳过，单条数据解析失败只影响这一条，并写调试日志。
-- **能力探测**：调用返回"方法不存在"时记录下来，界面隐藏对应功能，不报错。M0 已用它区分 `session/page` 和 `session/events`。
+- **能力探测**：调用返回"方法不存在"时记录下来，界面隐藏对应功能，不报错。已用它区分 `session/page` 和 `session/events`。
+- **格式兼容**：同一个方法在不同版本的返回格式不同时，在 `DshClient` 里统一成一种（例如 9.4 里 `session/control` 的两种更新格式）。
 - **多版本测试**：工作流 `.github/workflows/dsh-compat.yml` 每天用最低版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试。
 - **跟进变化**：关注 dsh 的 release notes 和仓库中 `.agents/notes/` 下的决策记录；参考项目的适配报告也是有用的信号。
 
@@ -340,15 +346,29 @@ pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
 
 ### 9.3 留给后续里程碑确认的事项
 
-| 事项 | 里程碑 |
+| 事项 | 状态 |
 | --- | --- |
-| follow 流完整结算语义（对照 `SessionEventStream`），断线重连与缺口修复 | M1 |
-| 在真实 VS Code 中加载插件（本环境无法下载 VS Code，M0 用替身模块和 Chromium 渲染验证了视图接线和 Webview 产物） | M1 |
+| follow 流完整结算语义（对照 `SessionEventStream`），断线重连与缺口修复 | ✅ M1 完成 |
+| 在真实 VS Code 中加载插件 | ✅ M1 完成：用 code-server 4.144（VS Code 1.144）验证，脚本 `packages/extension/scripts/vscode-e2e.ts` |
+| 多个 VS Code 窗口各启动一个 Host、与用户自己的 `dsh web` 同时运行 | ✅ M1 完成：可以并存，见 9.4 |
 | `workspace/changes` 摘要和单文件对比的 Remote 方法名 | M2 |
 | `apply_patch` 的 `meta` 是否也带 `diffs` | M2 |
-| 多个 VS Code 窗口各启动一个 `web` profile 的 Host、以及与用户手动运行的 `dsh web` 同时运行是否冲突 | M1 |
 | Windows（`dsh.cmd`、进程树结束）和 macOS | M5 |
 | GitHub Actions 上沙箱（bwrap 等）能否正常工作，决定兼容测试能否稳定运行 | 首次运行 `dsh-compat` 工作流时 |
+
+### 9.4 M1 新发现
+
+| 主题 | 发现 | 插件的处理 |
+| --- | --- | --- |
+| 会话投影 | 会话列表的每一项自带缓存的投影 `projections.values`：`title`、`modelSelection`（`lastUsed` / `next`）、`contextPressure`（`pressureTokens` / `contextWindow`）、`inbox`、`todos`、`permissions`、`plan`、`turnOutline`、`tokenUsage` 等；follow 的开场快照也带一份 | 标题、当前模型、上下文用量直接用投影 |
+| `session/control` 更新格式 | 0.2.1-rc.5：`{ type: 'projection', sessionId, key, value, seq }`；0.2.2-alpha.3：`{ type: 'projection', sessionId, seq, changes: [{ key, val }] }`（一个事件引起的一批变化） | `DshClient.control()` 统一成批量格式，两种都有单元测试 |
+| follow 开场窗口 | 不带 `turnWindow` 时，0.2.2-alpha.3 只给最近一小段历史（切回旧会话时第一轮回复不在快照里） | 首次 follow 带 `turnWindow: { minMessages: 50, minTurns: 2 }`，与官方一致 |
+| 会话列表的 `running` | 靠 `api-session/*` 通知触发刷新，比 follow 里的 `turn/end` 晚到 | 当前会话以事件日志为准（`scripts/ui-e2e.ts` 的停止场景覆盖） |
+| 多个 Host 并存 | 两个 Host 共用同一个 `DSH_HOME` 和 `web` profile 可以同时运行；B 能列出、能 follow（只读）A 的会话，但向它发消息返回 `session/writer-held`；A 退出后 B 可以接手（`scripts/concurrency-check.ts`） | 每个窗口一个 Host 的方案可行；`session/writer-held` 翻译成"这个会话正在另一个窗口或 dsh Web UI 中使用" |
+| 没有 API Key | 消息照常被接收，轮次以 `turn/end.reason = { kind: 'error', error: { code: 'MISSING_CREDENTIAL' } }` 结束，错误信息是英文技术描述 | 显示中文提示和"打开 dsh 设置"入口（在 dsh Web UI 的模型页面填写） |
+| 远程场景的设置 | code-server、Remote-SSH 下插件运行在远端，`machine-overridable` 范围的 `dsh.runtime.path` 从远端的 `Machine/settings.json` 读取，写在用户设置里不生效 | 符合 VS Code 的设计，保留该范围；文档和测试脚本里说明 |
+| Webview 的 CSP | 不开 `'unsafe-inline'` 时，通过 `innerHTML` 插入的内联 `style` 属性会被拦截（shiki 的 HTML 输出因此没有颜色）；只在真实 VS Code 里才能发现 | 代码高亮改成输出 token、用 React 渲染；界面端到端测试使用与生产相同的 CSP，并检查颜色是否真的生效 |
+| 停止生成后保存的内容 | 被中断的 `assistant/message` 带 `interrupted: true`，内容是中断时已经输出的部分 | 显示部分回复，并追加"已停止生成" |
 
 ---
 

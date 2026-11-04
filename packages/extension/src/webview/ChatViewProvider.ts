@@ -1,18 +1,16 @@
 /**
- * 侧边栏对话视图的宿主：生成带 CSP 的 HTML，加载 webview-ui 的构建产物，转发 Bridge 消息。
- *
- * Extension Host 是状态的唯一来源（docs/DESIGN.md D7）：Webview 加载后发 `ready`，
- * Host 回一份完整快照，之后只推增量。
+ * 侧边栏对话视图的宿主：生成带 CSP 的 HTML，加载 webview-ui 的构建产物，校验并转发 Bridge 消息。
+ * 状态和业务逻辑都在 ChatController 里，这里只负责 Webview 的生命周期。
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import { parseWebviewMessage, type HostToWebview, type RuntimeStatus } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@dsh-copilot/shared';
 
 export interface ChatViewHost {
-  readonly runtimeStatus: () => RuntimeStatus;
+  /** 已校验的 Webview 消息。 */
+  readonly onMessage: (message: WebviewToHost) => void;
+  /** 视图第一次打开时调用（用于按需启动 dsh）。 */
   readonly onViewVisible: () => void;
-  readonly restartRuntime: () => void;
-  readonly showLogs: () => void;
   readonly log: (line: string) => void;
 }
 
@@ -30,37 +28,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const webviewRoot = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     view.webview.options = { enableScripts: true, localResourceRoots: [webviewRoot] };
     view.webview.html = renderHtml(view.webview, webviewRoot);
-    view.webview.onDidReceiveMessage((raw: unknown) => this.onMessage(raw));
+    view.webview.onDidReceiveMessage((raw: unknown) => {
+      const message = parseWebviewMessage(raw);
+      if (message) this.host.onMessage(message);
+      else this.host.log('Webview：丢弃格式不对的消息');
+    });
     view.onDidDispose(() => {
       if (this.view === view) this.view = undefined;
     });
     this.host.onViewVisible();
   }
 
-  postRuntimeStatus(status: RuntimeStatus): void {
-    this.post({ type: 'runtimeStatus', payload: status });
+  get visible(): boolean {
+    return this.view?.visible ?? false;
   }
 
-  private onMessage(raw: unknown): void {
-    const message = parseWebviewMessage(raw);
-    if (!message) {
-      this.host.log('Webview：丢弃格式不对的消息');
-      return;
-    }
-    switch (message.type) {
-      case 'ready':
-        this.post({ type: 'snapshot', payload: { runtime: this.host.runtimeStatus() } });
-        return;
-      case 'restartRuntime':
-        this.host.restartRuntime();
-        return;
-      case 'showLogs':
-        this.host.showLogs();
-        return;
-    }
-  }
-
-  private post(message: HostToWebview): void {
+  /** 视图还没打开时丢弃消息：Webview 加载后会发 ready 取完整快照。 */
+  post(message: HostToWebview): void {
     void this.view?.webview.postMessage(message);
   }
 }
@@ -74,7 +58,8 @@ function renderHtml(webview: vscode.Webview, root: vscode.Uri): string {
     `style-src ${webview.cspSource}`,
     `img-src ${webview.cspSource} data:`,
     `font-src ${webview.cspSource}`,
-    `script-src 'nonce-${nonce}'`,
+    // 入口脚本带 nonce；代码高亮的语言包按需从插件目录加载
+    `script-src 'nonce-${nonce}' ${webview.cspSource}`,
   ].join('; ');
   return `<!doctype html>
 <html lang="zh-CN">
