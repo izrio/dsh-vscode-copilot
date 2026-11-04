@@ -1,14 +1,14 @@
 # dsh 对接说明
 
-> 状态：v0.2 ｜ 日期：2026-11-04
+> 状态：v0.3（M0 已验证）｜ 日期：2026-11-04
 >
-> 本文记录调研到的 dsh 事实、参考项目的做法，以及插件与 dsh 的具体对接方式。设计决策见 [DESIGN.md](./DESIGN.md)。
+> 本文记录调研到的 dsh 事实、参考项目的做法、插件与 dsh 的对接细节，以及 M0 的实测结果。设计决策见 [DESIGN.md](./DESIGN.md)。
 >
-> **调研基线**
-> - dsh：[`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) master `8bd0733`（2026-11-03，仓库版本 `0.2.2-alpha.3`）；npm 上 `@deepseek-ai/dsh` 的 `latest` 为 `0.2.1-rc.5`，`alpha` 为 `0.2.2-alpha.3`
+> **基线**
+> - dsh：[`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)。M0 实测了 npm 上的 `0.2.1-rc.5`（`latest`）和 `0.2.2-alpha.3`（`alpha`），源码对照 tag `dsh-v0.2.1-rc.5`
 > - 参考项目：[`HarcoChen/dsh-vsc-integration`](https://github.com/HarcoChen/dsh-vsc-integration) `v0.11.1`（2026-10-21），目标 dsh 版本 `0.2.0-rc.2`
 >
-> 下文"来源"中的路径，没有特别说明的都相对于 dsh 仓库根目录。标注 **【待验证】** 的内容只读过文档或代码，没有实际跑通，需要在 M0 中确认。
+> 下文路径没有特别说明的都相对于 dsh 仓库根目录。标 **✅ 已验证** 的内容由 M0 冒烟测试在真实 dsh 上跑通（[第 9 节](#9-m0-验证结果)）；标 **【待验证】** 的只读过文档或代码。
 
 ---
 
@@ -18,11 +18,11 @@
 2. [dsh 的对外入口](#2-dsh-的对外入口)
 3. [为什么选 Web Host Remote API](#3-为什么选-web-host-remote-api)
 4. [参考项目分析](#4-参考项目分析)
-5. [启动、认证与连接](#5-启动认证与连接)
+5. [启动、认证与线上格式](#5-启动认证与线上格式)
 6. [会用到的 Remote 方法](#6-会用到的-remote-方法)
 7. [会话事件模型](#7-会话事件模型)
 8. [版本策略](#8-版本策略)
-9. [M0 技术验证清单](#9-m0-技术验证清单)
+9. [M0 验证结果](#9-m0-验证结果)
 10. [参考资料](#10-参考资料)
 
 ---
@@ -44,8 +44,8 @@
 | --- | --- |
 | 读写文件、补丁、搜索 | `read` `write` `edit` `apply_patch` `glob` `grep`（`packages/fs/`） |
 | 执行命令、持久终端、后台任务 | `bash` `pwsh` `terminal_*` `job_*`（`packages/shell/`、`terminal/`、`jobs/`） |
-| 沙箱与权限预设 | `packages/sandbox/`、`packages/interaction/permission-presets`（默认预设 `workspace-write`、`danger-full-access`） |
-| 审批请求 | `packages/interaction/`，由客户端回答 |
+| 沙箱与权限预设 | `packages/sandbox/`、`packages/interaction/permission-presets`（预设 `read-only`、`workspace-write`、`danger-full-access`，默认 `workspace-write`） |
+| 审批请求 | `packages/interaction/user-approval`，由客户端回答 |
 | 向用户提问 | `ask_user_question`，由客户端回答 |
 | 计划模式、目标模式、待办 | `exit_plan_mode`、`create_goal`/`update_goal`、`todo_write` |
 | 子 Agent、团队任务 | `subagent`、`team_task_*` |
@@ -75,7 +75,7 @@
 
 | 能力 | Web Host Remote API | SDK（stdio） | ACP | 嵌入 dsh Web UI |
 | --- | --- | --- | --- | --- |
-| 逐字流式输出 | ✅ follow 流带 live chunk | ❌ 只推已持久化事件 | ❌ 只推已提交的语义更新 | ✅ |
+| 逐字流式输出 | ✅ follow 流带逐字帧 | ❌ 只推已持久化事件 | ❌ 只推已提交的语义更新 | ✅ |
 | 停止生成 | ✅ | ❌ 协议没有取消，只能杀进程 | ✅ | ✅ |
 | 会话列表、搜索、fork | ✅ | ❌（只能 resume 已知 id） | 部分（列出、恢复、关闭） | ✅ |
 | 审批 | ✅ | ✅ `approval/request` | 仅一次性机器策略 | ✅ |
@@ -94,12 +94,7 @@
 
 ### 3.3 选定方案
 
-插件在 **Extension Host（Node）** 里启动 `dsh web`，以 **API 调用方**身份接入它的 Remote API，能力与 dsh Web UI 一致。
-
-可行性有两方面依据：
-
-- dsh 自己有同类用法的测试：`packages/api/gateway/tests/authenticated-node.client.spec.ts`（"authenticated Node Client"）
-- 参考项目 dsh-vsc-integration 用的就是这条路，已经发布到 v0.11.1（见第 4 节）
+插件在 **Extension Host（Node）** 里启动 `dsh web`，以 **API 调用方**身份接入它的 Remote API。**✅ 已验证**：M0 在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通了连接、逐字流、工具调用、审批、提问和停止（第 9 节）。参考项目 dsh-vsc-integration 走的也是这条路。
 
 ---
 
@@ -111,16 +106,16 @@
 
 | 做法 | 说明 | 参考项目中的位置 |
 | --- | --- | --- |
-| 启动 `dsh web --no-open --port <port>` | 用 `web` profile；插件先挑一个空闲端口传进去 | `src/dshRuntime.ts` |
+| 启动 `dsh --profile web … --no-open --host 127.0.0.1 --port 0` | 启动器参数（如 `--patch`）必须放在 `--no-open` 等应用参数之前 | `src/dshRuntime.ts`、`scripts/verify-remote-runtime.mjs` |
 | 从 stdout 用正则解析带 `?token=` 的 URL；日志里把令牌替换成 `<redacted>` | 就绪检测和令牌脱敏 | `src/dshRuntime.ts` |
 | 自写 Remote 客户端，只依赖 `ws` | connect、unary、mux、事件、会话状态，约 2700 行 | `src/remote/` |
 | 支持一个 dsh 版本范围 | 目标 `0.2.0-rc.2`，最低兼容 `0.1.5-rc.1` | README |
 | 优先发现 DeepSeek Desktop 注册的 `dsh` 命令，找不到就引导下载 Desktop | 废弃了自己下载运行时的方案；`pnpm`/`npx` 作为高级用法保留 | `RPC_0.2.0_RC2_ADAPTATION.md` |
 | 子进程放进独立进程组，只结束自己启动的进程 | 退出时能清理干净 | `src/runtimeProcess.ts` |
-| **从会话日志还原单次工具调用的 Diff** | `write`/`edit`/`str_replace_editor` 的结果带 `card: 'diff'` 展示数据（应用后的片段，三行上下文），持久保存在会话日志中；把片段从当前文件反向应用得到改动前内容；片段定位不唯一时放弃还原，不猜测 | `src/toolDiff.ts` |
+| **从会话日志还原单次工具调用的 Diff** | 文件工具的 `tool/result.meta` 带应用后的改动片段，持久保存在会话日志中；把片段从当前文件反向应用得到改动前内容；片段定位不唯一时放弃还原，不猜测 | `src/toolDiff.ts` |
 | 审批前预览将要写入的 Diff | 审批卡片显示命令、工作目录、目标文件 | README |
 | 未保存保护 | 目标文件在编辑器里有未保存修改时，不放行写入审批 | README |
-| 用临时 `DSH_HOME` + 本地回环的假模型服务做联调 | 不依赖真实 API Key | `RPC_0.2.0_RC2_ADAPTATION.md`、`scripts/verify-remote-runtime.mjs` |
+| 用临时 `DSH_HOME` + 本地回环的假模型服务做联调 | 不依赖真实 API Key；`$DSH_HOME/settings.yaml` 把 `llm-deepseek.baseURL` 指向本地 | `scripts/verify-remote-runtime.mjs` |
 | 斜杠命令实时从 dsh 获取 | `commands/list` 与插件自带命令合并 | README |
 
 ### 4.2 不照搬的部分
@@ -134,183 +129,247 @@
 
 ### 4.3 它反映出的维护成本
 
-参考项目每遇到一个 dsh RC 版本都写一份适配报告（如 `RPC_0.2.0_RC2_ADAPTATION.md`），逐项核对新增或变化的方法、投影结构。例如：
+参考项目每遇到一个 dsh RC 版本都写一份适配报告（如 `RPC_0.2.0_RC2_ADAPTATION.md`），逐项核对新增或变化的方法、投影结构。例如 RC.2 新增 `userQuestions/answer` 和 `userQuestions/attachWait`；Agent Team 的旧接口被移除，改为只读投影；权限预设的可选项从投影移到了 `permissionPresets/catalog`。
 
-- RC.2 新增 `userQuestions/answer` 和 `userQuestions/attachWait`，超时后的问题改为通过 `userQuestions` 投影保留并延迟回答
-- Agent Team 的旧接口 `agentTeams/view|createTask|updateTask` 被移除，改为只读投影
-- 权限预设的可选项从投影移到了独立的 `permissionPresets/catalog`
-
-另外，dsh master 的会话控制器文档已经把 `session/page` 标为弃用，改用 `session/events`。这说明**协议在持续变化**，必须做好宽松解析、能力探测和多版本测试（第 8 节）。
+M0 也实测到了一处变化：`0.2.1-rc.5` 只有 `session/page`，`0.2.2-alpha.3` 新增了 `session/events`（master 文档已把 `session/page` 标为弃用）。**协议在持续变化**，必须做好宽松解析、能力探测和多版本测试（第 8 节）。
 
 ---
 
-## 5. 启动、认证与连接
+## 5. 启动、认证与线上格式
+
+本节内容都已在 M0 中按真实 dsh 实现并跑通 **✅ 已验证**，代码见 `packages/extension/src/runtime/`、`packages/extension/src/dsh/remote/`。
 
 ### 5.1 启动 Host
 
 ```bash
-dsh web --no-open --port <端口>
+dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 ```
 
 | 参数 | 作用 |
 | --- | --- |
-| `web` | 启动 `web` profile（等同于 `--profile web`） |
+| `--profile web` | 使用 `web` profile |
+| 启动器参数 | 例如测试时的 `--patch <file>`；**必须在应用参数之前** |
 | `--no-open` | 不打开浏览器 |
-| `--port` | 监听端口；也可以传 `0` 让系统分配，M0 确认哪种方式更稳 |
-| 默认绑定 | `127.0.0.1`，不暴露到网络 |
+| `--host 127.0.0.1` | 只绑定回环地址 |
+| `--port 0` | 系统分配端口，实测可用 |
 
-**就绪信号**：Host 就绪后在 stdout 打印带启动令牌的 URL，形如 `http://127.0.0.1:<port>/?token=<token>`。web-app 文档说明这一行就是就绪信号："监督方一观察到该行就发起 RPC"（`packages/bundle/web-app/README.zh.md`）。参考项目用的正则：
+- **就绪信号**：stdout 打印 `dsh web: http://127.0.0.1:<port>/?token=<token>`，出现这一行就可以发起调用。实测从启动到就绪约 4.5 秒（容器环境）。
+- **令牌**：每个进程随机生成，进程重启后就变了；只能保存在内存中，日志统一脱敏。
 
+### 5.2 认证
+
+1. `GET /connect?token=<token>&interactions=answer` → `302`，`Location: ./api/remote.mux`，`Set-Cookie: dsh-auth-<authority>=…; HttpOnly; SameSite=Strict`。
+   - 只有 `interactions=answer` 的 Peer 能接收审批、提问等转发事件。
+2. 之后的 HTTP 请求和 WebSocket 握手都带 `Cookie: dsh-auth-…=…`。
+3. 这条 mux WebSocket 关闭或 Host 重启后，Peer 失效，必须重新 `/connect`。
+
+### 5.3 线上格式
+
+**一元调用**：`POST /api/<namespace>/<method>`，JSON：
+
+```jsonc
+// 请求
+{ "type": "client-request", "rpcId": "<uuid>", "method": "session/list", "payload": { "args": { "_request": {} } } }
+// 响应
+{ "type": "server-response", "rpcId": "<同一个 uuid>", "result": { "ok": true, "value": { "items": [] } } }
+{ "type": "server-response", "rpcId": "…", "result": { "ok": false, "error": { "code": "session/writer-held", "message": "…", "details": {} } } }
 ```
-https?:\/\/(?:\[[0-9a-f:.]+\]|localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:\/(?:\?token=[A-Za-z0-9_-]+)?)?
-```
 
-**令牌**：每个进程随机生成一个，进程重启后就变了。令牌是进程凭据，不能写日志，不能显示在界面上。
+- `args` 的键是 Host 方法的**参数名**，各方法的参数名见第 6 节（来自 dsh 生成的 `TYPERT_REMOTE` 描述，例如 `node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.d.ts`）。
+- 没有任何插件认领的 endpoint 返回 HTTP 404；方法或服务未挂载时返回 `gateway/method-unavailable` / `gateway/service-unavailable` / `gateway/definition-unavailable`。插件据此做能力探测。
+- 带二进制附件的结果是 `multipart/form-data`（M0 未实现，M1 按需补）。
 
-### 5.2 认证与连接
+**mux 流**：WebSocket `/api/remote.mux`，每条文本帧一个 JSON：
 
-依据 `packages/client/connection/README.zh.md` 的"浏览器认证与请求信任"一节：
+| 方向 | 帧 |
+| --- | --- |
+| 客户端 → Host | `{ type: 'open', streamId, endpoint, payload: { args } }`、`{ type: 'item', streamId, value? }`、`{ type: 'end', streamId }`、`{ type: 'cancel', streamId }` |
+| Host → 客户端 | `{ type: 'item', streamId, value? }`、`{ type: 'error', streamId, error: { code, message, details } }`、`{ type: 'end', streamId }` |
 
-1. **建立 API Peer**：`GET /connect?token=<token>&interactions=answer`，返回 302、Mux 目标地址和签名的 API Cookie。
-   - `interactions=answer` 才能接收审批、提问等转发事件；不带时默认 `none`，这类事件收不到（订阅时会报 `gateway/interactions-forbidden`）。
-2. **一元调用**：HTTP POST `/api`，带上 API Cookie。
-3. **流**：WebSocket `/api/remote.mux`，带上同一个 Cookie。
-4. **生命周期**：这条 API WebSocket 关闭或 Host 重启后，Peer 就被移除，之后用这个 Cookie 的请求都会被拒绝，必须重新走 `/connect`。
-5. **信任检查**：请求的 `Host` 头必须是 loopback 或绑定地址；插件只连 `127.0.0.1`，满足要求。
+**转发事件**：打开 endpoint `$events`（`args: {}`）的流：
 
-### 5.3 客户端实现
+| 帧 | 含义 |
+| --- | --- |
+| `{ type: 'ready', clientId, host: { home } }` | 首帧 |
+| `{ type: 'emit', event, args }` | 通知，例如 `api-session/added`、`api-session/status`、`api-session/activity` |
+| `{ type: 'waterfall', event, eventId, agentId, request }` | 需要回答的请求，例如 `approval/request`、`user-questions/request`；`agentId` 就是 sessionId |
+| `{ type: 'cancel', eventId }` | Host 不再等待某个请求 |
 
-按 [DESIGN.md D5](./DESIGN.md#d5-自写精简-remote-客户端兼容一个版本范围)，插件**自己实现**精简客户端，只依赖 `ws`。需要实现的部分，以及可以对照的官方实现：
-
-| 部分 | 内容 | 官方实现（行为参考） |
-| --- | --- | --- |
-| connect | `/connect` 握手、Cookie 管理、令牌脱敏 | `packages/client/connection` |
-| unary | `POST /api` 请求/响应信封、错误码、multipart 附件结果 | `packages/client/connection`、`packages/api/gateway` |
-| mux | WebSocket 帧格式、逻辑流的打开/上行/半关闭/取消、`$events` ready、转发事件订阅 | `packages/api/gateway`（`./stream-protocol`） |
-| follow | 历史分页 + follow 开场快照、live chunk、`replace`/`prepend`/`append`/`settle-assistant`、序号缺口修复、重连 | `packages/api/session-controller` 的 `SessionEventStream` |
-
-dsh 和参考项目都是 MIT 协议；借鉴代码时在文件头保留原版权声明。
+回答 waterfall：一元调用 `$events/result`，`args` 为 `{ clientId, eventId, outcome }`，`outcome` 是 `{ kind: 'next' }`（不处理，交给下一个回答方）、`{ kind: 'result', value }` 或 `{ kind: 'rejected', error }`。**每个 waterfall 都必须回答**，否则 Host 会一直等待。
 
 ---
 
 ## 6. 会用到的 Remote 方法
 
-方法名来自参考项目（目标 dsh `0.2.0-rc.2`）和 dsh master 的各包 README；以 M0 实测的版本为准 **【待验证】**。
+"参数"列是 `args` 对象的写法。✅ 表示 M0 在 `0.2.1-rc.5` 上调用成功；其余来自参考项目（目标 `0.2.0-rc.2`）和 dsh 文档，用到时再验证。
 
-| 插件功能 | Remote 方法 / 事件 |
-| --- | --- |
-| Workspace | `workspace/initializeDefault`、`workspace/create`、`workspace/follow`、`workspace/archiveSession` |
-| 新建会话 | `session/create`（可指定目录、工作区、agent preset） |
-| 会话列表、搜索 | `session/list`、`session/search` |
-| 历史与流式跟随 | `session/page`（master 中已弃用，改为 `session/events`）、`session/follow` |
-| 会话状态与投影 | `session/control`、`session/projections`（`inbox`、`permissions`、`userQuestions` 等） |
-| 发送消息 | `session/prompt`（带 `requestId` 可幂等重试；支持图片和文件凭证） |
-| 停止 | `session/cancel` |
-| 排队消息 | `session/updateQueue` |
-| 重命名、fork | `session/rename`、`session/fork` |
-| 模型 | `session/modelCatalog`、`session/selectModel`、`session/initializeDefaultModel` |
-| 权限预设 | `permissionPresets/catalog` + 会话 `permissions` 投影 |
-| 审批 | `approval/request` 转发事件，回答决定 |
-| 向用户提问 | user-questions 转发事件；超时后的问题走 `userQuestions` 投影 + `userQuestions/answer`，`userQuestions/attachWait` 获取剩余等待时间 |
-| 斜杠命令 | `commands/list`、`commands/execute` |
-| `@` 文件引用 | `fileReferences/list` |
-| skill | `skills/list` |
-| 子 Agent | `subagents/list`、`subagents/prompt`、`subagents/interruptByParent` |
-| 目标 | `goals/get`、`goals/create`、`goals/pause`、`goals/resume`、`goals/clear` |
-| 后台任务 | `job/list`、`job/follow`、`job/kill` |
-| 读取工作区文件 | `workspaceFiles/list`、`stat`、`read`、`readBytes`、`changes` |
-| 每轮改动 | `workspace/changes` 会话事件 + 摘要/对比接口（Remote 方法名 **【待验证】**，由 `client/ui-deliverables` 的 Host 端提供） |
-| API Key | `credentials/describe`、`credentials/set`、`credentials/unset` |
-| 图片附件读取 | `session/attachment` |
+| 插件功能 | 方法 | 参数 | 状态 |
+| --- | --- | --- | --- |
+| 注册工作区 | `workspace/create` | `{ request: { path } }` → `{ workspace: { workspaceId, … }, created }` | ✅ |
+| 新建会话 | `session/create` | `{ request: { workspaceId, agentPreset? } }` → `{ sessionId }` | ✅ |
+| 会话列表 | `session/list` | `{ _request: { cursor? } }` → `{ items: SessionSummary[] }` | ✅ |
+| 历史与流式跟随 | `session/follow`（流） | `{ request: { address: { kind: 'session', sessionId }, assistantStream: true } }` | ✅ |
+| 历史分页 | `session/page`（rc.5、alpha.3）/ `session/events`（alpha.3 起） | `{ request: { address, throughSeq, beforeSeq?, maxMessages? } }` | ✅ |
+| 发送消息 | `session/prompt` | `{ request: { requestId, sessionId, mode: 'queue' \| 'steer', content: [{ type: 'text', text }] } }` | ✅ |
+| 停止 | `session/cancel` | `{ request: { sessionId } }` | ✅ |
+| 会话投影 | `session/projections` | `{ request: { sessionId } }` | ✅ |
+| 模型目录 | `session/modelCatalog` | `{}` → `{ default, groups: [{ id, name, models }] }` | ✅ |
+| 权限预设目录 | `permissionPresets/catalog` | `{}` → `{ options, defaultPreset }` | ✅ |
+| 斜杠命令 | `commands/list` | `{ agentId }` | ✅ |
+| `@` 文件引用 | `fileReferences/list` | `{ agentId, query }` | ✅ |
+| 审批 | `approval/request`（waterfall） | 回答 `{ kind: 'result', value: 'allowed-once' \| 'rejected' \| 'cancelled' }` | ✅ |
+| 向用户提问 | `user-questions/request`（waterfall） | 回答 `{ kind: 'result', value: { answers: [{ id, selected: [label], custom? }] } }` | ✅ |
+| 会话状态 | `session/control`（流） | `{}` | |
+| 排队消息 | `session/updateQueue` | `{ request: { sessionId, itemId, action } }` | |
+| 重命名、fork | `session/rename`、`session/fork` | `{ request: { sessionId, … } }` | |
+| 选择模型 | `session/selectModel` | `{ request: { sessionId, provider, model, reasoningEffort? } }` | |
+| 搜索 | `session/search` | `{ request: { query } }` | |
+| skill | `skills/list` | `{ request: { sessionId } }` | |
+| 超时后的问题 | `userQuestions/answer`、`userQuestions/attachWait` | 参考项目 RC.2 适配报告 | |
+| 每轮改动 | `workspace/changes` 事件 + 摘要/对比接口 | Remote 方法名 **【待验证】**（`client/ui-deliverables` 的 Host 端） | |
+| 读取工作区文件 | `workspaceFiles/list` `stat` `read` `readBytes` `changes` | | |
+| API Key | `credentials/describe`、`credentials/set`、`credentials/unset` | | |
+
+**审批请求的内容**（✅ 实测）：
+
+```json
+{ "toolName": "bash", "callId": "toolu_…", "reason": "escalate sandbox to danger-full-access: …",
+  "displayReason": { "en": "Allow this operation with danger-full-access permissions: …", "zh": "允许本次操作使用 danger-full-access 权限：…" } }
+```
+
+**什么时候会审批**（✅ 实测）：默认预设 `workspace-write` 下，工作区内的读写和普通命令**不触发审批**；模型调用 `bash`/`write` 等时带上 `sandbox_permissions: 'danger-full-access'` 和 `justification` 请求越过沙箱，才会发 `approval/request`（`packages/sandbox/sandbox/src/escalation.ts`）。被拒绝时，工具结果是 `isError: true` 的说明文字，模型会停下来解释。
 
 ---
 
 ## 7. 会话事件模型
 
-### 7.1 持久事件（核心）
+### 7.1 持久事件
 
-来自 `packages/core/session/src/types.ts` 的 `SessionEventMap`，其他包还会扩展更多事件类型：
+来自 `packages/core/session/src/types.ts` 的 `SessionEventMap`，其他包还会扩展更多事件类型。持久事件的线上结构是 `{ type, seq, time, data, surfaceOp?, sourceEventSeqs?, ignorable? }`，`seq` 在会话内连续递增（✅ 实测）。
 
 | 事件 | 含义 |
 | --- | --- |
-| `turn/start`、`turn/end`（带 `reason`） | 一轮开始/结束 |
+| `turn/start`、`turn/end`（带 `reason`） | 一轮开始/结束；用户停止时 `reason` 为 `{ kind: 'aborted', reason: { kind: 'user' } }` ✅ |
 | `step/start`、`step/end` | 一步（一次模型请求加它调用的工具） |
-| `user/message` | 用户消息 |
-| `assistant/message` | 助手完整消息（内含逐字流记录、Token 用量、是否被中断） |
+| `user/message` | 用户消息；**一轮里会有多条**：用户真正发的那条 `source` 为 `{ kind: 'user', rpcId }`，`rpcId` 等于发送时的 `requestId` ✅；其余是 dsh 注入的运行时上下文（`source.kind` 如 `runtime-context`），界面不展示 |
+| `assistant/message` | 助手完整消息：`{ turn, step, message, usage, stream }` ✅ |
 | `assistant/attempt` | 失败、重试、取消的尝试（不进入模型历史） |
-| `tool/call` | 工具调用：`callId`、`name`、`arguments`（JSON 字符串） |
-| `tool/result` | 工具结果：消息、错误、`meta`（文件修改类工具在这里带 `card: 'diff'` 展示数据） |
-| `system/message`、`developer/message`、`request/*` | 系统提示词、请求头等，UI 一般不展示 |
-| `workspace/changes` | 本轮改动摘要已生成（只带轮号） |
-| 计划、目标、任务、权限、预设等扩展事件 | 由各包定义 |
+| `tool/call` | `{ turn, step, callId, name, arguments }`，`arguments` 是 JSON 字符串 ✅ |
+| `tool/result` | `{ turn, step, message: { toolCallId, content, isError }, error?, meta? }` ✅ |
+| `approval/asked`、`approval/decided` | 审批的审计记录 ✅ |
+| `job/registered`、`job/settled` | bash 命令作为后台任务登记与结束 ✅ |
+| `workspace/changes` | 本轮改动摘要已生成，只带 `{ turn }` ✅ |
+| `session/title` 等 | 标题生成 |
+| `system/message`、`developer/message`、`request/*`、`agent/inbox/spliced`、`session-log-deepseek/*` | 内部事件，界面不展示 |
 
-### 7.2 实时流
+### 7.2 follow 流
 
-- 逐字输出不是持久事件。follow 流在开场快照和后续帧里携带活跃尝试的紧凑流，客户端把它们变成**只存在于客户端**的 live chunk 条目，夹在持久事件之间。
-- 持久的 `assistant/message` 或 `assistant/attempt` 到达后，结算对应的 live chunk；成功消息的临时条目保留到所属的 `step/end`，失败或中断的立即移除。
-- 发现序号缺口或尝试的版本/下标不连续时，重新打开 follow 修复。
-- 细节以 `packages/api/session-controller/README.zh.md` 中 `SessionEventStream` 的说明为准。
+`session/follow` 的帧（✅ 实测，`packages/api/session-controller/src/types.ts` 的 `SessionFollowFrame`）：
 
-### 7.3 两种改动数据
+| 帧 | 内容 |
+| --- | --- |
+| `{ type: 'snapshot', header, cursor, records, hasMore, projections, assistantStream? }` | 开场快照；`assistantStream.activeAttempt` 是正在进行的输出（紧凑记录：`text-chunks`、`reasoning-chunks`、`tool-call-chunks`，文本以数组存放） |
+| `{ type: 'event', event }` | 一条持久事件 |
+| `{ type: 'assistant-stream', frame }` | 逐字流：`start { attemptId, revision, turn, step, startedAfterSeq }`、`chunk { attemptId, index, chunk }`、`end { attemptId, outcome: committed \| abandoned }` |
 
-| | 单次工具调用 diff（`tool/result.meta`） | 每轮汇总（`workspace/changes`） |
+- `chunk.chunk` 是原始流片段：`block-start`、`text-delta { index, text }`、`reasoning-delta`、`tool-call-delta { index, id, name?, argumentsDelta }`、`block-end`、`usage`、`finish`。
+- 逐字帧的 `index` 连续递增；不连续时要重新打开 follow。
+- M0 实现了能跑通展示的最小合并规则（`packages/extension/src/dsh/remote/follow.ts`）；完整的结算语义（成功消息的临时条目保留到 `step/end`、版本号检查、缺口修复）在 M1 对照 `SessionEventStream` 补齐。
+
+### 7.3 改动数据
+
+| | 单次工具调用（`tool/result.meta`） | 每轮汇总（`workspace/changes`） |
 | --- | --- | --- |
-| 覆盖范围 | 文件工具（`write`/`edit`/`str_replace_editor`，`apply_patch` **【待验证】**） | 本轮所有改动，含 shell 命令造成的改动（需要 git） |
-| 内容 | 应用后的片段：`oldText`/`newText`，三行上下文，**没有行号，也没有完整的改动前文件** | 文件列表、增删行数、单文件对比片段（带三行上下文） |
-| 持久性 | 写在会话日志里，长期可用 | 只在 Host 内存中；Host 重启后之前轮次的都没了（`workspace-changes` README） |
-| 子 Agent | — | 子 Agent 会话不记录 |
+| 结构 | `{ operation?, path, diffs: [{ path, oldText, newText }] }` ✅ | 事件只带 `{ turn }`，摘要和单文件对比由 Host 服务提供 |
+| 覆盖范围 | 文件工具（`write`、`edit`；`apply_patch` **【待验证】**） | 本轮所有改动，含 shell 命令造成的改动（需要 git） |
+| 新建文件 | `operation: 'create'`，`diffs: []`；改动后的内容就是 `tool/call` 参数里的 `content` ✅ | |
+| 修改文件 | 每个片段带三行上下文；纯插入时 `oldText` 为 `null`；**没有行号，也没有完整的改动前文件** ✅ | 带三行上下文的片段 |
+| 路径 | 绝对路径 ✅ | 工作区内为相对路径 |
+| 持久性 | 写在会话日志里，长期可用 | 只在 Host 内存中；Host 重启后之前轮次的都没了 |
+
+补充：
+- 界面上的"diff 卡片"（`card: 'diff'`）是 dsh 展示层根据 `meta` 和工具参数**临时算出来的**，不会持久化（`packages/fs/tool-fs/src/write.ts`）。
+- dsh 要求**修改文件前必须先读过**，否则工具返回 `FS_NOT_OBSERVED` 错误 ✅。这是 dsh 自己的规则，插件不用处理，但假模型脚本要先 `read` 再 `edit`。
 
 ---
 
 ## 8. 版本策略
 
-- **支持一个版本范围**：最低版本在 M0 实测后确定；最高到当时的 dsh `latest`。`CHANGELOG.md` 写明每个插件版本支持的 dsh 范围。
-- **启动检查**：执行 `dsh --version`。低于最低版本时提示升级，不启动；高于已测试的最高版本时照常启动，并在状态栏提示。
-- **宽松解析**：入站数据用 zod 校验必需字段，未知字段忽略，未知事件跳过，单条数据解析失败只影响这一条，并写调试日志。
-- **能力探测**：调用返回"方法不存在"（404 / `-32601`）时，记录到 `capabilities`，界面隐藏对应功能，不报错。
-- **多版本测试**：CI 定时用最低支持版本、`latest`、`alpha` 跑集成测试；`alpha` 失败只提 issue，用来提前发现破坏性变更。
+- **支持范围**：最低 `0.2.1-rc.5`，已测试到 `0.2.2-alpha.3`（`packages/extension/src/runtime/version.ts`）。更早的版本没有测过，暂不支持；需要时再往下扩。
+- **启动检查**：执行 `dsh --version`。低于最低版本时提示升级，不启动；高于已测试的最高版本时照常启动，并提示"版本较新"。
+- **宽松解析**：入站数据用 zod 校验必需字段，未知字段保留或忽略，未知事件跳过，单条数据解析失败只影响这一条，并写调试日志。
+- **能力探测**：调用返回"方法不存在"时记录下来，界面隐藏对应功能，不报错。M0 已用它区分 `session/page` 和 `session/events`。
+- **多版本测试**：工作流 `.github/workflows/dsh-compat.yml` 每天用最低版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试。
 - **跟进变化**：关注 dsh 的 release notes 和仓库中 `.agents/notes/` 下的决策记录；参考项目的适配报告也是有用的信号。
 
 ---
 
-## 9. M0 技术验证清单
+## 9. M0 验证结果
 
-M0 的目标是确认主方案在当前 dsh 版本上的细节。任何一项走不通，都要更新 DESIGN.md。
+### 9.1 环境与方法
 
-- [ ] 启动 `dsh web --no-open --port …`，从 stdout 解析 URL 和令牌；确认 `--port 0` 是否可用
-- [ ] `/connect?token=…&interactions=answer` 拿到 Cookie，`ws` 连上 `/api/remote.mux`，收到 `$events` ready
-- [ ] 抓取 mux 的帧格式和 unary 的请求/响应信封，写成 zod schema
-- [ ] `session/list`、`session/create`、`session/prompt`，在 follow 流中收到 live chunk 和持久事件
-- [ ] `session/cancel` 停止进行中的轮次
-- [ ] 当前版本用的是 `session/page` 还是 `session/events`；旧版本是否兼容
-- [ ] 触发一次 `approval/request`，确认数据结构（含工具参数、可选项），在插件侧回答
-- [ ] 触发一次 `ask_user_question`（含超时后延迟回答）
-- [ ] 文件工具的 `tool/result.meta` 中 `card: 'diff'` 的结构；`apply_patch` 是否也有
-- [ ] `workspace/changes` 摘要和单文件对比对应的 Remote 方法
-- [ ] `permissionPresets/catalog` 读取和当前会话预设切换
-- [ ] 用临时 `DSH_HOME` + 本地假模型服务跑通一轮带工具调用的对话（确认如何把模型提供方指向本地地址）
-- [ ] 多个 VS Code 窗口各启动一个 `web` profile 的 Host 时是否冲突；与用户手动运行的 `dsh web` 是否冲突
-- [ ] 确定支持的最低 dsh 版本
+- dsh `0.2.1-rc.5`（npm `latest`）和 `0.2.2-alpha.3`（npm `alpha`），Node 24.22，Linux 容器
+- 临时 `DSH_HOME` 和临时 git 工作区，不读取任何用户数据
+- 模型使用本地假模型（`packages/extension/test/mock-model/server.ts`，兼容 Anthropic Messages API），由 `$DSH_HOME/settings.yaml` 的 `llm-deepseek.baseURL` 指过去，不需要真实 API Key
+- 冒烟脚本：`packages/extension/scripts/m0-smoke.ts`，使用插件自己的 `RuntimeManager` 和 `DshClient`
 
-**备选方案**：如果自写客户端在某个环节成本过高（例如 follow 流），评估在一个 Node ≥ 24 的独立子进程里加载 dsh 官方客户端库（与运行时同版本，从 dsh 安装目录加载），插件通过 stdio 和它通信。
+```bash
+pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
+```
+
+### 9.2 结果
+
+两个版本都是 **31/31 项通过**：
+
+| 场景 | 验证内容 |
+| --- | --- |
+| 启动 | 定位 dsh、版本检查、启动、从 stdout 解析 URL 和令牌 |
+| 连接 | `/connect` → Cookie → mux WebSocket → `$events` ready |
+| 会话 | `session/list`、`workspace/create`、`session/create`、`session/follow` 开场快照 |
+| hello | 逐字流（`start`/`chunk`/`end`）拼出完整回复，随后收到 `assistant/message` |
+| write | 新建文件写入工作区；`tool/result.meta` 为 `{ operation: 'create', diffs: [] }`；收到 `workspace/changes` |
+| edit | 先 `read` 再 `edit`；`meta.diffs` 带 `oldText`/`newText` |
+| bash | 工作区内命令直接执行，不触发审批 |
+| approval-allow | 请求 `danger-full-access` 的命令触发 `approval/request`，回答"允许一次"后执行 |
+| approval-reject | 回答"拒绝"后命令不执行，工具结果为错误说明 |
+| ask | `ask_user_question` 触发 `user-questions/request`，回答进入工具结果 |
+| cancel | 流式输出中途 `session/cancel`，轮次以"用户中止"结束，临时文本清除 |
+| 能力探测 | rc.5：`session/events` 不可用；alpha.3：`session/page` 和 `session/events` 都可用；其余探测方法都可用 |
+
+每个场景收到的 follow 帧已录制为 fixture（`packages/extension/test/fixtures/m0/`，临时路径和端口已替换成占位符），单元测试用它们回放。
+
+### 9.3 留给后续里程碑确认的事项
+
+| 事项 | 里程碑 |
+| --- | --- |
+| follow 流完整结算语义（对照 `SessionEventStream`），断线重连与缺口修复 | M1 |
+| 在真实 VS Code 中加载插件（本环境无法下载 VS Code，M0 用替身模块和 Chromium 渲染验证了视图接线和 Webview 产物） | M1 |
+| `workspace/changes` 摘要和单文件对比的 Remote 方法名 | M2 |
+| `apply_patch` 的 `meta` 是否也带 `diffs` | M2 |
+| 多个 VS Code 窗口各启动一个 `web` profile 的 Host、以及与用户手动运行的 `dsh web` 同时运行是否冲突 | M1 |
+| Windows（`dsh.cmd`、进程树结束）和 macOS | M5 |
+| GitHub Actions 上沙箱（bwrap 等）能否正常工作，决定兼容测试能否稳定运行 | 首次运行 `dsh-compat` 工作流时 |
 
 ---
 
 ## 10. 参考资料
 
-**dsh 仓库**（基线提交 `8bd0733`）：
+**dsh 仓库**：
 
 | 主题 | 路径 |
 | --- | --- |
 | 项目说明 | `README.zh.md` |
 | 架构（profile、事件、轮次流程） | `docs/architecture.zh.md` |
 | CLI 帮助 | `docs/cli-help.zh.md` |
-| 包分组地图 | `packages/README.zh.md` |
 | Web 应用组合包（启动 URL、就绪信号） | `packages/bundle/web-app/README.zh.md` |
-| 连接与认证 | `packages/client/connection/README.zh.md` |
-| API 网关 | `docs/api-gateway.zh.md`、`packages/api/README.zh.md` |
-| Node API 调用方示例 | `packages/api/gateway/tests/authenticated-node.client.spec.ts` |
-| 会话控制器（follow 流） | `packages/api/session-controller/README.zh.md` |
+| 连接与认证、一元调用信封 | `packages/client/connection/src/{browser-auth.ts,rpc-schema.ts,client/rpc.ts}` |
+| mux 与转发事件 | `packages/api/gateway/src/stream-protocol.ts`、`packages/api/gateway/src/client/remote-events.ts` |
+| 转发事件清单 | `packages/api/remotes/src/remote-events.ts` |
+| 会话控制器（请求类型、follow 帧） | `packages/api/session-controller/src/types.ts`、`README.zh.md` |
+| 流片段类型 | `packages/llm/llm/src/{types.ts,assistant-stream.ts}` |
+| 审批 | `packages/interaction/user-approval/src/types.ts`、`packages/sandbox/sandbox/src/escalation.ts` |
+| 提问 | `packages/interaction/user-questions/src/types.ts` |
+| 文件工具的 diff 元数据 | `packages/fs/tool-fs/src/{write.ts,diff.ts}` |
 | 改动记录 | `packages/deliverables/workspace-changes/README.zh.md` |
 | 权限预设 | `packages/interaction/permission-presets/README.zh.md` |
 | Desktop（`dsh` 命令、版本锁定） | `apps/desktop/README.zh.md` |

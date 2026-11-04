@@ -1,0 +1,34 @@
+# 用真实 dsh + 本地假模型跑 M0 冒烟测试（不需要 API Key）。
+# minimum：插件声明支持的最低版本；latest / alpha：提前发现 dsh 的破坏性变更。
+name: dsh compatibility
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: ['0.2.1-rc.5', latest, alpha]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # dsh 需要 Node >= 24.9
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install dsh ${{ matrix.dsh }}
+        run: npm install -g "@deepseek-ai/dsh@${{ matrix.dsh }}" && dsh --version
+      - name: Smoke test
+        run: pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report-${{ matrix.dsh }}
+          path: packages/extension/smoke-report.json

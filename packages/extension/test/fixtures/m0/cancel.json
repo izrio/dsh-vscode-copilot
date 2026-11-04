@@ -1,0 +1,236 @@
+[
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 127,
+      "time": 1793777741230,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "content": [
+              {
+                "type": "text",
+                "text": "M0_HOLD 慢慢回答"
+              }
+            ],
+            "source": {
+              "kind": "user",
+              "rpcId": "5108f206-c880-4154-96e4-ec207ca2739d"
+            },
+            "role": "user",
+            "id": "7dfd4a3a-f944-4419-aaac-d9a4562dc7c7"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/start",
+      "seq": 128,
+      "time": 1793777741231,
+      "data": {
+        "turn": 8
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 129,
+      "time": 1793777741232,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 130,
+      "time": 1793777741256,
+      "data": {
+        "turn": 8,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "user/message",
+      "seq": 131,
+      "time": 1793777741258,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "M0_HOLD 慢慢回答"
+          }
+        ],
+        "source": {
+          "kind": "user",
+          "rpcId": "5108f206-c880-4154-96e4-ec207ca2739d"
+        },
+        "role": "user",
+        "id": "7dfd4a3a-f944-4419-aaac-d9a4562dc7c7"
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:15",
+      "revision": 112,
+      "startedAfterSeq": 131,
+      "turn": 8,
+      "step": 1
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 132,
+      "time": 1793777741268,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 131
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:15",
+      "revision": 113,
+      "index": 0,
+      "time": 1793777741268,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:15",
+      "revision": 114,
+      "index": 1,
+      "time": 1793777741269,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "正在"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 133,
+      "time": 1793777741276,
+      "data": {
+        "turn": 8,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "正在"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash"
+          },
+          "id": "6e5af177-4553-489c-adb9-be00fae9a44d"
+        },
+        "interrupted": true,
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777741268,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777741269,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "正在"
+            ]
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:15",
+      "revision": 115,
+      "index": 2,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 133
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 134,
+      "time": 1793777741277,
+      "data": {
+        "turn": 8,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/end",
+      "seq": 135,
+      "time": 1793777741277,
+      "data": {
+        "turn": 8,
+        "reason": {
+          "kind": "aborted",
+          "reason": {
+            "kind": "user"
+          }
+        }
+      }
+    }
+  }
+]

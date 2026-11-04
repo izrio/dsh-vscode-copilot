@@ -31,7 +31,8 @@
 | 版本 | 变化 |
 | --- | --- |
 | v0.1 | 假设 dsh 是一个协议未知的远程服务，插件自己执行工具、做审批、改文件，自定义一套协议 |
-| **v0.2** | 调研 dsh 源码和参考项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 后重写。dsh（DeepSeek Harness）是**完整的开源 Agent 运行时**，插件改为**薄壳**：启动 dsh、连接 dsh、把 dsh 的会话数据转换成 Codex 风格界面，再补上 VS Code 集成。删除自研的工具层、审批引擎、改文件和执行命令模块、本地 Agent 循环、自定义协议（原 `PROTOCOL.md`）。新增界面设计原则（针对参考项目的界面问题） |
+| v0.2 | 调研 dsh 源码和参考项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 后重写。dsh（DeepSeek Harness）是**完整的开源 Agent 运行时**，插件改为**薄壳**：启动 dsh、连接 dsh、把 dsh 的会话数据转换成 Codex 风格界面，再补上 VS Code 集成。删除自研的工具层、审批引擎、改文件和执行命令模块、本地 Agent 循环、自定义协议（原 `PROTOCOL.md`）。新增界面设计原则（针对参考项目的界面问题） |
+| **v0.3** | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
 
 ---
 
@@ -173,9 +174,10 @@ P0 是 MVP 必须有的，P1 是正式版需要的，P2 后续再做。"dsh 能�
 
 插件**不定义任何权限规则**，全部沿用 dsh：
 
-- **权限预设**：工具条上的下拉框显示 dsh 返回的预设目录。默认是 `workspace-write` 和 `danger-full-access`，用户自定义的预设也会出现；当前设置不匹配任何预设时显示 `custom`。
+- **权限预设**：工具条上的下拉框显示 dsh 返回的预设目录（`permissionPresets/catalog`）。实测有 `read-only`、`workspace-write`（默认）、`danger-full-access` 三个，用户自定义的预设也会出现；当前设置不匹配任何预设时显示 `custom`。
 - **切换到 `danger-full-access`**：插件先弹出确认框，再提交给 dsh。
-- **审批卡片**：选项完全来自 dsh 的审批请求，插件只负责展示和回传。
+- **什么时候会审批**：在 `workspace-write` 下，工作区内的读写和普通命令不需要审批；只有模型请求越过沙箱（`sandbox_permissions`）时，dsh 才发审批请求。
+- **审批卡片**：dsh 的回答只有"允许一次 / 拒绝"（`allowed-once` / `rejected`），卡片显示请求自带的 `displayReason`（有中文），插件只负责展示和回传。
 - **未保存保护**：审批一个会写文件的工具时，如果目标文件在 VS Code 里有未保存内容，卡片会提示"先保存或放弃修改"，暂不放行（dsh 直接写磁盘，否则会和编辑器里的内容冲突；参考项目也是这样处理的）。
 - **未受信任的工作区**：插件不启动 dsh，需要用户先信任工作区。
 
@@ -314,7 +316,7 @@ sequenceDiagram
   participant D as dsh Host 进程
 
   P->>P: 定位 dsh，执行 dsh --version 检查是否在支持范围内
-  P->>D: spawn dsh web --no-open --port <空闲端口>（cwd = 工作区）
+  P->>D: spawn dsh --profile web --no-open --host 127.0.0.1 --port 0（cwd = 工作区）
   D-->>P: stdout 打印 http://127.0.0.1:<port>/?token=…
   P->>D: GET /connect?token=…&interactions=answer
   D-->>P: 302 + API Cookie
@@ -434,7 +436,7 @@ sequenceDiagram
 
 | 来源 | 内容 | 持久性 | 用途 |
 | --- | --- | --- | --- |
-| **单次工具调用**：`edit`/`write` 等工具的 `tool/result` 里带有 diff 展示数据（`card: 'diff'`，每个片段有 `oldText`/`newText` 和三行上下文） | 这一次调用改了什么 | **写在会话日志里**，Host 重启、重新打开会话都还在；不依赖 git | 活动行的增删行数、点击打开 Diff（P0） |
+| **单次工具调用**：`edit`/`write` 等工具的 `tool/result.meta` = `{ operation?, path, diffs: [{ oldText, newText }] }`，每个片段带三行上下文；新建文件时 `operation: 'create'`、`diffs` 为空，改动后内容取工具参数里的 `content`（[对接说明 7.3](./DSH-INTEGRATION.md#73-改动数据)） | 这一次调用改了什么 | **写在会话日志里**，Host 重启、重新打开会话都还在；不依赖 git | 活动行的增删行数、点击打开 Diff（P0） |
 | **每轮汇总**：`workspace/changes` 事件 + 摘要/对比接口 | 本轮所有改动的文件，包括 shell 命令造成的改动 | **只在 Host 内存中**，Host 重启后失效 | 本轮改动卡片（P1）；失效时退回"按工具调用汇总" |
 
 **还原改动前内容**（VS Code Diff 编辑器需要完整的改动前文件）：
@@ -580,10 +582,10 @@ type PendingInteraction =
 ### 6.3 启动
 
 ```bash
-dsh web --no-open --port <端口>
+dsh --profile web --no-open --host 127.0.0.1 --port 0
 ```
 
-- 端口：插件先找一个空闲端口传进去（参考项目的做法）；也可以试 `--port 0`，M0 确认哪种能稳定拿到实际端口
+- 端口：`--port 0` 由系统分配，实际端口从就绪 URL 中读取（M0 实测可用）；启动器参数（如 `--patch`）必须放在 `--no-open` 之前
 - `cwd` 设为当前工作区文件夹；远程开发时 dsh 运行在远端（插件声明 `"extensionKind": ["workspace"]`）
 - 环境变量：继承 VS Code 进程环境；VS Code 配置了 `http.proxy` 时，传 `HTTPS_PROXY` / `HTTP_PROXY`；可通过 `dsh.runtime.env` 追加
 - **就绪**：从 stdout 解析带 `?token=` 的 URL 行；60 秒内没出现视为启动失败，显示 stderr 最后几十行
@@ -755,15 +757,16 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 
 工期按 1 名全职开发估算，仅供参考。
 
-### M0：技术验证 + 脚手架（约 1 周）
+### M0：技术验证 + 脚手架（已完成）
 
-- [ ] 工程脚手架：pnpm workspace、空白侧边栏 Webview、CI 骨架
-- [ ] 协议客户端骨架：启动 `dsh web`、解析 URL → `/connect` → unary 调用 → mux 连接
-- [ ] 跑通：列出会话、新建会话、发 prompt、收到逐字流、停止
-- [ ] 本地假模型服务能驱动 dsh 跑完一轮带工具调用的对话
-- [ ] 对照 [dsh 对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-技术验证清单)确认方法名和数据结构
+- [x] 工程脚手架：pnpm workspace、侧边栏 Webview（显示运行时状态）、CI（类型检查、单测、构建、打包）
+- [x] 协议客户端骨架：启动 `dsh web`、解析 URL → `/connect` → unary 调用 → mux 连接 → `$events`
+- [x] 跑通：列出会话、新建会话、发 prompt、收到逐字流、停止
+- [x] 本地假模型服务驱动 dsh 跑完带工具调用的对话：写文件、改文件、命令、审批（允许/拒绝）、提问
+- [x] 确认方法名和数据结构，结果见 [dsh 对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)
+- [x] 支持范围：最低 `0.2.1-rc.5`，已测试到 `0.2.2-alpha.3`
 
-**验收**：验证报告更新到 DSH-INTEGRATION.md；确定支持的最低 dsh 版本。
+**留给 M1**：follow 流完整结算语义、在真实 VS Code 中加载验证、多窗口并发（[对接说明 9.3](./DSH-INTEGRATION.md#93-留给后续里程碑确认的事项)）。
 
 ### M1：运行时 + 基础对话（约 2 周）
 
@@ -832,13 +835,12 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 
 ## 14. 待确认事项
 
-需要你来决定：
-
-| # | 问题 | 当前假设 |
+| # | 问题 | 结论 / 当前假设 |
 | --- | --- | --- |
-| Q1 | 运行时获取方式：推荐用户安装 DeepSeek Desktop（自带 `dsh` 命令），同时支持 npm 安装，可以吗？ | 可以；插件不自己下载 dsh |
-| Q2 | 默认共用用户的 `web` profile，还是用独立 profile？ | 共用 `web`（与参考项目一致，配置互通） |
-| Q3 | 首版是否需要 DeepSeek 平台账号登录和余额显示，还是只支持 API Key？ | 只支持 API Key，账号登录跳转到 dsh Web UI |
-| Q4 | 参考项目里有哪些功能是你首版一定要的？（Trace 面板、余额、调试状态上下文、运行时终端、插件管理、Chat Participant 等） | 首版都不做，先把核心对话体验做好 |
-| Q5 | 你们会不会 fork 或定制 dsh（比如加插件、改默认配置）？ | 不 fork，直接用官方发布版本 |
-| Q6 | 分发方式：VS Code 市场 / Open VSX / 内部 vsix？ | 先出 vsix，稳定后再上市场 |
+| Q1 | 运行时获取方式：推荐用户安装 DeepSeek Desktop（自带 `dsh` 命令），同时支持 npm 安装，可以吗？ | 假设可以；插件不自己下载 dsh |
+| Q2 | 默认共用用户的 `web` profile，还是用独立 profile？ | 假设共用 `web`（与参考项目一致，配置互通） |
+| Q3 | 首版是否需要 DeepSeek 平台账号登录和余额显示，还是只支持 API Key？ | **已确认**：只支持 API Key |
+| Q4 | 参考项目里有哪些功能是你首版一定要的？ | **已确认**：首版都不做，先把核心对话体验做好 |
+| Q5 | 你们会不会 fork 或定制 dsh（比如加插件、改默认配置）？ | 假设不 fork，直接用官方发布版本 |
+| Q6 | 分发方式：VS Code 市场 / Open VSX / 内部 vsix？ | 假设先出 vsix，稳定后再上市场 |
+| Q7 | 插件的开源协议？ | 未定，`package.json` 暂写 `UNLICENSED` |

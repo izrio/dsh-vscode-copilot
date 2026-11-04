@@ -1,0 +1,735 @@
+[
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 95,
+      "time": 1793777740952,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "content": [
+              {
+                "type": "text",
+                "text": "M0_DENY 需要越权但会被拒绝"
+              }
+            ],
+            "source": {
+              "kind": "user",
+              "rpcId": "55d9106e-674a-4268-97c0-44ef6190c69d"
+            },
+            "role": "user",
+            "id": "9ee0cd79-cf28-459f-931e-01563c0d72d8"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/start",
+      "seq": 96,
+      "time": 1793777740953,
+      "data": {
+        "turn": 6
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 97,
+      "time": 1793777740954,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 98,
+      "time": 1793777740978,
+      "data": {
+        "turn": 6,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "user/message",
+      "seq": 99,
+      "time": 1793777740980,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "M0_DENY 需要越权但会被拒绝"
+          }
+        ],
+        "source": {
+          "kind": "user",
+          "rpcId": "55d9106e-674a-4268-97c0-44ef6190c69d"
+        },
+        "role": "user",
+        "id": "9ee0cd79-cf28-459f-931e-01563c0d72d8"
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 82,
+      "startedAfterSeq": 99,
+      "turn": 6,
+      "step": 1
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 100,
+      "time": 1793777740992,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 99
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 83,
+      "index": 0,
+      "time": 1793777740993,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 84,
+      "index": 1,
+      "time": 1793777740993,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+        "name": "bash",
+        "argumentsDelta": ""
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 85,
+      "index": 2,
+      "time": 1793777740993,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+        "argumentsDelta": "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 86,
+      "index": 3,
+      "time": 1793777740993,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+          "name": "bash",
+          "arguments": "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 87,
+      "index": 4,
+      "time": 1793777740993,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 88,
+      "index": 5,
+      "time": 1793777740994,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "tool-call"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 101,
+      "time": 1793777740994,
+      "data": {
+        "turn": 6,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+              "name": "bash",
+              "arguments": "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "1e52476e-ff35-451d-8a7b-3a92981799da"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777740993,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740993,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+            "name": "bash",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740993,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+            "args": [
+              "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740993,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+                "name": "bash",
+                "arguments": "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740993,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740994,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:11",
+      "revision": 89,
+      "index": 6,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 101
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/call",
+      "seq": 102,
+      "time": 1793777740995,
+      "data": {
+        "turn": 6,
+        "step": 1,
+        "callId": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+        "name": "bash",
+        "arguments": "{\"description\":\"Print a denied marker\",\"command\":\"echo m0-should-not-run\",\"sandbox_permissions\":\"danger-full-access\",\"justification\":\"M0 approval rejection test\"}"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "approval/asked",
+      "seq": 103,
+      "time": 1793777740999,
+      "data": {
+        "id": "07e453a1-6c51-4f29-9f42-17beefac49b5",
+        "toolName": "bash",
+        "callId": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+        "reason": "escalate sandbox to danger-full-access: M0 approval rejection test"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "approval/decided",
+      "seq": 104,
+      "time": 1793777741004,
+      "data": {
+        "id": "07e453a1-6c51-4f29-9f42-17beefac49b5",
+        "outcome": "rejected"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/result",
+      "seq": 105,
+      "time": 1793777741005,
+      "data": {
+        "turn": 6,
+        "step": 1,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "toolu_0cb613b4d2f74b0ca7c370a9448721ec"
+          },
+          "toolCallId": "toolu_0cb613b4d2f74b0ca7c370a9448721ec",
+          "content": [
+            {
+              "type": "text",
+              "text": "Error: the user rejected escalating this command to \"danger-full-access\"; it stays denied, so stop and explain instead of working around it"
+            }
+          ],
+          "isError": true,
+          "id": "398bd2f9-4157-40fc-93a5-b0bf00261eba"
+        }
+      },
+      "sourceEventSeqs": [
+        102
+      ],
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 106,
+      "time": 1793777741006,
+      "data": {
+        "turn": 6,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 107,
+      "time": 1793777741023,
+      "data": {
+        "turn": 6,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 90,
+      "startedAfterSeq": 107,
+      "turn": 6,
+      "step": 2
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 108,
+      "time": 1793777741035,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 107
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 91,
+      "index": 0,
+      "time": 1793777741036,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 92,
+      "index": 1,
+      "time": 1793777741036,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "命令被拒绝了。"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 93,
+      "index": 2,
+      "time": 1793777741065,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "text",
+          "text": "命令被拒绝了。"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 94,
+      "index": 3,
+      "time": 1793777741066,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 95,
+      "index": 4,
+      "time": 1793777741066,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "stop"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "text"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 109,
+      "time": 1793777741067,
+      "data": {
+        "turn": 6,
+        "step": 2,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "命令被拒绝了。"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "id": "08584cda-c16c-44ab-87d8-58dfa5d183ce"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777741036,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777741036,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "命令被拒绝了。"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741065,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "命令被拒绝了。"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741066,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741066,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "stop"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:12",
+      "revision": 96,
+      "index": 5,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 109
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 110,
+      "time": 1793777741067,
+      "data": {
+        "turn": 6,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/end",
+      "seq": 111,
+      "time": 1793777741086,
+      "data": {
+        "turn": 6,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  }
+]

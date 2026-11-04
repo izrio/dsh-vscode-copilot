@@ -1,0 +1,816 @@
+[
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 21,
+      "time": 1793777740236,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "content": [
+              {
+                "type": "text",
+                "text": "M0_WRITE 创建一个笔记文件"
+              }
+            ],
+            "source": {
+              "kind": "user",
+              "rpcId": "fa1ca266-f185-499d-a56a-0634e5eff918"
+            },
+            "role": "user",
+            "id": "8a6f60b6-f2a4-471d-bede-1f8ac8b6a41a"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/start",
+      "seq": 22,
+      "time": 1793777740236,
+      "data": {
+        "turn": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 23,
+      "time": 1793777740238,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 24,
+      "time": 1793777740270,
+      "data": {
+        "turn": 2,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "user/message",
+      "seq": 25,
+      "time": 1793777740273,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "M0_WRITE 创建一个笔记文件"
+          }
+        ],
+        "source": {
+          "kind": "user",
+          "rpcId": "fa1ca266-f185-499d-a56a-0634e5eff918"
+        },
+        "role": "user",
+        "id": "8a6f60b6-f2a4-471d-bede-1f8ac8b6a41a"
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 11,
+      "startedAfterSeq": 25,
+      "turn": 2,
+      "step": 1
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 26,
+      "time": 1793777740286,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 25
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 12,
+      "index": 0,
+      "time": 1793777740287,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 13,
+      "index": 1,
+      "time": 1793777740287,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "我来创建文件。"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 14,
+      "index": 2,
+      "time": 1793777740318,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "text",
+          "text": "我来创建文件。"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 15,
+      "index": 3,
+      "time": 1793777740319,
+      "chunk": {
+        "type": "block-start",
+        "index": 1,
+        "blockType": "tool-call"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 16,
+      "index": 4,
+      "time": 1793777740319,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 1,
+        "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+        "name": "write",
+        "argumentsDelta": ""
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 17,
+      "index": 5,
+      "time": 1793777740319,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 1,
+        "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+        "argumentsDelta": "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 18,
+      "index": 6,
+      "time": 1793777740319,
+      "chunk": {
+        "type": "block-end",
+        "index": 1,
+        "block": {
+          "type": "tool-call",
+          "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+          "name": "write",
+          "arguments": "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 19,
+      "index": 7,
+      "time": 1793777740320,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 20,
+      "index": 8,
+      "time": 1793777740320,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "text"
+            },
+            {
+              "type": "tool-call"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 27,
+      "time": 1793777740321,
+      "data": {
+        "turn": 2,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "我来创建文件。"
+            },
+            {
+              "type": "tool-call",
+              "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+              "name": "write",
+              "arguments": "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                },
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "f52f4cd8-abca-4b2b-a040-aee55aae00ce"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777740287,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777740287,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "我来创建文件。"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740318,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "我来创建文件。"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740319,
+            "chunk": {
+              "type": "block-start",
+              "index": 1,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740319,
+            "index": 1,
+            "dt": [],
+            "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+            "name": "write",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740319,
+            "index": 1,
+            "dt": [],
+            "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+            "args": [
+              "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740319,
+            "chunk": {
+              "type": "block-end",
+              "index": 1,
+              "block": {
+                "type": "tool-call",
+                "id": "toolu_21420c02ffbc486d9dc0647432947e65",
+                "name": "write",
+                "arguments": "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740320,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740320,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  },
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:2",
+      "revision": 21,
+      "index": 9,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 27
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/call",
+      "seq": 28,
+      "time": 1793777740324,
+      "data": {
+        "turn": 2,
+        "step": 1,
+        "callId": "toolu_21420c02ffbc486d9dc0647432947e65",
+        "name": "write",
+        "arguments": "{\"file_path\":\"notes/m0.txt\",\"content\":\"line one\\nline two\\n\"}"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/result",
+      "seq": 29,
+      "time": 1793777740345,
+      "data": {
+        "turn": 2,
+        "step": 1,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "toolu_21420c02ffbc486d9dc0647432947e65"
+          },
+          "toolCallId": "toolu_21420c02ffbc486d9dc0647432947e65",
+          "content": [
+            {
+              "type": "text",
+              "text": "<path>/tmp/dsh-m0/workspace/notes/m0.txt</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+            }
+          ],
+          "isError": false,
+          "id": "13bb8830-fee2-41e5-879c-ad4226ba8107"
+        },
+        "meta": {
+          "operation": "create",
+          "path": "/tmp/dsh-m0/workspace/notes/m0.txt",
+          "diffs": []
+        }
+      },
+      "sourceEventSeqs": [
+        28
+      ],
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 30,
+      "time": 1793777740346,
+      "data": {
+        "turn": 2,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 31,
+      "time": 1793777740364,
+      "data": {
+        "turn": 2,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 22,
+      "startedAfterSeq": 31,
+      "turn": 2,
+      "step": 2
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 32,
+      "time": 1793777740376,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 31
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 23,
+      "index": 0,
+      "time": 1793777740377,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 24,
+      "index": 1,
+      "time": 1793777740377,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "文件已创建。"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 25,
+      "index": 2,
+      "time": 1793777740406,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "text",
+          "text": "文件已创建。"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 26,
+      "index": 3,
+      "time": 1793777740407,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 27,
+      "index": 4,
+      "time": 1793777740407,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "stop"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "text"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 33,
+      "time": 1793777740408,
+      "data": {
+        "turn": 2,
+        "step": 2,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "文件已创建。"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "id": "3048ff30-c25c-4f31-ae98-54884e595843"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777740377,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777740377,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "文件已创建。"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740406,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "文件已创建。"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740407,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740407,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "stop"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:3",
+      "revision": 28,
+      "index": 5,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 33
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 34,
+      "time": 1793777740408,
+      "data": {
+        "turn": 2,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "workspace/changes",
+      "seq": 35,
+      "time": 1793777740438,
+      "data": {
+        "turn": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/end",
+      "seq": 36,
+      "time": 1793777740439,
+      "data": {
+        "turn": 2,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  }
+]

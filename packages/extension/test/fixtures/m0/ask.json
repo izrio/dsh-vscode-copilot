@@ -1,0 +1,709 @@
+[
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 112,
+      "time": 1793777741096,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "content": [
+              {
+                "type": "text",
+                "text": "M0_ASK 问我一个问题"
+              }
+            ],
+            "source": {
+              "kind": "user",
+              "rpcId": "79b4a4f3-2200-4b0e-a42e-71fa521f1f93"
+            },
+            "role": "user",
+            "id": "f8e4f81d-9ec1-4689-81ba-a9315008f04f"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/start",
+      "seq": 113,
+      "time": 1793777741096,
+      "data": {
+        "turn": 7
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 114,
+      "time": 1793777741097,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 115,
+      "time": 1793777741121,
+      "data": {
+        "turn": 7,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "user/message",
+      "seq": 116,
+      "time": 1793777741123,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "M0_ASK 问我一个问题"
+          }
+        ],
+        "source": {
+          "kind": "user",
+          "rpcId": "79b4a4f3-2200-4b0e-a42e-71fa521f1f93"
+        },
+        "role": "user",
+        "id": "f8e4f81d-9ec1-4689-81ba-a9315008f04f"
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 97,
+      "startedAfterSeq": 116,
+      "turn": 7,
+      "step": 1
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 117,
+      "time": 1793777741134,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 116
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 98,
+      "index": 0,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 99,
+      "index": 1,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+        "name": "ask_user_question",
+        "argumentsDelta": ""
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 100,
+      "index": 2,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+        "argumentsDelta": "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 101,
+      "index": 3,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+          "name": "ask_user_question",
+          "arguments": "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 102,
+      "index": 4,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 103,
+      "index": 5,
+      "time": 1793777741135,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "tool-call"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 118,
+      "time": 1793777741136,
+      "data": {
+        "turn": 7,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+              "name": "ask_user_question",
+              "arguments": "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "1bd68020-521a-4441-9695-733c37ab467d"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777741135,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777741135,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+            "name": "ask_user_question",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777741135,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+            "args": [
+              "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741135,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+                "name": "ask_user_question",
+                "arguments": "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741135,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741135,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:13",
+      "revision": 104,
+      "index": 6,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 118
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/call",
+      "seq": 119,
+      "time": 1793777741137,
+      "data": {
+        "turn": 7,
+        "step": 1,
+        "callId": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+        "name": "ask_user_question",
+        "arguments": "{\"questions\":[{\"id\":\"scope\",\"question\":\"改动范围？\",\"options\":[{\"label\":\"只改测试\"},{\"label\":\"一起改实现\"}]}]}"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/result",
+      "seq": 120,
+      "time": 1793777741146,
+      "data": {
+        "turn": 7,
+        "step": 1,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "toolu_ffab070cae7940a9abd18b7b6f1e6a71"
+          },
+          "toolCallId": "toolu_ffab070cae7940a9abd18b7b6f1e6a71",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"answers\":[{\"id\":\"scope\",\"selected\":[\"只改测试\"]}]}"
+            }
+          ],
+          "isError": false,
+          "id": "1ae2c6e0-ca77-4237-8574-4778eaaf72d1"
+        }
+      },
+      "sourceEventSeqs": [
+        119
+      ],
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 121,
+      "time": 1793777741147,
+      "data": {
+        "turn": 7,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 122,
+      "time": 1793777741162,
+      "data": {
+        "turn": 7,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 105,
+      "startedAfterSeq": 122,
+      "turn": 7,
+      "step": 2
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 123,
+      "time": 1793777741170,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 122
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 106,
+      "index": 0,
+      "time": 1793777741171,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 107,
+      "index": 1,
+      "time": 1793777741171,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "收到你的选择。"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 108,
+      "index": 2,
+      "time": 1793777741201,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "text",
+          "text": "收到你的选择。"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 109,
+      "index": 3,
+      "time": 1793777741202,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 110,
+      "index": 4,
+      "time": 1793777741202,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "stop"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "text"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 124,
+      "time": 1793777741203,
+      "data": {
+        "turn": 7,
+        "step": 2,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "收到你的选择。"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "id": "94a260f4-c6e2-4c7f-9e94-d134e032a55d"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777741171,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777741171,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "收到你的选择。"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741201,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "收到你的选择。"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741202,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777741202,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "stop"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:14",
+      "revision": 111,
+      "index": 5,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 124
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 125,
+      "time": 1793777741204,
+      "data": {
+        "turn": 7,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/end",
+      "seq": 126,
+      "time": 1793777741222,
+      "data": {
+        "turn": 7,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  }
+]

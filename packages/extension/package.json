@@ -1,0 +1,104 @@
+{
+  "name": "dsh-copilot",
+  "displayName": "DSH Copilot",
+  "description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。",
+  "version": "0.0.1",
+  "publisher": "izrio",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/izrio/dsh-vscode-copilot.git"
+  },
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。"
+    }
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "dsh",
+          "title": "DSH",
+          "icon": "media/dsh.svg"
+        }
+      ]
+    },
+    "views": {
+      "dsh": [
+        {
+          "type": "webview",
+          "id": "dsh.chatView",
+          "name": "对话"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dsh.openChat",
+        "title": "打开对话",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.restartRuntime",
+        "title": "重启 dsh",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.showLogs",
+        "title": "查看日志",
+        "category": "DSH"
+      }
+    ],
+    "configuration": {
+      "title": "DSH",
+      "properties": {
+        "dsh.runtime.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "dsh 可执行文件的路径。留空时在 `PATH` 中查找（DeepSeek Desktop 安装的 `dsh` 命令，或 `npm install -g @deepseek-ai/dsh`）。"
+        },
+        "dsh.runtime.profile": {
+          "type": "string",
+          "default": "web",
+          "markdownDescription": "启动 dsh 时使用的 profile。默认 `web`，与你自己运行的 `dsh web` 共用模型、API Key 和权限预设。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json",
+    "smoke": "tsx scripts/m0-smoke.ts",
+    "package": "vsce package --no-dependencies --skip-license"
+  },
+  "dependencies": {
+    "@dsh-copilot/shared": "workspace:*",
+    "ws": "^8.18.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "~1.106.0",
+    "@types/ws": "^8.18.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -1,0 +1,755 @@
+[
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 59,
+      "time": 1793777740655,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "inserted": [
+          {
+            "content": [
+              {
+                "type": "text",
+                "text": "M0_BASH 运行一个命令"
+              }
+            ],
+            "source": {
+              "kind": "user",
+              "rpcId": "82cc6d26-ca9e-46b4-9219-08724021aa89"
+            },
+            "role": "user",
+            "id": "19a8d458-62c7-4acd-ac76-0d2112e74028"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/start",
+      "seq": 60,
+      "time": 1793777740655,
+      "data": {
+        "turn": 4
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "agent/inbox/spliced",
+      "seq": 61,
+      "time": 1793777740656,
+      "data": {
+        "target": "next-turn",
+        "start": 0,
+        "removedCount": 1,
+        "inserted": []
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 62,
+      "time": 1793777740679,
+      "data": {
+        "turn": 4,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "user/message",
+      "seq": 63,
+      "time": 1793777740680,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "M0_BASH 运行一个命令"
+          }
+        ],
+        "source": {
+          "kind": "user",
+          "rpcId": "82cc6d26-ca9e-46b4-9219-08724021aa89"
+        },
+        "role": "user",
+        "id": "19a8d458-62c7-4acd-ac76-0d2112e74028"
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 52,
+      "startedAfterSeq": 63,
+      "turn": 4,
+      "step": 1
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 64,
+      "time": 1793777740690,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 63
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 53,
+      "index": 0,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 54,
+      "index": 1,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+        "name": "bash",
+        "argumentsDelta": ""
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 55,
+      "index": 2,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+        "argumentsDelta": "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 56,
+      "index": 3,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+          "name": "bash",
+          "arguments": "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 57,
+      "index": 4,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 58,
+      "index": 5,
+      "time": 1793777740691,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "tool-call"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 65,
+      "time": 1793777740691,
+      "data": {
+        "turn": 4,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+              "name": "bash",
+              "arguments": "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "ef8f2e08-dc12-478f-aedd-f002f45343ca"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777740691,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740691,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+            "name": "bash",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 1793777740691,
+            "index": 0,
+            "dt": [],
+            "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+            "args": [
+              "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740691,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+                "name": "bash",
+                "arguments": "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740691,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740691,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:7",
+      "revision": 59,
+      "index": 6,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 65
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/call",
+      "seq": 66,
+      "time": 1793777740692,
+      "data": {
+        "turn": 4,
+        "step": 1,
+        "callId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+        "name": "bash",
+        "arguments": "{\"description\":\"Print a marker\",\"command\":\"echo m0-bash-ok\"}"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "job/registered",
+      "seq": 67,
+      "time": 1793777740700,
+      "data": {
+        "jobId": "bash-9bdd92fcccdc44ce",
+        "owner": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "kind": "bash",
+        "label": "echo m0-bash-ok",
+        "startedAt": 1793777740700,
+        "toolCall": {
+          "callId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+          "rootCallId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00"
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "job/settled",
+      "seq": 68,
+      "time": 1793777740721,
+      "data": {
+        "jobId": "bash-9bdd92fcccdc44ce",
+        "owner": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "kind": "bash",
+        "label": "echo m0-bash-ok",
+        "startedAt": 1793777740700,
+        "toolCall": {
+          "callId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+          "rootCallId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00"
+        },
+        "finishedAt": 1793777740721,
+        "status": "completed",
+        "cause": "producer",
+        "producerReported": true,
+        "detail": "exit code: 0"
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "tool/result",
+      "seq": 69,
+      "time": 1793777740723,
+      "data": {
+        "turn": 4,
+        "step": 1,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00"
+          },
+          "toolCallId": "toolu_6c909aac0c134d6f9daa64e2ba3fbf00",
+          "content": [
+            {
+              "type": "text",
+              "text": "m0-bash-ok\n"
+            }
+          ],
+          "isError": false,
+          "id": "46e250d3-40ad-4ee6-8cfb-82d2c95198de"
+        },
+        "meta": {
+          "cwd": "/tmp/dsh-m0/workspace"
+        }
+      },
+      "sourceEventSeqs": [
+        66
+      ],
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 70,
+      "time": 1793777740724,
+      "data": {
+        "turn": 4,
+        "step": 1
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/start",
+      "seq": 71,
+      "time": 1793777740738,
+      "data": {
+        "turn": 4,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "start",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 60,
+      "startedAfterSeq": 71,
+      "turn": 4,
+      "step": 2
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 72,
+      "time": 1793777740747,
+      "data": {
+        "sessionId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb",
+        "sessionFormatVersion": 4,
+        "throughSeq": 71
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 61,
+      "index": 0,
+      "time": 1793777740748,
+      "chunk": {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "text"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 62,
+      "index": 1,
+      "time": 1793777740748,
+      "chunk": {
+        "type": "text-delta",
+        "index": 0,
+        "text": "命令已执行。"
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 63,
+      "index": 2,
+      "time": 1793777740778,
+      "chunk": {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "text",
+          "text": "命令已执行。"
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 64,
+      "index": 3,
+      "time": 1793777740778,
+      "chunk": {
+        "type": "usage",
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        }
+      }
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "chunk",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 65,
+      "index": 4,
+      "time": 1793777740778,
+      "chunk": {
+        "type": "finish",
+        "reason": {
+          "kind": "stop"
+        },
+        "replayState": {
+          "response": {
+            "kind": "deepseek-messages",
+            "version": 1,
+            "model": "deepseek-flash"
+          },
+          "blocks": [
+            {
+              "type": "text"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "assistant/message",
+      "seq": 73,
+      "time": 1793777740779,
+      "data": {
+        "turn": 4,
+        "step": 2,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "命令已执行。"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "deepseek-flash",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "deepseek-flash"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "id": "5e4ee1af-d39c-4c2c-a0f6-badcfe8b0849"
+        },
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 5,
+          "totalTokens": 15
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 1793777740748,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "text"
+            }
+          },
+          {
+            "type": "text-chunks",
+            "time0": 1793777740748,
+            "index": 0,
+            "dt": [],
+            "texts": [
+              "命令已执行。"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740778,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "text",
+                "text": "命令已执行。"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740778,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 10,
+                "outputTokens": 5,
+                "totalTokens": 15
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 1793777740778,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "stop"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "deepseek-flash"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    }
+  },
+  {
+    "type": "assistant-stream",
+    "frame": {
+      "type": "end",
+      "attemptId": "session-7329385b-3125-446b-9998-ff3b18fc8fcb:8",
+      "revision": 66,
+      "index": 5,
+      "outcome": {
+        "kind": "committed",
+        "eventType": "assistant/message",
+        "seq": 73
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "step/end",
+      "seq": 74,
+      "time": 1793777740780,
+      "data": {
+        "turn": 4,
+        "step": 2
+      }
+    }
+  },
+  {
+    "type": "event",
+    "event": {
+      "type": "turn/end",
+      "seq": 75,
+      "time": 1793777740795,
+      "data": {
+        "turn": 4,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    }
+  }
+]
