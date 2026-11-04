@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
 import type {
+  CommandView,
   ConnectionState,
+  ContextState,
+  FileCandidate,
   Item,
   ModelState,
   PendingInteraction,
@@ -25,7 +28,16 @@ const diffRefSchema = z.discriminatedUnion('kind', [
 
 export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), payload: empty }),
-  z.object({ type: z.literal('sendMessage'), payload: z.object({ text: z.string().min(1).max(200_000) }) }),
+  z.object({
+    type: z.literal('sendMessage'),
+    payload: z.object({
+      text: z.string().min(1).max(200_000),
+      /** 是否附带当前编辑器（输入框上方的标签被关掉时为 false）。 */
+      includeActive: z.boolean().optional(),
+    }),
+  }),
+  z.object({ type: z.literal('searchFiles'), payload: z.object({ requestId: z.number().int(), query: z.string().max(1_000) }) }),
+  z.object({ type: z.literal('removeAttachment'), payload: z.object({ id: z.string().min(1) }) }),
   z.object({ type: z.literal('interrupt'), payload: empty }),
   z.object({ type: z.literal('newSession'), payload: empty }),
   z.object({ type: z.literal('switchSession'), payload: z.object({ sessionId: z.string().min(1) }) }),
@@ -53,7 +65,10 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
     ]),
   }),
   z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema }) }),
-  z.object({ type: z.literal('openFile'), payload: z.object({ path: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('openFile'),
+    payload: z.object({ path: z.string().min(1), startLine: z.number().int().positive().optional(), endLine: z.number().int().positive().optional() }),
+  }),
   z.object({ type: z.literal('selectPermission'), payload: z.object({ preset: z.string().min(1) }) }),
   z.object({ type: z.literal('saveAll'), payload: empty }),
 ]);
@@ -70,6 +85,8 @@ export interface HostSnapshot {
   readonly interactions: readonly PendingInteraction[];
   readonly permissions: PermissionState;
   readonly workspace: WorkspaceState;
+  readonly context: ContextState;
+  readonly commands: readonly CommandView[];
 }
 
 /**
@@ -94,6 +111,9 @@ export type HostToWebview =
   | { readonly type: 'interactions'; readonly payload: readonly PendingInteraction[] }
   | { readonly type: 'permissions'; readonly payload: PermissionState }
   | { readonly type: 'workspace'; readonly payload: WorkspaceState }
+  | { readonly type: 'context'; readonly payload: ContextState }
+  | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
+  | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }
   | { readonly type: 'focusComposer'; readonly payload: Record<string, never> };
 

@@ -1,8 +1,12 @@
 export type { RuntimeStatus } from './runtime.ts';
 export type {
+  AttachmentView,
   ChangedFileView,
+  CommandView,
   ConnectionState,
+  ContextState,
   DiffRef,
+  FileCandidate,
   Item,
   LineStats,
   ModelOption,

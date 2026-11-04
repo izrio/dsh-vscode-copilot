@@ -1,9 +1,11 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
 import { memo, useState, type ReactNode } from 'react';
 import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
+import { splitMentions } from '../mentions.ts';
 import { postToHost } from '../vscode.ts';
+import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
-import { ChevronRightIcon, ErrorIcon, FileEditIcon, InfoIcon, SearchIcon, SpinnerIcon, TerminalIcon, ToolIcon } from './icons.tsx';
+import { ChevronRightIcon, ErrorIcon, FileEditIcon, FileIcon, InfoIcon, SearchIcon, SelectionIcon, SpinnerIcon, TerminalIcon, ToolIcon } from './icons.tsx';
 
 type Of<K extends Item['kind']> = Extract<Item, { kind: K }>;
 
@@ -27,7 +29,21 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
 function UserBubble({ item }: { item: Of<'user'> }) {
   return (
     <div className={`user ${item.pending ? `user--${item.pending}` : ''}`}>
-      <div className="user__bubble">{item.text}</div>
+      {item.text ? (
+        <div className="user__bubble">
+          <UserText text={item.text} />
+        </div>
+      ) : null}
+      {item.attachments?.length ? (
+        <div className="user__attachments">
+          {item.attachments.map((a) => (
+            <button key={attachmentLabel(a) + a.path} type="button" className="chip chip--small" onClick={() => openAttachment(a)} title={`打开 ${a.path}`}>
+              {a.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
+              <span className="chip__label">{attachmentLabel(a)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {item.pending === 'queued' ? <div className="user__meta">排队中，当前回复结束后发送</div> : null}
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
@@ -41,6 +57,23 @@ function UserBubble({ item }: { item: Of<'user'> }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** 用户消息正文：`@路径` 显示成可点击的引用。 */
+function UserText({ text }: { text: string }) {
+  return (
+    <>
+      {splitMentions(text).map((part, index) =>
+        part.kind === 'text' ? (
+          part.text
+        ) : (
+          <button key={index} type="button" className="mention" onClick={() => postToHost({ type: 'openFile', payload: { path: part.path } })} title={`打开 ${part.path}`}>
+            {part.text}
+          </button>
+        ),
+      )}
+    </>
   );
 }
 

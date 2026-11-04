@@ -6,7 +6,9 @@
  */
 import { isAbsolute, resolve } from 'node:path';
 import type {
+  CommandView,
   ConnectionState,
+  ContextState,
   DiffRef,
   HostSnapshot,
   HostToWebview,
@@ -27,8 +29,18 @@ import { InteractionService, type Pending } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { SessionService } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
+import {
+  isTemplate,
+  parseSlash,
+  PLUGIN_COMMANDS,
+  templatePrompt,
+  withContext,
+  type ContextAttachment,
+  type SelectionContext,
+  type TemplateName,
+} from './context.ts';
 import { displayPath, project, toolVariant, type ToolCallInfo } from './projector.ts';
-import { noWorkbench, type Workbench } from './workbench.ts';
+import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
 
 export interface ChatControllerOptions {
   readonly workspacePath: string;
@@ -43,13 +55,26 @@ export interface ChatControllerOptions {
   readonly openWebUI: () => void;
   /** 当前模型的显示名变化时调用（状态栏用）。 */
   readonly onModelChange?: (label: string | undefined) => void;
-  /** 打开 Diff、未保存文件、确认框。 */
+  /** 打开 Diff、未保存文件、确认框、当前编辑器。 */
   readonly workbench?: Workbench;
+  /** 设置 `dsh.context.includeActiveEditor`：默认附带当前编辑器。 */
+  readonly includeActiveEditor?: () => boolean;
   readonly renderDelayMs?: number;
 }
 
 const NEW_SESSION_TITLE = '新对话';
 const DANGER_PRESET = 'danger-full-access';
+/** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
+const HIDDEN_DSH_COMMANDS = new Set(['export']);
+
+export interface SendOptions {
+  /** 附带当前编辑器（默认 true；输入框上方的标签被关掉时为 false）。 */
+  readonly includeActive?: boolean;
+  /** 额外附带的上下文（右键菜单的选区）。 */
+  readonly extra?: readonly ContextAttachment[];
+  /** 附带选区的诊断信息（/fix）。 */
+  readonly diagnostics?: boolean;
+}
 
 export class ChatController {
   private runtime: RuntimeStatus = { kind: 'idle' };
@@ -73,6 +98,11 @@ export class ChatController {
   private toolCalls: ReadonlyMap<string, ToolCallInfo> = new Map();
   /** 改动汇总来自哪个 Host；Host 重启（换了端口）后内存里的汇总都没了，要重新读取。 */
   private changesOrigin: string | undefined;
+  /** 用「添加到对话」固定的上下文，发送后清空。 */
+  private pinned: (ContextAttachment & { id: string })[] = [];
+  private pinCounter = 0;
+  /** dsh 的斜杠命令目录（各会话相同），打开会话时读取。 */
+  private dshCommands: CommandView[] = [];
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private serviceGeneration = 0;
 
@@ -80,7 +110,7 @@ export class ChatController {
   private sentSessionKey: string | undefined;
   private sentItems = new Map<string, string>();
   private sentOrder: readonly string[] = [];
-  private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '' };
+  private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '', context: '', commands: '' };
 
   constructor(private readonly options: ChatControllerOptions) {
     this.activeId = options.loadActiveSessionId();
@@ -97,9 +127,38 @@ export class ChatController {
     this.interactions?.dispose();
   }
 
-  /** 编辑器里文件的未保存状态变化时调用。 */
+  /** 编辑器里文件的未保存状态、当前编辑器或选区变化时调用。 */
   workspaceChanged(): void {
     this.scheduleRender();
+  }
+
+  /** 右键菜单「解释 / 修复 / 写测试」：带上当前选区（没有选区时是当前文件）立即发送。 */
+  async askAboutSelection(template: TemplateName): Promise<void> {
+    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    if (!attachment) {
+      this.toast('info', '先在编辑器里打开文件或选中代码');
+      return;
+    }
+    await this.send(templatePrompt(template, ''), { includeActive: false, extra: [attachment], diagnostics: template === 'fix' });
+  }
+
+  /** 右键菜单「添加到对话」：固定当前选区（或文件），下一条消息发送时附带。 */
+  pinActiveEditor(): void {
+    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    if (!attachment) {
+      this.toast('info', '先在编辑器里打开文件或选中代码');
+      return;
+    }
+    this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
+    this.scheduleRender();
+    this.options.post({ type: 'focusComposer', payload: {} });
+  }
+
+  private snapshotAttachment(editor: EditorSnapshot | undefined): ContextAttachment | undefined {
+    if (!editor) return undefined;
+    if (!editor.selection) return { kind: 'file', path: editor.path };
+    const { startLine, endLine, text, diagnostics } = editor.selection;
+    return { kind: 'selection', path: editor.path, startLine, endLine, languageId: editor.languageId, text, ...(diagnostics.length ? { diagnostics } : {}) };
   }
 
   setRuntimeStatus(status: RuntimeStatus): void {
@@ -153,6 +212,9 @@ export class ChatController {
         if (generation !== this.serviceGeneration) return;
         if (this.activeId !== restoredId) return;
         // 上次打开的会话已经不在列表里（被删除或不属于这个工作区）时，回到新对话
+        // 斜杠命令目录与会话无关，任选一个已有会话读取，新对话里也能补全 dsh 命令
+        const anySession = service.sessions.find((s) => s.sessionId === restoredId)?.sessionId ?? service.sessions[0]?.sessionId;
+        if (anySession) this.loadCommands(anySession);
         if (restoredId && !service.sessions.some((s) => s.sessionId === restoredId)) {
           this.options.log(`上次打开的会话 ${restoredId} 已不存在，改为新对话`);
           this.setActive(undefined);
@@ -177,6 +239,8 @@ export class ChatController {
     this.sentJson = {
       sessions: JSON.stringify(view.sessions),
       session: JSON.stringify(view.session),
+      context: JSON.stringify(view.context),
+      commands: JSON.stringify(view.commands),
       models: JSON.stringify(view.models),
       interactions: JSON.stringify(view.interactions),
       permissions: JSON.stringify(view.permissions),
@@ -192,6 +256,8 @@ export class ChatController {
       interactions: view.interactions,
       permissions: view.permissions,
       workspace: view.workspace,
+      context: view.context,
+      commands: view.commands,
     };
   }
 
@@ -201,7 +267,13 @@ export class ChatController {
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
       case 'sendMessage':
-        return this.send(message.payload.text);
+        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true });
+      case 'searchFiles':
+        return this.searchFiles(message.payload.requestId, message.payload.query);
+      case 'removeAttachment':
+        this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
+        this.scheduleRender();
+        return;
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
@@ -245,8 +317,10 @@ export class ChatController {
       }
       case 'openDiff':
         return this.openDiff(message.payload.ref);
-      case 'openFile':
-        return this.workbench.openFile(this.absolute(message.payload.path));
+      case 'openFile': {
+        const { path, startLine, endLine } = message.payload;
+        return this.workbench.openFile(this.absolute(path), startLine ? { startLine, ...(endLine ? { endLine } : {}) } : undefined);
+      }
       case 'selectPermission':
         return this.selectPermission(message.payload.preset);
       case 'saveAll':
@@ -334,36 +408,119 @@ export class ChatController {
     return isAbsolute(path) ? path : resolve(this.options.workspacePath, path);
   }
 
-  /** 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。 */
-  async send(text: string): Promise<void> {
+  /**
+   * 发送一条消息。以 `/` 开头时先看是不是斜杠命令：插件模板展开成提示词，dsh 命令交给 dsh 执行。
+   * 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。
+   */
+  async send(text: string, options: SendOptions = {}): Promise<void> {
+    const slash = parseSlash(text);
+    if (slash?.name === 'new') {
+      this.setActive(undefined);
+      if (slash.args.trim()) await this.send(slash.args, options);
+      return;
+    }
+    if (slash && isTemplate(slash.name)) {
+      const attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
+      if (attachments.length === 0 && !slash.args.trim()) {
+        this.toast('info', `/${slash.name} 需要上下文：先在编辑器里选中代码或打开文件，或者在命令后面写上要处理的内容`);
+        return;
+      }
+      return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments);
+    }
+    if (slash && this.dshCommands.some((c) => c.name === slash.name)) return this.runCommand(text.trim());
+    return this.sendPrompt(text, this.gatherContext(options));
+  }
+
+  /** 本条消息附带的上下文：固定的、额外的、当前编辑器。诊断信息只在 /fix 时附带。 */
+  private gatherContext(options: SendOptions): ContextAttachment[] {
+    const active = options.includeActive !== false ? this.snapshotAttachment(this.workbench.activeEditor()) : undefined;
+    const all = [...this.pinned.map(({ id: _id, ...rest }) => rest as ContextAttachment), ...(options.extra ?? []), ...(active ? [active] : [])];
+    return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
+  }
+
+  private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<void> {
     const service = this.service;
     if (!service) {
       this.toast('error', 'dsh 尚未连接，请稍后再试');
       return;
     }
-    let sessionId = this.activeId;
     try {
-      if (!sessionId) {
-        sessionId = await service.createSession();
-        this.setActive(sessionId);
-        if (this.draftModel) {
-          await service.selectModel(sessionId, this.draftModel).catch((error: unknown) => {
-            this.options.log(`为新会话设置模型失败：${describe(error)}`);
-          });
-          this.draftModel = undefined;
-        }
-        if (this.draftPermission && this.draftPermission !== service.permissions?.defaultPreset) {
-          await service.setPermission(sessionId, this.draftPermission).catch((error: unknown) => {
-            this.toast('error', `为新会话设置权限失败：${describe(error)}`);
-          });
-        }
-        this.draftPermission = undefined;
+      const sessionId = await this.ensureSession(service);
+      await service.prompt(sessionId, withContext(text, attachments, this.options.workspacePath));
+      if (this.pinned.length) {
+        this.pinned = [];
+        this.scheduleRender();
       }
-      await service.prompt(sessionId, text);
     } catch (error) {
       this.options.log(`发送失败：${describe(error)}`);
       this.toast('error', friendlyError(error));
     }
+  }
+
+  /** dsh 的斜杠命令：结果以 command/run、command/done 事件出现在对话里。 */
+  private async runCommand(line: string): Promise<void> {
+    const service = this.service;
+    if (!service) {
+      this.toast('error', 'dsh 尚未连接，请稍后再试');
+      return;
+    }
+    try {
+      const sessionId = await this.ensureSession(service);
+      await service.client.executeCommand(sessionId, line);
+    } catch (error) {
+      this.options.log(`执行 ${line} 失败：${describe(error)}`);
+      this.toast('error', `执行命令失败：${describe(error)}`);
+    }
+  }
+
+  /** 当前会话；新对话时在 dsh 里创建，并应用新对话里选好的模型和权限。 */
+  private async ensureSession(service: SessionService): Promise<string> {
+    if (this.activeId) return this.activeId;
+    const sessionId = await service.createSession();
+    this.setActive(sessionId);
+    if (this.draftModel) {
+      await service.selectModel(sessionId, this.draftModel).catch((error: unknown) => {
+        this.options.log(`为新会话设置模型失败：${describe(error)}`);
+      });
+      this.draftModel = undefined;
+    }
+    if (this.draftPermission && this.draftPermission !== service.permissions?.defaultPreset) {
+      await service.setPermission(sessionId, this.draftPermission).catch((error: unknown) => {
+        this.toast('error', `为新会话设置权限失败：${describe(error)}`);
+      });
+    }
+    this.draftPermission = undefined;
+    return sessionId;
+  }
+
+  /** `@` 补全：有会话时用 dsh 的候选（与 dsh 的引用规则一致），新对话用 VS Code 的文件搜索。 */
+  private async searchFiles(requestId: number, query: string): Promise<void> {
+    const sessionId = this.activeId;
+    const client = this.service?.client;
+    let items: { path: string; kind: 'file' | 'directory' }[] = [];
+    try {
+      items = sessionId && client ? await client.fileReferences(sessionId, query) : await this.workbench.findFiles(query);
+    } catch (error) {
+      this.options.log(`文件搜索失败：${describe(error)}`);
+    }
+    this.options.post({ type: 'fileCandidates', payload: { requestId, items: items.slice(0, 50) } });
+  }
+
+  private loadCommands(sessionId: string): void {
+    const client = this.service?.client;
+    if (!client || this.dshCommands.length > 0) return;
+    // 放进 then 里调用：读取失败（包括同步抛错）都不能影响打开会话
+    void Promise.resolve()
+      .then(() => client.commands(sessionId))
+      .then(
+      (commands) => {
+        this.dshCommands = commands
+          .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !PLUGIN_COMMANDS.some((p) => p.name === c.name))
+          .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
+        this.scheduleRender();
+      },
+      (error: unknown) => this.options.log(`读取斜杠命令失败：${describe(error)}`),
+    );
   }
 
   private async interrupt(): Promise<void> {
@@ -427,6 +584,7 @@ export class ChatController {
       });
       this.stream = stream;
       stream.start();
+      this.loadCommands(sessionId);
     }
     this.scheduleRender();
   }
@@ -472,6 +630,16 @@ export class ChatController {
       this.sentJson.permissions = permissionsJson;
       this.options.post({ type: 'permissions', payload: view.permissions });
     }
+    const contextJson = JSON.stringify(view.context);
+    if (contextJson !== this.sentJson.context) {
+      this.sentJson.context = contextJson;
+      this.options.post({ type: 'context', payload: view.context });
+    }
+    const commandsJson = JSON.stringify(view.commands);
+    if (commandsJson !== this.sentJson.commands) {
+      this.sentJson.commands = commandsJson;
+      this.options.post({ type: 'commands', payload: view.commands });
+    }
     const workspaceJson = JSON.stringify(view.workspace);
     if (workspaceJson !== this.sentJson.workspace) {
       this.sentJson.workspace = workspaceJson;
@@ -506,6 +674,8 @@ export class ChatController {
     interactions: PendingInteraction[];
     permissions: PermissionState;
     workspace: WorkspaceState;
+    context: ContextState;
+    commands: CommandView[];
   } {
     // 新连接还没准备好时，先显示断线前的内容
     if (this.service?.initialized) this.staleService = undefined;
@@ -548,6 +718,7 @@ export class ChatController {
       sync: !sessionId ? 'idle' : showingStale ? 'disconnected' : !streamStatus ? 'opening' : streamStatus.kind,
       ...(streamStatus?.kind === 'failed' ? { failure: streamStatus.message } : {}),
       ...contextUsageOf(projections),
+      ...((projections.plan as { active?: boolean } | undefined)?.active ? { planMode: true } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();
@@ -578,6 +749,22 @@ export class ChatController {
       interactions,
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
+      context: this.contextState(),
+      commands: [...PLUGIN_COMMANDS.map((c) => ({ name: c.name, description: c.description, ...('hint' in c ? { hint: c.hint } : {}), source: 'plugin' as const })), ...this.dshCommands],
+    };
+  }
+
+  private contextState(): ContextState {
+    const view = (a: ContextAttachment) => ({
+      kind: a.kind,
+      path: displayPath(a.path, this.options.workspacePath),
+      ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
+    });
+    const active = this.snapshotAttachment(this.workbench.activeEditor());
+    return {
+      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
+      includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
+      pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
     };
   }
 
@@ -695,6 +882,11 @@ function contextUsageOf(projections: Readonly<Record<string, unknown>>): { conte
   const pressure = projections.contextPressure as { pressureTokens?: number; contextWindow?: number } | undefined;
   if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return {};
   return { contextUsage: Math.min(1, Math.max(0, pressure.pressureTokens / pressure.contextWindow)) };
+}
+
+function withoutDiagnostics(selection: SelectionContext): SelectionContext {
+  const { diagnostics: _omit, ...rest } = selection;
+  return rest;
 }
 
 function describe(error: unknown): string {

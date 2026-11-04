@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.5（M2 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.6（M3 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -34,7 +34,8 @@
 | v0.2 | 调研 dsh 源码和参考项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 后重写。dsh（DeepSeek Harness）是**完整的开源 Agent 运行时**，插件改为**薄壳**：启动 dsh、连接 dsh、把 dsh 的会话数据转换成 Codex 风格界面，再补上 VS Code 集成。删除自研的工具层、审批引擎、改文件和执行命令模块、本地 Agent 循环、自定义协议（原 `PROTOCOL.md`）。新增界面设计原则（针对参考项目的界面问题） |
 | v0.3 | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
 | v0.4 | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
-| **v0.5** | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
+| v0.5 | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
+| **v0.6** | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
 
 ---
 
@@ -386,7 +387,8 @@ sequenceDiagram
 | `dsh/InteractionService`（M2） | 审批（`approval/request`）和提问（`user-questions/request`）waterfall：挂起等用户答复后回传；dsh 取消时撤掉；看不懂的请求交给下一个回答方（`next`） |
 | `vm/diffs`（M2） | 纯函数：增删行数、从当前文件反向应用工具片段或 hunk 还原改动前内容、审批前预览、兜底的统一 diff |
 | `vm/workbench`（M2） | 控制器需要的编辑器能力接口（打开 Diff、未保存文件、确认框），控制器因此不依赖 vscode |
-| `workbench/VscodeWorkbench`（M2） | 上述接口的 vscode 实现：`dsh-diff:` 内容提供方、`vscode.diff`、未保存文件跟踪、模态确认 |
+| `workbench/VscodeWorkbench`（M2） | 上述接口的 vscode 实现：`dsh-diff:` 内容提供方、`vscode.diff`、未保存文件跟踪、模态确认；M3 加上当前编辑器与选区（含诊断信息）、`@` 补全的文件搜索 |
+| `vm/context`（M3） | 纯函数：上下文块的拼接与解析、斜杠命令解析、插件模板 |
 | `webview/ChatViewProvider` | `WebviewViewProvider`：生成带 CSP 的 HTML，校验并转发 Bridge 消息 |
 | `util/redact` | 令牌和认证 Cookie 脱敏 |
 
@@ -395,8 +397,7 @@ sequenceDiagram
 | 模块 | 职责 | 里程碑 |
 | --- | --- | --- |
 | 计划审阅卡片 | 计划模式（`exit_plan_mode`）的批准 / 提反馈 | M4 |
-| `vscode/ContextCollector` | 当前文件、选区、诊断信息，转成 prompt 附加内容 | M3 |
-| `dsh/WorkspaceBinding` | 多根工作区时让用户选择对应的 dsh Workspace（M1 固定用第一个文件夹） | M3 |
+| `dsh/WorkspaceBinding` | 多根工作区时让用户选择对应的 dsh Workspace（目前固定用第一个文件夹） | M4 |
 
 M1 中确定的几条规则：
 
@@ -413,13 +414,23 @@ M2 中确定的几条规则：
 - **权限**：新对话选择的预设在创建会话时用 `/permission <预设>` 应用；切换到 `danger-full-access` 先由 VS Code 弹模态确认框。
 - **改动汇总**：每个 `workspace/changes` 事件读一次 `/api/changes.summary`，结果按 `会话:seq` 缓存；没读到前不显示卡片（避免先显示一份再变）。Host 重启后（origin 变化）清掉缓存重新读取，404 时卡片退回按本轮文件工具汇总，Diff 改用会话日志里的片段。
 
+M3 中确定的几条规则：
+
+- **上下文的线上格式**：dsh 的 prompt 只有文本和图片，没有附件。插件把上下文拼成消息末尾的 `<ide_context>` 块（说明是参考数据、不是指令）：当前文件只给路径（`<active-file path="…" />`，模型需要时自己读，与 `@` 引用一致）；选区带路径、行号、语言和代码（单个选区最多 2 万字，整块 6 万字）；`/fix` 另外附带与选区重叠的错误和警告（`<diagnostics>`）。显示时把这个块从正文里去掉，解析成附件标签；历史消息也一样。
+- **当前编辑器标签**：输入框上方显示当前文件或选区，默认附带（设置 `dsh.context.includeActiveEditor`），点击切换本条是否附带，换了文件或选区恢复默认。只算磁盘上的文件（`file:` scheme）。
+- **`@` 引用**：语法与 dsh 一致（`@path`、`@"带空格的路径"`、目录以 `/` 结尾）。有会话时候选来自 `fileReferences/list`（与 dsh 的排除规则一致）；新对话还没有会话，用 VS Code 的文件搜索（只有文件）。光标停在一个完整的引用或命令名后面时不打开补全，Enter 直接发送。
+- **斜杠命令**：`/explain`、`/fix`、`/test` 是插件模板，展开成提示词并附带上下文，没有上下文也没写说明时提示；`/new` 新建对话；其余名字在 dsh 的命令目录里的交给 `commands/execute`（新对话先创建会话），不认识的按普通消息发送。dsh 命令目录读一次缓存（各会话相同），`/export` 在 VS Code 里没有意义，不列出。
+- **命令在对话里的样子**：dsh 为命令持久化 `command/run` / `command/done`，渲染成一行"/compact  Compacted 3 history items"；`/permission`（多数来自权限菜单）渲染成"权限已切换为「只读」"的提示。
+- **右键菜单**：编辑器右键「DSH」子菜单：解释、修复、写测试（带上选区立即发送）、添加到对话（固定为标签，下一条消息附带，发送后清空）。命令先同步取下选区，再切换焦点到对话视图。
+
 ### 5.2 会话事件 → 界面条目
 
 事件说明见 [dsh 对接说明第 7 节](./DSH-INTEGRATION.md#7-会话事件模型)：
 
 | dsh 事件 / 状态 | 界面条目 |
 | --- | --- |
-| `user/message` | 用户消息气泡（含附件标签） |
+| `user/message` | 用户消息气泡：末尾的上下文块解析成附件标签，`@路径` 显示成可点击的引用 |
+| `command/run` + `command/done` | 斜杠命令一行（`/permission` 是一行提示） |
 | live chunk（follow 流中的客户端条目） | 正在生成的回复，逐字追加 |
 | `assistant/message` | 完整回复，替换对应的流式条目；推理内容折叠成一行；正文为空时不渲染；被中断时标注"已停止" |
 | `assistant/attempt` | 失败/重试时显示一行提示 |
@@ -508,31 +519,26 @@ interface BridgeMessage<T extends string = string, P = unknown> {
 | type | 说明 |
 | --- | --- |
 | `ready` | Webview 加载完成，请求快照 |
-| `sendMessage` | `{ sessionId?, text, attachments }` |
-| `interrupt` | 停止当前轮次 |
-| `respondApproval` | `{ approvalId, optionId }`（选项来自 dsh 的审批请求） |
-| `previewApproval` | 打开审批前的预览 Diff |
-| `answerQuestion` | `{ questionId, answers }` 或 `{ questionId, cancelled: true }` |
-| `queueEdit` / `queueRemove` / `queueSteer` | 排队消息操作 |
-| `openDiff` / `openFile` | 打开改动的 Diff / 跳转到文件和行 |
-| `newSession` / `switchSession` / `renameSession` / `searchSessions` | 会话管理 |
-| `loadOlder` | 加载更早的历史 |
-| `selectModel` / `selectPermissionPreset` | 切换模型 / 权限预设 |
-| `searchFiles` / `listCommands` | `@` 补全 / `/` 命令列表 |
-| `openWebUI` / `restartRuntime` | 在浏览器打开 dsh / 重启 dsh |
+| `sendMessage` | `{ text, includeActive? }`；以 `/` 开头时由 Host 判断是不是斜杠命令 |
+| `interrupt` / `newSession` / `switchSession` / `loadOlder` | 停止、会话管理、加载更早的历史 |
+| `selectModel` / `selectPermission` | 切换模型 / 权限预设 |
+| `retryPending` / `discardPending` | 发送失败的消息：重试 / 删除 |
+| `respondApproval` / `previewApproval` / `answerQuestion` | 审批、审批预览、回答提问 |
+| `openDiff` / `openFile` | 打开改动的 Diff / 打开文件（可带行范围） |
+| `searchFiles` | `{ requestId, query }`：`@` 补全 |
+| `removeAttachment` | 移除固定的上下文标签 |
+| `saveAll` / `openExternal` / `openWebUI` / `restartRuntime` / `showLogs` | 其他操作 |
 
 **Host → Webview**
 
 | type | 说明 |
 | --- | --- |
-| `snapshot` | 完整状态：会话列表、当前会话条目、待处理交互、模型和预设目录、运行时状态、可用功能 |
-| `sessionsUpdated` | 会话列表变化 |
-| `itemsPatch` | 条目增量：新增、替换、追加文本、移除 |
-| `interactionsUpdated` | 待处理的审批、提问、计划审阅变化 |
-| `statusUpdated` | 待办、排队、子任务、目标变化 |
-| `runtimeStatus` | `notInstalled` / `unsupportedVersion` / `starting` / `connected` / `reconnecting` / `failed` |
-| `searchFilesResult` / `commandsResult` | 补全结果 |
-| `focusComposer` / `prefill` | 聚焦输入框 / 预填内容（右键菜单触发） |
+| `snapshot` | 完整状态：运行时、连接、会话列表、当前会话、条目、模型、待处理交互、权限、未保存文件数、上下文标签、斜杠命令 |
+| `items` | 条目增量（按 id 替换，带顺序；切换会话时整体重置） |
+| `runtimeStatus` / `connection` / `sessions` / `session` / `models` | 对应部分变化 |
+| `interactions` / `permissions` / `workspace` / `context` / `commands` | 对应部分变化 |
+| `fileCandidates` | `{ requestId, items }`：`@` 补全结果，Webview 只用最新一次请求的 |
+| `toast` / `focusComposer` | 提示 / 聚焦输入框 |
 
 消息类型和 zod schema 定义在 `packages/shared`，Host 和 Webview 共用，收到消息先校验再处理。
 
@@ -657,30 +663,29 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 
 | 配置 | 类型 / 默认值 | 说明 |
 | --- | --- | --- |
-| `dsh.runtime.path` | string / `""` | 指定 dsh 可执行文件；为空时自动查找 |
+| `dsh.runtime.path` | string / `""` | 指定 dsh 可执行文件；为空时在 `PATH` 中查找（`machine-overridable`，远程场景写在远端的 Machine 设置里） |
 | `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile |
-| `dsh.runtime.env` | object / `{}` | 追加给 dsh 进程的环境变量 |
-| `dsh.context.includeActiveFile` | boolean / `true` | 发送时自动附带当前文件和选区 |
-| `dsh.ui.showReasoning` | boolean / `true` | 是否显示推理过程 |
-| `dsh.log.level` | `error` … `trace` / `info` | 插件日志级别 |
+| `dsh.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
+
+计划中：`dsh.runtime.env`（追加环境变量）、`dsh.ui.showReasoning`、`dsh.log.level`。
 
 ### 8.2 命令
 
-| 命令 ID | 标题 |
-| --- | --- |
-| `dsh.openChat` | DSH：打开对话 |
-| `dsh.openChatInEditor` | DSH：在编辑器中打开对话 |
-| `dsh.newSession` | DSH：新建会话 |
-| `dsh.askAboutSelection` | DSH：问这段代码 |
-| `dsh.explainSelection` | DSH：解释代码 |
-| `dsh.fixSelection` | DSH：修复代码 |
-| `dsh.interrupt` | DSH：停止生成 |
-| `dsh.selectModel` | DSH：切换模型 |
-| `dsh.selectPermissionPreset` | DSH：切换权限模式 |
-| `dsh.configureApiKey` | DSH：配置 API Key |
-| `dsh.openWebUI` | DSH：在浏览器中打开 dsh |
-| `dsh.restartRuntime` | DSH：重启 dsh |
-| `dsh.showLogs` | DSH：查看日志 |
+| 命令 ID | 标题 | 入口 |
+| --- | --- | --- |
+| `dsh.openChat` | DSH：打开对话 | 命令面板、状态栏 |
+| `dsh.newSession` | DSH：新建对话 | 命令面板 |
+| `dsh.explainSelection` | DSH：解释这段代码 | 命令面板、编辑器右键「DSH」 |
+| `dsh.fixSelection` | DSH：修复这段代码 | 命令面板、编辑器右键「DSH」 |
+| `dsh.testSelection` | DSH：为这段代码写测试 | 命令面板、编辑器右键「DSH」 |
+| `dsh.addToChat` | DSH：添加到对话 | 命令面板、编辑器右键「DSH」 |
+| `dsh.interrupt` | DSH：停止生成 | 命令面板 |
+| `dsh.selectModel` | DSH：切换模型 | 命令面板 |
+| `dsh.openWebUI` | DSH：在浏览器中打开 dsh | 命令面板、更多菜单 |
+| `dsh.restartRuntime` | DSH：重启 dsh | 命令面板、状态提示 |
+| `dsh.showLogs` | DSH：查看日志 | 命令面板、更多菜单 |
+
+计划中：在编辑器中打开对话、配置 API Key。
 
 ---
 
@@ -760,10 +765,10 @@ dsh-vscode-copilot/
 
 | 层级 | 范围 | 做法 | 命令 |
 | --- | --- | --- | --- |
-| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退）、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
+| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
-| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
-| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
+| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
 | 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
 | 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
 
@@ -839,14 +844,22 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - `apply_patch` 的审批预览：rc.5 的文件工具里没有 `apply_patch`
 - 同一轮多次修改同一文件时，回退汇总里的 Diff 只显示最后一次修改
 
-### M3：VS Code 上下文集成（约 1 周）
+### M3：VS Code 上下文集成（已完成）
 
-- [ ] 自动附带当前文件和选区
-- [ ] `@文件` 补全与引用
-- [ ] 右键菜单「问这段代码 / 解释 / 修复」
-- [ ] 斜杠命令：dsh 原生命令 + 插件自带模板
+- [x] 自动附带当前文件和选区（输入框上方的标签，可逐条关闭；设置项控制默认值）
+- [x] `@文件` 补全与引用（dsh 的候选；新对话用 VS Code 文件搜索），消息里的引用可点击
+- [x] 右键菜单「DSH」：解释 / 修复（附带诊断信息）/ 写测试 / 添加到对话
+- [x] 斜杠命令：dsh 原生命令（`commands/list` + `commands/execute`，结果显示在对话里）+ 插件模板（`/explain`、`/fix`、`/test`、`/new`）
+- [x] 计划模式标记（`/plan` 后输入框显示，点击退出）
 
-**验收**：选中代码右键提问，dsh 收到的消息中带有正确的路径、行号和代码。
+**验收结果**：在真实 VS Code 中选中代码右键「DSH → 解释这段代码」，dsh 发给模型的消息里有 `<selection path="src/index.ts" lines="1" language="typescript">` 和选中的代码（`scripts/vscode-e2e.ts` 直接检查假模型收到的文本）。界面端到端测试 66/66（dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3`）、真实 VS Code 16/16、冒烟测试 33/33、单元测试 154 个。截图见 `docs/images/m3-*.png`。
+
+**没有做到或推迟的**：
+
+- 多根工作区仍固定用第一个文件夹（M4）
+- `@problems`、git diff、粘贴图片（P2）
+- 新对话的 `@` 补全只有文件、没有目录（VS Code 的文件搜索不返回目录）；会话创建后与 dsh 一致
+- 斜杠命令的参数补全（例如 `/permission` 后列出预设）
 
 ### M4：完善（约 1.5 周）
 

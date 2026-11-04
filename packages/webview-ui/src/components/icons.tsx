@@ -114,3 +114,33 @@ export const QuestionIcon = (p: IconProps) => (
     <path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1v.2M8 11.1v.2" />
   </svg>
 );
+export const FileIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M9 2.5H4.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6M9 2.5 12.5 6M9 2.5V6h3.5" />
+  </svg>
+);
+export const FolderIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1Z" />
+  </svg>
+);
+export const SelectionIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 4h10M3 8h7M3 12h9" />
+  </svg>
+);
+export const CloseIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="m4.5 4.5 7 7M11.5 4.5l-7 7" />
+  </svg>
+);
+export const SlashIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="m10.5 2.5-5 11" />
+  </svg>
+);
+export const PlanIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M5 4h8M5 8h8M5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01" />
+  </svg>
+);

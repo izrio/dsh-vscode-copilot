@@ -50,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const workbench = new VscodeWorkbench((line) => output.info(line));
   const chat = new ChatController({
     workbench,
+    includeActiveEditor: () => vscode.workspace.getConfiguration('dsh.context').get<boolean>('includeActiveEditor', true),
     workspacePath,
     post: (message) => provider?.post(message),
     log: (line) => output.info(line),
@@ -138,12 +139,35 @@ export function activate(context: vscode.ExtensionContext): void {
         });
       }
     }),
+    vscode.commands.registerCommand('dsh.explainSelection', async () => {
+      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
+      const sending = chat.askAboutSelection('explain');
+      await focusView();
+      await sending;
+    }),
+    vscode.commands.registerCommand('dsh.fixSelection', async () => {
+      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
+      const sending = chat.askAboutSelection('fix');
+      await focusView();
+      await sending;
+    }),
+    vscode.commands.registerCommand('dsh.testSelection', async () => {
+      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
+      const sending = chat.askAboutSelection('test');
+      await focusView();
+      await sending;
+    }),
+    vscode.commands.registerCommand('dsh.addToChat', async () => {
+      chat.pinActiveEditor();
+      await focusView();
+    }),
     vscode.commands.registerCommand('dsh.restartRuntime', () => manager.restart()),
     vscode.commands.registerCommand('dsh.openWebUI', () => chat.handle({ type: 'openWebUI', payload: {} })),
     vscode.commands.registerCommand('dsh.showLogs', () => output.show()),
     vscode.workspace.onDidGrantWorkspaceTrust(startIfTrusted),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
+      if (event.affectsConfiguration('dsh.context')) chat.workspaceChanged();
     }),
   );
 }

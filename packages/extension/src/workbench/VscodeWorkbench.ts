@@ -7,8 +7,10 @@
  */
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
+import type { FileCandidate } from '@dsh-copilot/shared';
+import { SELECTION_LIMIT } from '../vm/context.ts';
 import { proposedContent, reverseHunks, reverseToolDiffs, unifiedFromHunks, unifiedFromToolDiffs } from '../vm/diffs.ts';
-import type { DiffRequest, Workbench } from '../vm/workbench.ts';
+import type { DiffRequest, EditorSnapshot, Workbench } from '../vm/workbench.ts';
 
 export const DIFF_SCHEME = 'dsh-diff';
 /** 只保留最近打开过的虚拟文档内容。 */
@@ -22,10 +24,16 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
   constructor(private readonly log: (line: string) => void) {}
 
   /**
-   * 注册内容提供方和未保存状态的监听。
-   * @param onDirtyChange - 有未保存内容的文件集合变化时调用。
+   * 注册内容提供方，以及未保存状态、当前编辑器和选区的监听。
+   * @param onChange - 未保存文件集合、当前编辑器或选区变化时调用（选区变化合并到 150ms 一次）。
    */
-  register(onDirtyChange: () => void): vscode.Disposable {
+  register(onChange: () => void): vscode.Disposable {
+    const onDirtyChange = onChange;
+    let editorTimer: ReturnType<typeof setTimeout> | undefined;
+    const editorChanged = (): void => {
+      if (editorTimer) clearTimeout(editorTimer);
+      editorTimer = setTimeout(onChange, 150);
+    };
     const refresh = (): void => {
       const next = vscode.workspace.textDocuments
         .filter((doc) => doc.isDirty && doc.uri.scheme === 'file')
@@ -42,7 +50,45 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
       vscode.workspace.onDidSaveTextDocument(refresh),
       vscode.workspace.onDidCloseTextDocument(refresh),
       vscode.workspace.onDidOpenTextDocument(refresh),
+      vscode.window.onDidChangeActiveTextEditor(editorChanged),
+      vscode.window.onDidChangeTextEditorSelection(editorChanged),
+      { dispose: () => editorTimer && clearTimeout(editorTimer) },
     );
+  }
+
+  activeEditor(): EditorSnapshot | undefined {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.uri.scheme !== 'file') return undefined;
+    const { document, selection } = editor;
+    const snapshot = { path: document.uri.fsPath, languageId: document.languageId };
+    if (selection.isEmpty) return snapshot;
+    const startLine = selection.start.line + 1;
+    // 选到下一行行首时，那一行不算在选区里
+    const endLine = selection.end.character === 0 && selection.end.line > selection.start.line ? selection.end.line : selection.end.line + 1;
+    // 只取上限多一点的内容，过长的选区在拼消息时截断
+    const end = document.offsetAt(selection.end);
+    const start = document.offsetAt(selection.start);
+    const text = document.getText(new vscode.Range(selection.start, document.positionAt(Math.min(end, start + SELECTION_LIMIT + 1))));
+    const diagnostics = vscode.languages
+      .getDiagnostics(document.uri)
+      .filter((d) => d.severity <= vscode.DiagnosticSeverity.Warning && d.range.intersection(selection) !== undefined)
+      .slice(0, 20)
+      .map((d) => {
+        const severity = d.severity === vscode.DiagnosticSeverity.Error ? 'error' : 'warning';
+        const code = typeof d.code === 'object' ? d.code.value : d.code;
+        const source = [d.source, code].filter((x) => x !== undefined && x !== '').join(' ');
+        return `${d.range.start.line + 1}: ${severity}${source ? ` ${source}` : ''}: ${d.message.split('\n', 1)[0]}`;
+      });
+    return { ...snapshot, selection: { startLine, endLine, text, diagnostics } };
+  }
+
+  async findFiles(query: string): Promise<FileCandidate[]> {
+    const escaped = query.trim().replace(/[[\]{}*?!]/gu, '');
+    const pattern = escaped ? `**/*${escaped}*` : '**/*';
+    const uris = await vscode.workspace.findFiles(pattern, undefined, 50);
+    return uris
+      .map((uri) => ({ path: vscode.workspace.asRelativePath(uri, false), kind: 'file' as const }))
+      .sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path));
   }
 
   provideTextDocumentContent(uri: vscode.Uri): string {
@@ -61,9 +107,15 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
     return (await vscode.window.showWarningMessage(message, { modal: true, detail }, action)) === action;
   }
 
-  async openFile(path: string): Promise<void> {
+  async openFile(path: string, range?: { readonly startLine: number; readonly endLine?: number }): Promise<void> {
+    const uri = vscode.Uri.file(path);
     try {
-      await vscode.window.showTextDocument(vscode.Uri.file(path), { preview: true });
+      if ((await vscode.workspace.fs.stat(uri)).type & vscode.FileType.Directory) {
+        await vscode.commands.executeCommand('revealInExplorer', uri);
+        return;
+      }
+      const selection = range ? new vscode.Range(range.startLine - 1, 0, (range.endLine ?? range.startLine) - 1, Number.MAX_SAFE_INTEGER) : undefined;
+      await vscode.window.showTextDocument(uri, { preview: true, ...(selection ? { selection } : {}) });
     } catch (error) {
       void vscode.window.showWarningMessage(`无法打开 ${basename(path)}：${describe(error)}`);
     }

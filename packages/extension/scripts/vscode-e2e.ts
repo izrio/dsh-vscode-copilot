@@ -197,6 +197,39 @@ try {
     () => check('确认后权限切换为完全访问', false),
   );
 
+  // 编辑器右键菜单：选中代码 →「DSH → 解释这段代码」
+  await page.keyboard.press('Control+P');
+  await page.locator('.quick-input-widget input').waitFor();
+  await page.keyboard.type('index.ts');
+  await page.waitForTimeout(800);
+  await page.keyboard.press('Enter');
+  const editorLines = page.locator('.editor-instance .monaco-editor .view-lines').first();
+  await editorLines.waitFor({ timeout: 15_000 });
+  await editorLines.click();
+  await page.keyboard.press('Control+A');
+  await page.waitForTimeout(400);
+  await editorLines.click({ button: 'right' });
+  const dshMenu = page.locator('.monaco-menu .action-item', { hasText: 'DSH' }).first();
+  await dshMenu.waitFor({ timeout: 10_000 }).then(
+    () => check('编辑器右键菜单里有 DSH 子菜单', true),
+    () => check('编辑器右键菜单里有 DSH 子菜单', false),
+  );
+  await dshMenu.hover();
+  const explain = page.locator('.monaco-menu .action-label', { hasText: '解释这段代码' }).first();
+  await explain.waitFor({ timeout: 10_000 });
+  await page.screenshot({ path: join(outDir, 'context-menu.png') });
+  await explain.click();
+  const explainBubble = webview.locator('.user', { hasText: '解释这段代码' });
+  await explainBubble.waitFor({ timeout: 30_000 });
+  check('右键「解释这段代码」发送消息，气泡显示选区标签', (await explainBubble.locator('.chip', { hasText: 'index.ts:1' }).count()) === 1);
+  for (let i = 0; i < 40 && !env.model.requests.some((r) => r.userText?.includes('解释这段代码')); i++) await page.waitForTimeout(500);
+  const explainRequest = env.model.requests.filter((r) => r.userText?.includes('解释这段代码')).at(-1);
+  check(
+    'dsh 收到的消息带有正确的路径、行号和代码',
+    explainRequest?.userText?.includes('<selection path="src/index.ts" lines="1" language="typescript">\nexport const answer = 42;\n</selection>') === true,
+  );
+  await page.screenshot({ path: join(outDir, 'explain.png') });
+
   await runCommand('DSH: 切换模型');
   await page.waitForTimeout(800);
   check('命令「DSH: 切换模型」列出模型', (await page.locator('.quick-input-list .monaco-list-row').count()) > 0);

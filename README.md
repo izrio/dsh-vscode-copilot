@@ -4,11 +4,16 @@
 
 Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
 
-> 当前阶段：**M2 已完成**。除了基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复），还有按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护。
+> 当前阶段：**M3 已完成**。基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」。
 
 ![点击修改记录，在 VS Code 的 Diff 编辑器里查看改动](docs/images/m2-vscode-diff.png)
 
 <table>
+  <tr>
+    <td><img src="docs/images/m3-context.png" alt="选区标签与 @ 引用" width="240"></td>
+    <td><img src="docs/images/m3-commands.png" alt="斜杠命令" width="240"></td>
+    <td><img src="docs/images/m3-vscode-menu.png" alt="编辑器右键菜单" width="240"></td>
+  </tr>
   <tr>
     <td><img src="docs/images/m2-edits.png" alt="文件修改与本轮改动" width="240"></td>
     <td><img src="docs/images/m2-approval.png" alt="审批卡片" width="240"></td>
@@ -30,7 +35,7 @@ Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型�
 | 文档 | 内容 |
 | --- | --- |
 | [docs/DESIGN.md](./docs/DESIGN.md) | 整体方案：对接方式、界面设计原则、架构、模块、运行时管理、安全、工程结构、测试、里程碑 |
-| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研结果、参考项目分析、启动与认证、线上格式、Remote 方法、会话事件、版本策略、M0/M1/M2 验证结果 |
+| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研结果、参考项目分析、启动与认证、线上格式、Remote 方法、会话事件、版本策略、M0–M3 验证结果 |
 
 ## 工作方式
 
@@ -123,7 +128,7 @@ packages/
 | M0 | 技术验证 + 脚手架：协议客户端、运行时管理、假模型、冒烟测试、CI | ✅ |
 | M1 | 基础对话界面、follow 完整语义、断线重连、会话切换、模型选择 | ✅ |
 | M2 | 工具活动行细化、审批与提问、权限切换、Diff、本轮改动、未保存保护 | ✅ |
-| M3 | VS Code 上下文：选区、`@文件`、右键菜单、斜杠命令 | |
+| M3 | VS Code 上下文：选区、`@文件`、右键菜单、斜杠命令 | ✅ |
 | M4 | 排队消息、计划审阅、状态条、API Key 引导、长会话性能 | |
 | M5 | 测试、多版本兼容 CI、三平台验收、发布 | |
 

@@ -981,6 +981,192 @@ button {
 
 /* ---------- 输入框 ---------- */
 
+/* ---------- 上下文标签、补全 ---------- */
+
+.composer-wrap {
+  position: relative;
+}
+
+.context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  background: var(--hover);
+}
+
+.chip svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.chip__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+
+.chip__hint {
+  flex: none;
+  color: var(--muted);
+}
+
+.chip--excluded {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.chip--excluded .chip__label {
+  text-decoration: line-through;
+}
+
+.chip__remove {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chip__remove:hover svg {
+  color: var(--vscode-foreground);
+}
+
+.chip--small {
+  font-size: 0.8em;
+}
+
+.completion {
+  position: absolute;
+  z-index: 15;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% - 4px);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-editorSuggestWidget-background, var(--surface));
+  color: var(--vscode-editorSuggestWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+.completion__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.7;
+}
+
+.completion__item--selected {
+  background: var(--vscode-editorSuggestWidget-selectedBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-editorSuggestWidget-selectedForeground, var(--vscode-list-activeSelectionForeground, inherit));
+}
+
+.completion__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.completion__item--selected .completion__icon {
+  color: inherit;
+}
+
+.completion__label {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.completion__hint {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.completion__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.completion__item--selected .completion__hint,
+.completion__item--selected .completion__detail {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.completion__empty {
+  padding: 2px 6px;
+  color: var(--muted);
+}
+
+.mention {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font-family: var(--mono);
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.mention:hover {
+  text-decoration: underline;
+}
+
+.user__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 4px;
+}
+
+.plan-badge {
+  gap: 4px;
+  color: var(--vscode-textLink-foreground);
+}
+
 /* 未保存文件提示，贴在输入框上方 */
 .dirty-strip {
   display: flex;

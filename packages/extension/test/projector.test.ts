@@ -254,3 +254,51 @@ describe('project：提问工具', () => {
     expect(activity).toMatchObject({ label: '提问  改动范围？', output: '回答：只改测试' });
   });
 });
+
+describe('project：M3', () => {
+  const event = (seq: number, type: string, data: unknown, extra: Record<string, unknown> = {}) => ({ type, seq, time: seq, data, ...extra });
+
+  it('斜杠命令（/compact）显示为一行，带 dsh 返回的结果', () => {
+    const items = project({
+      events: [
+        event(1, 'command/run', { commandId: 'c1', name: 'compact', args: '', source: { kind: 'user' } }),
+        event(2, 'command/done', { commandId: 'c1', kind: 'success', text: 'Compacted 3 history items (~277 tokens).' }),
+        event(3, 'command/run', { commandId: 'c2', name: 'feedback', source: { kind: 'user' } }),
+        event(4, 'command/done', { commandId: 'c2', kind: 'error', text: 'Feedback text is required. Usage: /feedback <text>' }),
+      ],
+      pending: [],
+    }).items;
+    expect(items).toEqual([
+      { kind: 'activity', id: 'cmd:c1', tool: 'slash', variant: 'generic', label: '/compact  Compacted 3 history items (~277 tokens).', status: 'ok' },
+      { kind: 'activity', id: 'cmd:c2', tool: 'slash', variant: 'generic', label: '/feedback  Feedback text is required. Usage: /feedback <text>', status: 'error' },
+    ]);
+  });
+
+  it('/permission 显示成一行提示', () => {
+    const items = project({
+      events: [
+        event(1, 'command/run', { commandId: 'c1', name: 'permission', args: ' read-only', source: { kind: 'user' } }),
+        event(2, 'command/done', { commandId: 'c1', kind: 'success', text: 'preset read-only' }),
+        event(3, 'command/run', { commandId: 'c2', name: 'permission', args: ' nope', source: { kind: 'user' } }),
+        event(4, 'command/done', { commandId: 'c2', kind: 'error', text: 'Unknown preset nope' }),
+      ],
+      pending: [],
+    }).items;
+    expect(items).toEqual([
+      { kind: 'notice', id: 'cmd:c1', level: 'info', text: '权限已切换为「只读」' },
+      { kind: 'notice', id: 'cmd:c2', level: 'error', text: '切换权限失败：Unknown preset nope' },
+    ]);
+  });
+
+  it('用户消息末尾的上下文块不显示在正文里，解析成附件', () => {
+    const text = '看看\n\n<ide_context>\nContext …\n<selection path="src/a.ts" lines="3-4" language="typescript">\nx\n</selection>\n</ide_context>';
+    const items = project({
+      events: [event(1, 'user/message', { content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'r1' } }, { surfaceOp: 'append' })],
+      pending: [{ requestId: 'r2', text, sentAt: 0, state: 'sending' }],
+    }).items;
+    expect(items).toEqual([
+      { kind: 'user', id: 'u:1', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }] },
+      { kind: 'user', id: 'p:r2', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }], pending: 'sending', requestId: 'r2' },
+    ]);
+  });
+});

@@ -1,6 +1,6 @@
 # dsh 对接说明
 
-> 状态：v0.5（M2 已验证）｜ 日期：2026-11-04
+> 状态：v0.6（M3 已验证）｜ 日期：2026-11-04
 >
 > 本文记录调研到的 dsh 事实、参考项目的做法、插件与 dsh 的对接细节，以及 M0 的实测结果。设计决策见 [DESIGN.md](./DESIGN.md)。
 >
@@ -24,7 +24,8 @@
 8. [版本策略](#8-版本策略)
 9. [M0 验证结果](#9-m0-验证结果)
 10. [M2 验证结果](#10-m2-验证结果)
-11. [参考资料](#11-参考资料)
+11. [M3 验证结果](#11-m3-验证结果)
+12. [参考资料](#12-参考资料)
 
 ---
 
@@ -404,7 +405,34 @@ pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
 
 ---
 
-## 11. 参考资料
+## 11. M3 验证结果
+
+在 `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上用 `scripts/ui-e2e.ts`（66 项）验证；`0.2.1-rc.5` 上另用 code-server 跑 `scripts/vscode-e2e.ts`（16 项），右键菜单发出的消息直接在假模型那一端检查。
+
+### 11.1 接口
+
+| 用途 | 方法 | 参数 | 返回 |
+| --- | --- | --- | --- |
+| 斜杠命令目录 | `commands/list` | `{ agentId }` | `[{ definitionId, name, description, input?: { hint, attachments? } }]`；0.2.1-rc.5 有 `compact`、`export`、`feedback`、`goal`、`permission`、`plan` |
+| 执行命令 | `commands/execute` | `{ agentId, line: '/compact', submittedAttachments: [] }` | `{ commandId, result: { kind: 'success' \| 'error', text, sourceEventSeq? } }` |
+| `@` 候选 | `fileReferences/list` | `{ agentId, query }`（`@` 后面的文本；以 `/` 结尾时列目录内容） | `[{ path, kind: 'file' \| 'directory' }]`，按相关度排序，空查询给出顶层 |
+
+### 11.2 发现
+
+| 主题 | 发现 | 插件的处理 |
+| --- | --- | --- |
+| prompt 的内容 | `session/prompt` 的 `content` 只有 `text` 和 `image`；dsh 没有"附带文件"的概念 | 上下文作为 `<ide_context>` 块拼在文本末尾，显示时解析掉（参考项目也是这样做的） |
+| `@` 引用 | 纯文本约定：dsh 在系统提示里告诉模型"`@` 开头的是用户引用的路径，需要时用 read 读取"；语法 `@path` / `@"带空格"`，目录以 `/` 结尾（`packages/context/file-reference/src/grammar.ts`） | 补全和显示都按同一语法 |
+| `fileReferences/list` 需要会话 | 参数是 `agentId`，新对话还没有会话 | 新对话用 VS Code 的文件搜索 |
+| 命令留在会话日志里 | 执行命令会持久化 `command/run { commandId, name, args, source }` 和 `command/done { commandId, kind, text }`；不产生 `user/message` | 渲染成一行，历史里也能看到 |
+| `/compact` | 产生 `compaction/*` 事件和一条检查点 `user/message`（`source.kind` 不是 `user`） | 检查点消息不显示 |
+| `/plan` | 产生 `plan/mode { active }`，投影 `plan: { active, pending }` | 输入框显示"计划模式"，点击发送 `/plan off` |
+| `/export` | 只是请求浏览器下载会话日志 | 不在 VS Code 里列出 |
+| 命令的文字 | `command/done.text` 是英文 | 原样显示（`/permission` 除外，翻译成中文提示） |
+
+---
+
+## 12. 参考资料
 
 **dsh 仓库**：
 

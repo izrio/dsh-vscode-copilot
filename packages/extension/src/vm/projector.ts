@@ -13,6 +13,7 @@ import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';
 import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
 import type { LiveAttempt } from '../dsh/session/journal.ts';
+import { splitContext } from './context.ts';
 import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
@@ -111,8 +112,40 @@ export function project(input: ProjectionInput): Projection {
         const source = data.source as { kind?: string; rpcId?: string } | undefined;
         if (source?.kind !== 'user') break;
         if (source.rpcId) persistedRequestIds.add(source.rpcId);
-        const text = textOf(data.content);
-        if (text) items.push({ kind: 'user', id: `u:${event.seq}`, text });
+        const { text, attachments } = splitContext(textOf(data.content));
+        if (text || attachments.length) items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}) });
+        break;
+      }
+      case 'command/run': {
+        // 斜杠命令（/compact、/plan 等）不产生用户消息，只有 command/run 和 command/done
+        const commandId = typeof data.commandId === 'string' ? data.commandId : `seq-${event.seq}`;
+        const name = typeof data.name === 'string' ? data.name : 'command';
+        const args = typeof data.args === 'string' ? data.args.trim() : '';
+        itemIndex.set(`cmd:${commandId}`, { index: items.length });
+        if (name === 'permission') {
+          // 权限切换（大多来自输入框的权限菜单）显示成一行提示，结果到达前先占位
+          items.push({ kind: 'notice', id: `cmd:${commandId}`, level: 'info', text: `正在切换权限为「${presetName(args)}」` });
+          break;
+        }
+        items.push({ kind: 'activity', id: `cmd:${commandId}`, tool: 'slash', variant: 'generic', label: `/${name}${args ? ` ${firstLine(args)}` : ''}`, status: 'running' });
+        break;
+      }
+      case 'command/done': {
+        const at = typeof data.commandId === 'string' ? itemIndex.get(`cmd:${data.commandId}`) : undefined;
+        const previous = at ? items[at.index] : undefined;
+        const result = typeof data.text === 'string' ? data.text.trim() : '';
+        if (at && previous?.kind === 'notice') {
+          const preset = /「(.*)」/u.exec(previous.text)?.[1] ?? '';
+          items[at.index] = data.kind === 'error' ? { ...previous, level: 'error', text: `切换权限失败：${result}` } : { ...previous, text: `权限已切换为「${preset}」` };
+          break;
+        }
+        if (!at || previous?.kind !== 'activity') break;
+        items[at.index] = {
+          ...previous,
+          status: data.kind === 'error' ? 'error' : 'ok',
+          label: result ? `${previous.label}  ${firstLine(result)}` : previous.label,
+          ...(result.includes('\n') ? { output: truncate(result) } : {}),
+        };
         break;
       }
       case 'assistant/message': {
@@ -236,10 +269,12 @@ export function project(input: ProjectionInput): Projection {
   for (const pending of input.pending) {
     if (persistedRequestIds.has(pending.requestId)) continue;
     const state = pending.state === 'failed' ? 'failed' : pending.state === 'accepted' && running ? 'queued' : 'sending';
+    const { text, attachments } = splitContext(pending.text);
     items.push({
       kind: 'user',
       id: `p:${pending.requestId}`,
-      text: pending.text,
+      text,
+      ...(attachments.length ? { attachments } : {}),
       pending: state,
       requestId: pending.requestId,
       ...(pending.error ? { error: pending.error } : {}),
@@ -302,6 +337,12 @@ function changesCard(seq: number, summary: ChangesSummary | 'unavailable' | unde
     ...(value.created ? { created: true } : {}),
   }));
   return { kind: 'changes', id: `c:${seq}`, turn: 0, source: 'tools', files, total: files.length };
+}
+
+const PRESET_NAMES: Record<string, string> = { 'read-only': '只读', 'workspace-write': '工作区可写', 'danger-full-access': '完全访问' };
+
+function presetName(preset: string): string {
+  return PRESET_NAMES[preset] ?? preset;
 }
 
 /** 提问工具的结果是 JSON：`{ answers: [{ id, selected, custom? }] }` 或 `{ cancelled: true }`，转成可读的文字。 */

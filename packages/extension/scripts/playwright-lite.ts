@@ -12,11 +12,13 @@ export interface Locator {
   waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>;
   isVisible(): Promise<boolean>;
   count(): Promise<number>;
-  click(): Promise<void>;
+  click(options?: { button?: 'left' | 'right' }): Promise<void>;
+  hover(): Promise<void>;
   fill(value: string): Promise<void>;
   press(key: string): Promise<void>;
   innerText(): Promise<string>;
   allInnerTexts(): Promise<string[]>;
+  inputValue(): Promise<string>;
   evaluate<R>(fn: (element: HTMLElement) => R): Promise<R>;
   isDisabled(): Promise<boolean>;
   getAttribute(name: string): Promise<string | null>;

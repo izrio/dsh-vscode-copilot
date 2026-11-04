@@ -101,6 +101,17 @@ const commandResultSchema = z.object({
 });
 export type CommandResult = z.infer<typeof commandResultSchema>['result'];
 
+const commandListSchema = z.array(
+  z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    input: z.object({ hint: z.string().optional() }).loose().optional(),
+  }),
+);
+export type DshCommand = z.infer<typeof commandListSchema>[number];
+
+const fileReferencesSchema = z.array(z.object({ path: z.string(), kind: z.enum(['file', 'directory']) }));
+
 /** `/api/changes.summary`：一轮里改动过的文件（包括命令造成的）。 */
 const changesSummarySchema = z.object({
   turn: z.number(),
@@ -262,6 +273,19 @@ export class DshClient {
   /** 权限预设目录（read-only、workspace-write、danger-full-access 及用户自定义的）。 */
   async permissionCatalog(): Promise<PermissionCatalog> {
     return parse(permissionCatalogSchema, await this.unary.call('permissionPresets/catalog', {}), 'permissionPresets/catalog');
+  }
+
+  /** 会话可用的 dsh 斜杠命令（`/compact`、`/plan`、`/goal` 等）。 */
+  async commands(sessionId: string): Promise<DshCommand[]> {
+    return parse(commandListSchema, await this.unary.call('commands/list', { agentId: sessionId }), 'commands/list');
+  }
+
+  /**
+   * `@` 引用的候选：会话工作目录下的文件和目录。
+   * @param query - `@` 后面的路径文本；以 `/` 结尾时列出目录内容。
+   */
+  async fileReferences(sessionId: string, query: string, signal?: AbortSignal): Promise<{ path: string; kind: 'file' | 'directory' }[]> {
+    return parse(fileReferencesSchema, await this.unary.call('fileReferences/list', { agentId: sessionId, query }, signal), 'fileReferences/list');
   }
 
   /** 执行一条斜杠命令，例如 `/permission read-only`。 */

@@ -84,6 +84,26 @@
         "command": "dsh.showLogs",
         "title": "查看日志",
         "category": "DSH"
+      },
+      {
+        "command": "dsh.explainSelection",
+        "title": "解释这段代码",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.fixSelection",
+        "title": "修复这段代码",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.testSelection",
+        "title": "为这段代码写测试",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.addToChat",
+        "title": "添加到对话",
+        "category": "DSH"
       }
     ],
     "configuration": {
@@ -99,8 +119,64 @@
           "type": "string",
           "default": "web",
           "markdownDescription": "启动 dsh 时使用的 profile。默认 `web`，与你自己运行的 `dsh web` 共用模型、API Key 和权限预设。"
+        },
+        "dsh.context.includeActiveEditor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "发送消息时默认附带当前编辑器：有选区时附带选中的代码和行号，否则只附带文件路径（dsh 需要时自己读取）。可以在输入框上方的标签上逐条关闭。"
         }
       }
+    },
+    "submenus": [
+      {
+        "id": "dsh.editorContext",
+        "label": "DSH"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "dsh.editorContext",
+          "group": "1_dsh@1",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "dsh.editorContext": [
+        {
+          "command": "dsh.explainSelection",
+          "group": "1_ask@1"
+        },
+        {
+          "command": "dsh.fixSelection",
+          "group": "1_ask@2"
+        },
+        {
+          "command": "dsh.testSelection",
+          "group": "1_ask@3"
+        },
+        {
+          "command": "dsh.addToChat",
+          "group": "2_context@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "dsh.explainSelection",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "dsh.fixSelection",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "dsh.testSelection",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "dsh.addToChat",
+          "when": "editorIsOpen"
+        }
+      ]
     }
   },
   "scripts": {

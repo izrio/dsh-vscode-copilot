@@ -28,7 +28,8 @@ export type Script =
 
 export interface MockModel {
   readonly url: string;
-  readonly requests: { readonly path: string; readonly marker?: string }[];
+  /** 收到的请求；`userText` 是最近一条用户文本（用于检查 dsh 实际发给模型的内容）。 */
+  readonly requests: { readonly path: string; readonly marker?: string; readonly userText?: string }[];
   close(): Promise<void>;
 }
 
@@ -42,7 +43,7 @@ interface AnthropicMessage {
  * @param scripts - 标记 → 脚本；最近一条用户文本包含某个标记时使用对应脚本，否则用 `default`。
  */
 export async function startMockModel(scripts: Readonly<Record<string, Script>>): Promise<MockModel> {
-  const requests: { path: string; marker?: string }[] = [];
+  const requests: { path: string; marker?: string; userText?: string }[] = [];
   const openResponses = new Set<ServerResponse>();
 
   const server: Server = createServer((request, response) => {
@@ -71,7 +72,7 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
     const payload = JSON.parse(body) as { model?: string; messages?: readonly AnthropicMessage[] };
     const messages = payload.messages ?? [];
     const marker = Object.keys(scripts).find((key) => key !== 'default' && lastUserText(messages).includes(key));
-    requests.push({ path, ...(marker ? { marker } : {}) });
+    requests.push({ path, ...(marker ? { marker } : {}), userText: lastUserText(messages) });
     const script = scripts[marker ?? 'default'] ?? { kind: 'text', chunks: ['OK'] };
     const afterTool = lastMessageIsToolResult(messages);
     const completedTools = toolResultsSinceUserText(messages);

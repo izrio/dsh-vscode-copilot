@@ -4,7 +4,10 @@
  */
 import { useSyncExternalStore } from 'react';
 import type {
+  CommandView,
   ConnectionState,
+  ContextState,
+  FileCandidate,
   HostToWebview,
   Item,
   ModelState,
@@ -35,6 +38,10 @@ export interface ViewState {
   readonly interactions: readonly PendingInteraction[];
   readonly permissions: PermissionState;
   readonly workspace: WorkspaceState;
+  readonly context: ContextState;
+  readonly commands: readonly CommandView[];
+  /** 最近一次 `@` 补全的结果。 */
+  readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
   readonly toasts: readonly Toast[];
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
@@ -52,6 +59,9 @@ const initialState: ViewState = {
   interactions: [],
   permissions: { options: [] },
   workspace: { dirtyFiles: 0 },
+  context: { includeActiveByDefault: true, pinned: [] },
+  commands: [],
+  fileCandidates: { requestId: -1, items: [] },
   toasts: [],
   focusRequests: 0,
 };
@@ -100,6 +110,8 @@ export function applyHostMessage(message: HostToWebview): void {
         interactions: p.interactions,
         permissions: p.permissions,
         workspace: p.workspace,
+        context: p.context,
+        commands: p.commands,
       });
       return;
     }
@@ -126,6 +138,15 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'workspace':
       set({ workspace: message.payload });
+      return;
+    case 'context':
+      set({ context: message.payload });
+      return;
+    case 'commands':
+      set({ commands: message.payload });
+      return;
+    case 'fileCandidates':
+      set({ fileCandidates: message.payload });
       return;
     case 'items': {
       const patch = message.payload;

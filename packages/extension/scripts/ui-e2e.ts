@@ -18,7 +18,7 @@ import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { ChatController } from '../src/vm/ChatController.ts';
 import { reverseHunks, reverseToolDiffs } from '../src/vm/diffs.ts';
-import type { DiffRequest, Workbench } from '../src/vm/workbench.ts';
+import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';
 import { loadPlaywright, type Page } from './playwright-lite.ts';
 import { DARK_THEME, LIGHT_THEME } from './theme-vars.ts';
@@ -82,6 +82,7 @@ const env = await createDshTestEnv({
       ],
       after: '看过了：README 介绍了项目，`src/index.ts` 导出了 `answer`，测试全部通过。',
     },
+    E2E_CTX: { kind: 'text', chunks: ['收到，', '我看了你选中的代码。'], delayMs: 30 },
     E2E_SLOW: { kind: 'hold', chunks: ['正在', '仔细', '分析'] },
     E2E_EDIT: {
       kind: 'tools',
@@ -147,9 +148,12 @@ let activeSessionId: string | undefined;
 const diffRequests: DiffRequest[] = [];
 const confirms: string[] = [];
 let dirtyFiles: string[] = [];
+let editorSnapshot: EditorSnapshot | undefined;
 const workbench: Workbench = {
   openDiff: async (request) => void diffRequests.push(request),
   openFile: async () => undefined,
+  activeEditor: () => editorSnapshot,
+  findFiles: async () => [],
   dirtyFiles: () => dirtyFiles,
   saveAll: async () => {
     dirtyFiles = [];
@@ -396,6 +400,89 @@ try {
   await page.getByTestId('dirty-strip').waitFor({ state: 'detached', timeout: 5_000 });
   check('全部保存后提示消失', true);
 
+  // 2h. 编辑器上下文：选区标签、@ 引用、斜杠命令
+  editorSnapshot = {
+    path: join(env.workspace, 'src/index.ts'),
+    languageId: 'typescript',
+    selection: { startLine: 1, endLine: 1, text: 'export const answer = 42;', diagnostics: [] },
+  };
+  controller.workspaceChanged();
+  const activeChip = page.getByTestId('active-context');
+  await activeChip.waitFor({ timeout: 5_000 });
+  check('输入框显示当前选区标签', (await activeChip.innerText()).includes('index.ts:1'));
+  await composer.fill('');
+  await composer.press('@');
+  await composer.press('R');
+  await composer.press('E');
+  const completion = page.getByTestId('completion');
+  await completion.locator('[role="option"]', { hasText: 'README.md' }).waitFor({ timeout: 10_000 });
+  check('输入 @ 列出匹配的文件', true);
+  await shot('18-mention');
+  await composer.press('Enter');
+  check('确认补全后插入 @README.md', (await composer.inputValue()) === '@README.md ');
+  await composer.fill('E2E_CTX 解释一下，参考 @README.md');
+  await shot('19-context');
+  await composer.press('Enter');
+  await page.locator('.assistant', { hasText: '我看了你选中的代码' }).waitFor({ timeout: 30_000 });
+  const ctxRequest = env.model.requests.filter((r) => r.marker === 'E2E_CTX').at(-1);
+  check(
+    'dsh 发给模型的消息里有选区的路径、行号和代码',
+    ctxRequest?.userText?.includes('<selection path="src/index.ts" lines="1" language="typescript">\nexport const answer = 42;\n</selection>') === true,
+    ctxRequest?.userText?.slice(-300),
+  );
+  const ctxBubble = page.locator('.user', { hasText: 'E2E_CTX' });
+  check('消息气泡里不显示上下文块，选区显示为标签', !(await ctxBubble.innerText()).includes('ide_context') && (await ctxBubble.locator('.chip', { hasText: 'index.ts:1' }).count()) === 1);
+  check('消息里的 @README.md 显示为可点击的引用', (await ctxBubble.locator('.mention', { hasText: '@README.md' }).count()) === 1);
+  await activeChip.click();
+  check('点击标签后不附带', (await activeChip.getAttribute('aria-pressed')) === 'false');
+  await send('E2E_CTX 这次不带选区');
+  await page.locator('.user', { hasText: '这次不带选区' }).waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(500);
+  check('关掉标签后发送的消息不带上下文', (await page.locator('.user', { hasText: '这次不带选区' }).locator('.chip').count()) === 0);
+  await page.locator('.assistant', { hasText: '我看了你选中的代码' }).nth(1).waitFor({ timeout: 30_000 });
+  editorSnapshot = undefined;
+  controller.workspaceChanged();
+  await activeChip.waitFor({ state: 'detached', timeout: 5_000 });
+
+  await composer.fill('');
+  await composer.press('/');
+  await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
+  const commandOptions = await completion.locator('[role="option"]').allInnerTexts();
+  check('输入 / 列出插件模板和 dsh 命令（不含 /export）', ['/explain', '/fix', '/test', '/new', '/compact', '/plan'].every((name) => commandOptions.some((t) => t.includes(name))) && !commandOptions.some((t) => t.includes('/export')), commandOptions.join(' | '));
+  await shot('20-commands');
+  await composer.press('c');
+  await composer.press('o');
+  await composer.press('Enter');
+  check('确认后插入 /compact', (await composer.inputValue()) === '/compact ');
+  await composer.press('Enter');
+  await page.locator('.activity', { hasText: '/compact' }).locator('.activity__detail', { hasText: 'Compacted' }).waitFor({ timeout: 30_000 }).then(
+    () => check('/compact 交给 dsh 执行，结果显示在对话里', true),
+    () => check('/compact 交给 dsh 执行，结果显示在对话里', false),
+  );
+  check('压缩生成的检查点消息不显示成用户消息', (await page.locator('.user', { hasText: 'checkpoint' }).count()) === 0);
+  await send('/plan');
+  await page.getByTestId('plan-badge').waitFor({ timeout: 15_000 }).then(
+    () => check('/plan 后输入框显示计划模式', true),
+    () => check('/plan 后输入框显示计划模式', false),
+  );
+  await page.getByTestId('plan-badge').click();
+  await page.getByTestId('plan-badge').waitFor({ state: 'detached', timeout: 15_000 }).then(
+    () => check('点击计划模式标记退出计划模式', true),
+    () => check('点击计划模式标记退出计划模式', false),
+  );
+
+  editorSnapshot = { path: join(env.workspace, 'README.md'), languageId: 'markdown' };
+  controller.pinActiveEditor();
+  editorSnapshot = undefined;
+  controller.workspaceChanged();
+  const pinnedChip = page.locator('.context-chips .chip', { hasText: 'README.md' });
+  await pinnedChip.waitFor({ timeout: 5_000 });
+  check('「添加到对话」后输入框显示固定的标签', true);
+  await shot('21-pinned');
+  await pinnedChip.getByRole('button', { name: /移除/u }).click();
+  await pinnedChip.waitFor({ state: 'detached', timeout: 5_000 });
+  check('固定的标签可以移除', true);
+
   // 3. 停止生成
   await send('E2E_SLOW 慢慢分析');
   await page.locator('.assistant', { hasText: '正在仔细分析' }).waitFor({ timeout: 20_000 });
@@ -422,7 +509,7 @@ try {
   await shot('09-sessions');
   await page.locator('.sessions-menu .menu-item', { hasNotText: '你好' }).first().click();
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
-  check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === 8, String(await page.locator('.activity').count()));
+  check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === 11, (await page.locator('.activity').allInnerTexts()).join(' | '));
 
   // 5. Webview 重新加载：Host 是状态的唯一来源
   await load();

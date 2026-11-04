@@ -19,6 +19,43 @@ export interface ChangedFileView extends Partial<LineStats> {
   readonly flags?: readonly ('binary' | 'oversized')[];
 }
 
+/**
+ * 附带给 dsh 的编辑器上下文：当前文件（只给路径，dsh 需要时自己读）或选中的代码（带内容和行号）。
+ * `path` 是工作区相对路径（工作区外为绝对路径）。
+ */
+export interface AttachmentView {
+  readonly kind: 'file' | 'selection';
+  readonly path: string;
+  /** 选区的起止行（从 1 开始）。 */
+  readonly startLine?: number;
+  readonly endLine?: number;
+}
+
+/** 输入框上方的上下文标签。 */
+export interface ContextState {
+  /** 当前编辑器：有选区时是选区，否则是文件。`key` 变化时 Webview 恢复默认的附带状态。 */
+  readonly active?: AttachmentView & { readonly key: string };
+  /** 默认是否附带当前编辑器（设置 `dsh.context.includeActiveEditor`）。 */
+  readonly includeActiveByDefault: boolean;
+  /** 用「添加到对话」固定下来的选区，发送后清空。 */
+  readonly pinned: readonly (AttachmentView & { readonly id: string })[];
+}
+
+/** 斜杠命令：插件自带的模板，或 dsh 原生命令。 */
+export interface CommandView {
+  readonly name: string;
+  readonly description: string;
+  /** 参数提示，例如 `<text>`。 */
+  readonly hint?: string;
+  readonly source: 'plugin' | 'dsh';
+}
+
+/** `@` 补全的候选。 */
+export interface FileCandidate {
+  readonly path: string;
+  readonly kind: 'file' | 'directory';
+}
+
 /** 对话流中的一个条目。`id` 在同一个会话内稳定，Webview 按 id 增量更新。 */
 export type Item =
   | {
@@ -29,6 +66,8 @@ export type Item =
       readonly pending?: 'sending' | 'queued' | 'failed';
       readonly requestId?: string;
       readonly error?: string;
+      /** 随消息附带的编辑器上下文（从消息末尾的上下文块解析出来，正文里不显示）。 */
+      readonly attachments?: readonly AttachmentView[];
     }
   | {
       readonly kind: 'assistant';
@@ -160,6 +199,8 @@ export interface SessionHeader {
   readonly failure?: string;
   /** 上下文窗口占用比例，0–1。 */
   readonly contextUsage?: number;
+  /** 计划模式（`/plan`）：dsh 只做计划，不改文件。 */
+  readonly planMode?: boolean;
 }
 
 export interface WorkspaceState {

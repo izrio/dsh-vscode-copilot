@@ -34,6 +34,12 @@ function fakeClient() {
       options: [{ value: 'read-only' }, { value: 'workspace-write' }, { value: 'danger-full-access' }],
       defaultPreset: 'workspace-write',
     }),
+    commands: async () => [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'export', description: 'Download this Session log as a ZIP archive' },
+      { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]' } },
+    ],
+    fileReferences: async (_sessionId: string, query: string) => [{ path: `src/${query}.ts`, kind: 'file' }],
     executeCommand: async (sessionId: string, line: string) => {
       commands.push({ sessionId, line });
       return { kind: 'success', text: line };
@@ -449,6 +455,150 @@ describe('ChatController', () => {
       controller.snapshot();
       await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'tool', callId: 'c1' } } });
       expect(diffs).toEqual([{ kind: 'tool', path: '/w/a.ts', diffs: [{ path: '/w/a.ts', oldText: 'a', newText: 'b' }], created: false }]);
+    });
+  });
+
+  describe('M3：上下文、斜杠命令、@ 引用', () => {
+    const editor = {
+      path: '/w/src/a.ts',
+      languageId: 'typescript',
+      selection: { startLine: 3, endLine: 4, text: 'let x = 1;\nlet y: string = x;', diagnostics: ['4: error ts 2322: Type number is not assignable to type string.'] },
+    };
+
+    function withEditor(snapshot: typeof editor | undefined, extra: Partial<Workbench> = {}) {
+      const found: string[] = [];
+      const workbench: Workbench = {
+        ...noWorkbench,
+        activeEditor: () => snapshot,
+        findFiles: async (query) => {
+          found.push(query);
+          return [{ path: `vscode/${query}`, kind: 'file' }];
+        },
+        ...extra,
+      };
+      return { ...setup(workbench), found };
+    }
+
+    const sentText = (fake: ReturnType<typeof fakeClient>) => fake.prompts.at(-1)?.text ?? '';
+
+    it('默认附带当前选区（不带诊断信息），输入框上方显示选区标签', async () => {
+      const { controller, fake } = withEditor(editor);
+      controller.setClient(fake.client);
+      await flush();
+      expect(controller.snapshot().context).toEqual({
+        active: { kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4, key: 's:/w/src/a.ts:3-4' },
+        includeActiveByDefault: true,
+        pinned: [],
+      });
+      await controller.handle({ type: 'sendMessage', payload: { text: '这里有问题吗' } });
+      expect(sentText(fake)).toContain('<selection path="src/a.ts" lines="3-4" language="typescript">\nlet x = 1;\nlet y: string = x;\n</selection>');
+      expect(sentText(fake)).not.toContain('<diagnostics');
+      await flush();
+      const echo = controller.snapshot().items.find((item) => item.kind === 'user');
+      expect(echo).toMatchObject({ text: '这里有问题吗', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }] });
+    });
+
+    it('关掉标签后不附带；没有选区时只附带文件路径', async () => {
+      const { controller, fake } = withEditor({ path: '/w/src/a.ts', languageId: 'typescript' } as typeof editor);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '一', includeActive: false } });
+      expect(sentText(fake)).toBe('一');
+      await controller.handle({ type: 'sendMessage', payload: { text: '二' } });
+      expect(sentText(fake)).toContain('<active-file path="src/a.ts" />');
+    });
+
+    it('/fix 展开成模板并附带诊断信息；没有上下文也没有说明时提示', async () => {
+      const { controller, fake } = withEditor(editor);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '/fix 类型不对' } });
+      expect(sentText(fake)).toMatch(/^找出这段代码里的问题并修复。[\s\S]*\n\n类型不对\n\n<ide_context>/u);
+      expect(sentText(fake)).toContain('<diagnostics path="src/a.ts">\n4: error ts 2322');
+
+      const empty = withEditor(undefined);
+      empty.controller.setClient(empty.fake.client);
+      await flush();
+      await empty.controller.handle({ type: 'sendMessage', payload: { text: '/explain' } });
+      expect(empty.fake.prompts).toHaveLength(0);
+      expect(empty.posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+    });
+
+    it('dsh 命令交给 dsh 执行（新对话先创建会话）；/export 不出现在列表里；不认识的命令按普通消息发送', async () => {
+      const { controller, fake } = withEditor(undefined);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      await flush();
+      const names = controller.snapshot().commands.map((c) => `${c.source}:${c.name}`);
+      expect(names).toEqual(['plugin:explain', 'plugin:fix', 'plugin:test', 'plugin:new', 'dsh:compact', 'dsh:plan']);
+      await controller.handle({ type: 'sendMessage', payload: { text: '/plan 先出方案' } });
+      expect(fake.commands).toEqual([{ sessionId: 's1', line: '/plan 先出方案' }]);
+      await controller.handle({ type: 'sendMessage', payload: { text: '/unknown 你好' } });
+      expect(sentText(fake)).toBe('/unknown 你好');
+    });
+
+    it('/new 回到新对话', async () => {
+      const { controller, fake } = withEditor(undefined);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      expect(controller.snapshot().session.id).toBe('s1');
+      await controller.handle({ type: 'sendMessage', payload: { text: '/new' } });
+      expect(controller.snapshot().session.id).toBeUndefined();
+    });
+
+    it('@ 补全：有会话时用 dsh 的候选，新对话用 VS Code 的文件搜索', async () => {
+      const { controller, fake, posted, found } = withEditor(undefined);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'searchFiles', payload: { requestId: 1, query: 'a' } });
+      expect(found).toEqual(['a']);
+      expect(posted.at(-1)).toEqual({ type: 'fileCandidates', payload: { requestId: 1, items: [{ path: 'vscode/a', kind: 'file' }] } });
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await controller.handle({ type: 'searchFiles', payload: { requestId: 2, query: 'b' } });
+      expect(posted.at(-1)).toEqual({ type: 'fileCandidates', payload: { requestId: 2, items: [{ path: 'src/b.ts', kind: 'file' }] } });
+    });
+
+    it('右键「解释」：带上选区立即发送，不重复附带当前编辑器', async () => {
+      const { controller, fake } = withEditor(editor);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.askAboutSelection('explain');
+      const text = sentText(fake);
+      expect(text).toMatch(/^解释这段代码/u);
+      expect(text.match(/<selection /gu)).toHaveLength(1);
+    });
+
+    it('「添加到对话」固定选区，发送时附带后清空；可以移除', async () => {
+      const current: { value: typeof editor | undefined } = { value: editor };
+      const { controller, fake } = withEditor(undefined, { activeEditor: () => current.value });
+      controller.setClient(fake.client);
+      await flush();
+      controller.pinActiveEditor();
+      current.value = { path: '/w/src/b.ts', languageId: 'typescript' } as typeof editor;
+      controller.pinActiveEditor();
+      const pinned = controller.snapshot().context.pinned;
+      expect(pinned.map((p) => p.path)).toEqual(['src/a.ts', 'src/b.ts']);
+      await controller.handle({ type: 'removeAttachment', payload: { id: pinned[1]!.id } });
+      current.value = undefined;
+      await controller.handle({ type: 'sendMessage', payload: { text: '对比一下' } });
+      expect(sentText(fake)).toContain('<selection path="src/a.ts"');
+      expect(sentText(fake)).not.toContain('src/b.ts');
+      expect(controller.snapshot().context.pinned).toEqual([]);
+    });
+
+    it('计划模式投影显示在标题信息里', async () => {
+      const { controller, fake } = withEditor(undefined);
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      const service = (controller as unknown as { service: { acceptSnapshotProjections: (id: string, b: unknown) => void } }).service;
+      service.acceptSnapshotProjections('s1', { values: { plan: { active: true, pending: false } } });
+      expect(controller.snapshot().session.planMode).toBe(true);
     });
   });
 });
