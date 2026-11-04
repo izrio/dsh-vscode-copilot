@@ -4,12 +4,14 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
+import { InteractionCard } from './Interactions.tsx';
 import { ItemView } from './Items.tsx';
 
 const STICK_THRESHOLD = 48;
 
 export function Thread() {
   const items = useView((s) => s.items);
+  const interactions = useView((s) => s.interactions);
   const session = useView((s) => s.session);
   const sessionKey = useView((s) => s.sessionKey);
   const scroller = useRef<HTMLDivElement>(null);
@@ -36,7 +38,8 @@ export function Thread() {
   }, []);
 
   const last = items.at(-1);
-  const showThinking = session.running && !(last?.kind === 'assistant' && last.streaming) && last?.kind !== 'activity';
+  const showThinking =
+    session.running && interactions.length === 0 && !(last?.kind === 'assistant' && last.streaming) && last?.kind !== 'activity' && last?.kind !== 'explore';
 
   return (
     <div className="thread" ref={scroller} role="log" aria-live="polite" aria-busy={session.running}>
@@ -49,6 +52,9 @@ export function Thread() {
       ) : null}
       {items.map((item) => (
         <ItemView key={item.id} item={item} />
+      ))}
+      {interactions.map((interaction) => (
+        <InteractionCard key={interaction.id} interaction={interaction} />
       ))}
       {showThinking ? (
         <div className="thinking" aria-label="dsh 正在处理">

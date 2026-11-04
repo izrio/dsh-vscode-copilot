@@ -1,5 +1,19 @@
 export type { RuntimeStatus } from './runtime.ts';
-export type { ConnectionState, Item, ModelOption, ModelState, SessionHeader, SessionListItem } from './viewModel.ts';
+export type {
+  ChangedFileView,
+  ConnectionState,
+  DiffRef,
+  Item,
+  LineStats,
+  ModelOption,
+  ModelState,
+  PendingInteraction,
+  PermissionState,
+  QuestionView,
+  SessionHeader,
+  SessionListItem,
+  WorkspaceState,
+} from './viewModel.ts';
 export {
   parseWebviewMessage,
   webviewToHostSchema,

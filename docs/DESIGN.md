@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：草案 v0.2 ｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.5（M2 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -33,7 +33,8 @@
 | v0.1 | 假设 dsh 是一个协议未知的远程服务，插件自己执行工具、做审批、改文件，自定义一套协议 |
 | v0.2 | 调研 dsh 源码和参考项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 后重写。dsh（DeepSeek Harness）是**完整的开源 Agent 运行时**，插件改为**薄壳**：启动 dsh、连接 dsh、把 dsh 的会话数据转换成 Codex 风格界面，再补上 VS Code 集成。删除自研的工具层、审批引擎、改文件和执行命令模块、本地 Agent 循环、自定义协议（原 `PROTOCOL.md`）。新增界面设计原则（针对参考项目的界面问题） |
 | v0.3 | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
-| **v0.4** | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
+| v0.4 | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
+| **v0.5** | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
 
 ---
 
@@ -179,7 +180,7 @@ P0 是 MVP 必须有的，P1 是正式版需要的，P2 后续再做。"dsh 能�
 - **切换到 `danger-full-access`**：插件先弹出确认框，再提交给 dsh。
 - **什么时候会审批**：在 `workspace-write` 下，工作区内的读写和普通命令不需要审批；只有模型请求越过沙箱（`sandbox_permissions`）时，dsh 才发审批请求。
 - **审批卡片**：dsh 的回答只有"允许一次 / 拒绝"（`allowed-once` / `rejected`），卡片显示请求自带的 `displayReason`（有中文），插件只负责展示和回传。
-- **未保存保护**：审批一个会写文件的工具时，如果目标文件在 VS Code 里有未保存内容，卡片会提示"先保存或放弃修改"，暂不放行（dsh 直接写磁盘，否则会和编辑器里的内容冲突；参考项目也是这样处理的）。
+- **未保存保护**：审批一个会写文件的工具时，如果目标文件在 VS Code 里有未保存内容，卡片提示先保存并禁用"允许"，Host 收到允许时也会再检查一次（dsh 直接写磁盘，否则会和编辑器里的内容冲突；参考项目也是这样处理的）。另外，工作区里有未保存文件时，输入框上方显示一行提示和"全部保存"——dsh 读写的都是磁盘上的版本。
 - **未受信任的工作区**：插件不启动 dsh，需要用户先信任工作区。
 
 ### 3.5 VS Code 集成点
@@ -187,7 +188,7 @@ P0 是 MVP 必须有的，P1 是正式版需要的，P2 后续再做。"dsh 能�
 | 集成点 | 做法 |
 | --- | --- |
 | 视图 | `viewsContainers.secondarySidebar` + `WebviewView`；另提供 `WebviewPanel` 编辑器形态 |
-| Diff | `dsh-diff:` 只读虚拟文档提供改动前内容，用 `vscode.diff` 打开（还原方法见 5.4） |
+| Diff | `dsh-diff:` 只读虚拟文档提供改动前内容，用 `vscode.diff` 打开，右侧是磁盘上的真实文件（还原方法见 5.4） |
 | 跳转 | 回复、活动行、改动列表中的路径可点击，用 `showTextDocument` 打开并定位到行 |
 | 文件刷新 | dsh 直接写磁盘，VS Code 的文件监听会自动刷新已打开且没有未保存内容的编辑器 |
 | 右键菜单 | `editor/context`：「DSH：问这段代码 / 解释 / 修复」 |
@@ -381,7 +382,11 @@ sequenceDiagram
 | `dsh/SessionService` | 绑定在一次连接上：工作区注册、会话列表（只列当前目录、非子 Agent、非空白）、`session/control` 投影、发送/停止/选择模型、本地回显 |
 | `dsh/DshClient` | 组合上面的协议模块，提供插件用到的方法；`session/page` 与 `session/events`、两种 control 帧格式的兼容在这里处理 |
 | `vm/projector` | 事件 → 界面条目（纯函数，见 5.2、5.3） |
-| `vm/ChatController` | 对话面板的控制器：会话切换、新对话延迟创建、断线期间保留旧内容、按 id 计算增量、错误翻译成提示 |
+| `vm/ChatController` | 对话面板的控制器：会话切换、新对话延迟创建、断线期间保留旧内容、按 id 计算增量、错误翻译成提示；审批/提问卡片、权限、改动汇总的读取与缓存、打开 Diff |
+| `dsh/InteractionService`（M2） | 审批（`approval/request`）和提问（`user-questions/request`）waterfall：挂起等用户答复后回传；dsh 取消时撤掉；看不懂的请求交给下一个回答方（`next`） |
+| `vm/diffs`（M2） | 纯函数：增删行数、从当前文件反向应用工具片段或 hunk 还原改动前内容、审批前预览、兜底的统一 diff |
+| `vm/workbench`（M2） | 控制器需要的编辑器能力接口（打开 Diff、未保存文件、确认框），控制器因此不依赖 vscode |
+| `workbench/VscodeWorkbench`（M2） | 上述接口的 vscode 实现：`dsh-diff:` 内容提供方、`vscode.diff`、未保存文件跟踪、模态确认 |
 | `webview/ChatViewProvider` | `WebviewViewProvider`：生成带 CSP 的 HTML，校验并转发 Bridge 消息 |
 | `util/redact` | 令牌和认证 Cookie 脱敏 |
 
@@ -389,10 +394,7 @@ sequenceDiagram
 
 | 模块 | 职责 | 里程碑 |
 | --- | --- | --- |
-| `dsh/capabilities` | 记录各方法是否可用，供 UI 决定显示哪些功能 | M2 |
-| `dsh/InteractionService` | 审批、提问、计划审阅：收到请求后挂到视图模型，等用户答复后回传 | M2 |
-| `dsh/ChangesService` | 收集单次工具调用的改动片段和每轮改动汇总，还原改动前内容（见 5.4） | M2 |
-| `vscode/DiffContentProvider`、`vscode/DirtyGuard` | `dsh-diff:` 虚拟文档；未保存内容检查 | M2 |
+| 计划审阅卡片 | 计划模式（`exit_plan_mode`）的批准 / 提反馈 | M4 |
 | `vscode/ContextCollector` | 当前文件、选区、诊断信息，转成 prompt 附加内容 | M3 |
 | `dsh/WorkspaceBinding` | 多根工作区时让用户选择对应的 dsh Workspace（M1 固定用第一个文件夹） | M3 |
 
@@ -402,6 +404,14 @@ M1 中确定的几条规则：
 - **新对话**：第一条消息发送时才在 dsh 里创建会话，避免每次打开面板都留下空会话。
 - **断线重连**：连接断开时只停止旧会话服务和 follow 的 I/O，继续显示旧内容；新连接初始化完成、follow 拿到快照后再替换。
 - **恢复上次的会话**：每个工作区记住上次打开的会话（`workspaceState`）；只校验恢复时的那个会话是否还存在，初始化期间新建的会话不参与校验。
+
+M2 中确定的几条规则：
+
+- **审批详情**：waterfall 请求只带 `toolName`、`callId` 和原因；要执行的命令、要改的文件从会话日志里同一 `callId` 的 `tool/call` 参数里取。原因优先用 `displayReason.zh`。
+- **卡片位置**：审批和提问卡片显示在对话流末尾；有卡片时不显示"思考中"；其他会话有待处理请求时，会话列表里标记。
+- **回答只回传一次**：卡片按钮点击后立即禁用；dsh 已经取消或别处已回答的请求，再回答只提示"已经结束"。断线时挂起的请求全部作废，由 dsh 在新连接上重新转发。
+- **权限**：新对话选择的预设在创建会话时用 `/permission <预设>` 应用；切换到 `danger-full-access` 先由 VS Code 弹模态确认框。
+- **改动汇总**：每个 `workspace/changes` 事件读一次 `/api/changes.summary`，结果按 `会话:seq` 缓存；没读到前不显示卡片（避免先显示一份再变）。Host 重启后（origin 变化）清掉缓存重新读取，404 时卡片退回按本轮文件工具汇总，Diff 改用会话日志里的片段。
 
 ### 5.2 会话事件 → 界面条目
 
@@ -416,7 +426,7 @@ M1 中确定的几条规则：
 | `tool/call` + `tool/result` | 活动行，按工具名渲染（见 5.3）；结果到达前显示旋转图标 |
 | `tool/result.error` | 活动行标红，展开后显示错误信息 |
 | `turn/start` / `turn/end` | 控制"发送/停止"按钮；`turn/end` 原因为中断或错误时显示一行提示 |
-| `approval/request` | 审批卡片，紧跟在对应活动行下方 |
+| `approval/request` | 审批卡片，显示在对话流末尾 |
 | user-questions 事件 / 投影 | 问答卡片（单选/多选/自由输入，按 dsh 给出的选项） |
 | 计划模式事件 | 计划审阅卡片（批准 / 提反馈） |
 | `workspace/changes` | 本轮改动汇总卡片，放在本轮末尾 |
@@ -430,14 +440,14 @@ M1 中确定的几条规则：
 
 | dsh 工具 | 活动行 | 展开后 |
 | --- | --- | --- |
-| `read` `read_image` `glob` `grep` | 连续多个合并为一行："已查看 utils.ts、utils.test.ts，搜索 1 次" | 每个操作的路径或搜索词 |
-| `edit` `write` `apply_patch` `str_replace_editor` | "✎ utils.ts +3 −1"，点击打开 Diff | 改动片段 |
-| `bash` `pwsh` | "▸ pnpm test utils"，失败时显示退出码 | 输出（最多显示若干行，可展开全部） |
+| `read` `read_image` `glob` `grep` `ls` | 连续多个合并为一行："已浏览 读取 2 个文件，搜索 1 次"（中间出现正文、命令等时断开） | 每个操作的工具名和路径或搜索词 |
+| `edit` `write` `apply_patch` | "已编辑 utils.ts +3 −1" / "已新建 notes.md +4"，点击打开 Diff | 失败时显示错误 |
+| `bash` `pwsh` | "已运行 pnpm test utils"，失败时标红 | 输出（截断到 4000 字） |
 | `terminal_*` `job_*` | "终端：dev server · 运行中" | 状态和最近输出 |
 | `todo_write` | 不在对话流里重复出现，更新输入框上方的待办状态 | — |
 | `subagent` | "子任务：分析依赖 · 运行中/完成" | 任务描述和结果摘要 |
 | `web_search` `web_fetch` | "搜索网页：xxx" / "读取网页：域名" | 结果列表 |
-| `ask_user_question` | 由问答卡片接管 | — |
+| `ask_user_question` | 等待回答时由问答卡片接管；回答后是一行"提问 改动范围？" | "回答：只改测试" |
 | `exit_plan_mode` | 由计划审阅卡片接管 | — |
 | `create_goal` `update_goal` `get_goal` | 更新输入框上方的目标状态 | — |
 | `present` | "交付文件：report.md"，点击打开 | — |
@@ -458,9 +468,11 @@ M1 中确定的几条规则：
 1. 读取磁盘上的当前文件内容
 2. 把这一轮（或这一次调用）的改动片段**从后往前**反向应用：找到 `newText`，换回 `oldText`；上下文行用来定位
 3. 某个片段在当前内容中找不到或出现多次时，**不猜测**，放弃还原（参考项目的原则："错的 Diff 比没有 Diff 更糟"）
-4. 还原失败时，在 Webview 里直接显示改动片段（统一 diff 样式），并说明"文件之后又被修改过"
+4. 还原失败时，在编辑器里打开只读的统一 diff 文档（`dsh-diff:` + `diff` 语言），显示这次的改动片段
 
-**审批前预览**（P1）：对 `edit`/`write`/`apply_patch` 的审批，用工具调用参数和当前文件内容生成"将要修改"的 Diff，审批卡片上提供"预览"按钮。
+**审批前预览**：对 `edit`/`write` 的审批，用工具调用参数和当前文件内容生成"将要写入"的 Diff，审批卡片上提供"预览修改"按钮；`old_string` 找不到或不唯一（且没有 `replace_all`）时不预览。
+
+CRLF 文件先统一成 LF 计算，结果再转回 CRLF。增删行数用 jsdiff 的 `diffLines`，比较前给两边补齐结尾换行，避免把没有换行的最后一行算成修改。
 
 ### 5.5 Webview UI
 
@@ -700,9 +712,11 @@ dsh-vscode-copilot/
 │   │   │   │   ├── session/             # journal（事件日志与结算）、SessionStream
 │   │   │   │   ├── DshClient.ts
 │   │   │   │   ├── DshConnection.ts
+│   │   │   │   ├── InteractionService.ts  # 审批、提问
 │   │   │   │   └── SessionService.ts
-│   │   │   ├── vm/              # projector（事件 → 条目）、ChatController
+│   │   │   ├── vm/              # projector（事件 → 条目）、ChatController、diffs（Diff 还原）、workbench（编辑器能力接口）
 │   │   │   ├── webview/         # ChatViewProvider（HTML/CSP、消息校验）
+│   │   │   ├── workbench/       # VscodeWorkbench：dsh-diff: 文档、vscode.diff、未保存文件、确认框
 │   │   │   └── util/            # 脱敏
 │   │   ├── scripts/             # 构建、冒烟测试、界面端到端、真实 VS Code 验证
 │   │   ├── media/
@@ -746,10 +760,10 @@ dsh-vscode-copilot/
 
 | 层级 | 范围 | 做法 | 命令 |
 | --- | --- | --- | --- |
-| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态）、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
+| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退）、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
-| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、工具活动行、停止、新对话与切换、Webview 重载、杀掉 dsh 后自动恢复、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
-| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
+| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
 | 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
 | 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
 
@@ -807,16 +821,23 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - 多根工作区固定用第一个文件夹（M3）
 - Windows、macOS 和 Remote-SSH 手工验收（M5）
 
-### M2：工具、交互与改动（约 2 周）
+### M2：工具、交互与改动（已完成）
 
-- [ ] 活动行：只读合并、文件修改、命令、通用
-- [ ] 审批卡片、问答卡片（含超时后延迟回答）
-- [ ] 权限预设切换（含 `danger-full-access` 确认）
-- [ ] 单次工具调用 Diff：改动前内容还原、`dsh-diff:` 文档、还原失败时的片段视图
-- [ ] 未保存保护
-- [ ] 本轮改动卡片（`workspace/changes`，失效时回退）
+- [x] 活动行：只读合并、文件修改（增删行数、新建标记）、命令、通用；提问工具回答后显示可读的回答
+- [x] 审批卡片（命令/文件、中文原因、允许本次/拒绝、预览修改）、问答卡片（单选/多选/自由输入、跳过）
+- [x] 权限预设切换（含 `danger-full-access` 模态确认；新对话的选择在创建会话时应用）
+- [x] 单次工具调用 Diff：改动前内容还原、`dsh-diff:` 文档、还原失败时的片段视图
+- [x] 未保存保护：审批卡片按文件拦截，输入框上方提示并可全部保存
+- [x] 本轮改动卡片（`workspace/changes`，Host 重启后回退到按文件工具汇总）
 
-**验收**：完成"读代码 → 改两个文件 → 跑测试（需审批）"的完整流程，一屏能看完，Diff 能打开；重启 dsh 后历史 Diff 仍能打开。
+**验收结果**：界面端到端测试 50/50（dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3`）、真实 VS Code 13/13、冒烟测试 33/33、单元测试 133 个。"读代码 → 改两个文件 → 跑命令（需审批）"的流程一屏能看完；Diff 在 VS Code 的 Diff 编辑器里打开，左侧还原的内容与改动前的文件逐字一致；杀掉 dsh 重启后，历史改动的 Diff 仍能打开。截图见 `docs/images/m2-*.png`。
+
+**没有做到或推迟的**：
+
+- 提问的"超时后延迟回答"：rc.5 默认阻塞等待，`userQuestions` 投影一直为空（[对接说明 10.2](./DSH-INTEGRATION.md#102-发现)），没有可以延迟回答的场景，等 dsh 启用非阻塞模式再做
+- 计划审阅卡片（M4）
+- `apply_patch` 的审批预览：rc.5 的文件工具里没有 `apply_patch`
+- 同一轮多次修改同一文件时，回退汇总里的 Diff 只显示最后一次修改
 
 ### M3：VS Code 上下文集成（约 1 周）
 

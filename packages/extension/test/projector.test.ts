@@ -36,6 +36,10 @@ const summary = (items: ReturnType<typeof project>['items']) =>
         return `assistant:${item.markdown}${item.interrupted ? '[interrupted]' : ''}`;
       case 'activity':
         return `activity:${item.label}:${item.status}`;
+      case 'explore':
+        return `explore:${item.summary}:${item.status}`;
+      case 'changes':
+        return `changes:${item.source}:${item.files.map((f) => `${f.path}+${f.additions}-${f.deletions}`).join(',')}`;
       case 'notice':
         return `notice:${item.level}:${item.text}`;
     }
@@ -55,7 +59,7 @@ describe('project：真实会话', () => {
     expect(summary(project({ events: journal.events, pending: [], workspacePath: WORKSPACE }).items)).toEqual([
       'user:M0_WRITE 创建一个笔记文件',
       'assistant:我来创建文件。',
-      'activity:write  notes/m0.txt:ok',
+      'activity:notes/m0.txt:ok',
       'assistant:文件已创建。',
     ]);
   });
@@ -90,6 +94,78 @@ describe('project：真实会话', () => {
       ['M0_HELLO 打个招呼', undefined],
       ['下一条', 'sending'],
     ]);
+  });
+});
+
+describe('project：按工具类型渲染（M2）', () => {
+  const event = (seq: number, type: string, data: unknown) => ({ type, seq, time: seq, data });
+  const call = (seq: number, callId: string, name: string, args: unknown) => event(seq, 'tool/call', { callId, name, arguments: JSON.stringify(args) });
+  const result = (seq: number, callId: string, extra: Record<string, unknown> = {}) =>
+    event(seq, 'tool/result', { message: { toolCallId: callId, content: [{ type: 'text', text: 'ok' }], isError: false }, ...extra });
+
+  it('edit：先读后改，读文件合并成「浏览」，修改显示增删行数和 Diff 入口，本轮结束显示改动汇总', () => {
+    const journal = journalOf('edit');
+    const lookup = () => ({ turn: 3, files: [{ path: 'README.md', display: 'README.md', added: 1, deleted: 1 }], total: 1 });
+    const projection = project({ events: journal.events, pending: [], workspacePath: WORKSPACE, changes: lookup });
+    expect(summary(projection.items)).toEqual([
+      'user:M0_EDIT 改一下 README',
+      'explore:读取 1 个文件:ok',
+      'activity:README.md:ok',
+      'assistant:已修改 README。',
+      'changes:turn:README.md+1-1',
+    ]);
+    const edit = projection.items.find((item) => item.kind === 'activity');
+    expect(edit).toMatchObject({ variant: 'edit', stats: { additions: 1, deletions: 1 }, diff: { kind: 'tool' } });
+    expect(edit && 'output' in edit).toBe(false);
+    expect(projection.changeSeqs).toEqual([57]);
+    const changes = projection.items.find((item) => item.kind === 'changes');
+    expect(changes).toMatchObject({ id: 'c:57', files: [{ ref: { kind: 'turn', seq: 57, index: 0 } }] });
+    const info = [...projection.toolCalls.values()].find((c) => c.tool === 'edit');
+    expect(info).toMatchObject({ path: `${WORKSPACE}/README.md`, status: 'ok', diffs: [{ oldText: '# m0 workspace' }] });
+  });
+
+  it('改动汇总还没读到时不显示卡片；Host 重启后不可用时按文件工具汇总', () => {
+    const journal = journalOf('edit');
+    const loading = project({ events: journal.events, pending: [], workspacePath: WORKSPACE, changes: () => undefined });
+    expect(loading.items.some((item) => item.kind === 'changes')).toBe(false);
+    const fallback = project({ events: journal.events, pending: [], workspacePath: WORKSPACE, changes: () => 'unavailable' });
+    expect(fallback.items.find((item) => item.kind === 'changes')).toMatchObject({
+      source: 'tools',
+      files: [{ path: 'README.md', additions: 1, deletions: 1, ref: { kind: 'tool' } }],
+    });
+  });
+
+  it('write 新建文件：标记新建，新增行数取内容行数', () => {
+    const items = project({
+      events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],
+      pending: [],
+      workspacePath: '/w',
+    }).items;
+    expect(items).toEqual([
+      { kind: 'activity', id: 't:c1', tool: 'write', variant: 'edit', label: 'new.txt', status: 'ok', stats: { additions: 2, deletions: 0 }, created: true, diff: { kind: 'tool', callId: 'c1' } },
+    ]);
+  });
+
+  it('bash：命令行，保留输出', () => {
+    const journal = journalOf('bash');
+    const activity = project({ events: journal.events, pending: [] }).items.find((item) => item.kind === 'activity');
+    expect(activity).toMatchObject({ variant: 'command', label: 'bash  echo m0-bash-ok', status: 'ok' });
+    expect(activity?.kind === 'activity' && activity.output).toContain('m0-bash-ok');
+  });
+
+  it('连续的只读操作合并成一行，中间有正文时分开', () => {
+    const items = project({
+      events: [
+        call(1, 'r1', 'read', { file_path: 'a.ts' }),
+        call(2, 'g1', 'grep', { pattern: 'foo' }),
+        result(3, 'r1'),
+        event(4, 'assistant/message', { message: { content: [{ type: 'text', text: '看完了' }] } }),
+        call(5, 'r2', 'read', { file_path: 'b.ts' }),
+      ],
+      pending: [],
+    }).items;
+    expect(summary(items)).toEqual(['explore:读取 1 个文件，搜索 1 次:running', 'assistant:看完了', 'explore:读取 1 个文件:running']);
+    expect(items[0]).toMatchObject({ id: 'x:r1', entries: [{ id: 'r1', status: 'ok' }, { id: 'g1', status: 'running' }] });
   });
 });
 
@@ -168,5 +244,13 @@ describe('project：缺少 API Key', () => {
     }).items;
     expect(items[0]).toMatchObject({ kind: 'notice', level: 'error', action: { kind: 'openWebUI' } });
     expect(items[0]?.kind === 'notice' && items[0].text).toContain('API Key');
+  });
+});
+
+describe('project：提问工具', () => {
+  it('ask：显示问题，结果转成可读的回答', () => {
+    const journal = journalOf('ask');
+    const activity = project({ events: journal.events, pending: [] }).items.find((item) => item.kind === 'activity');
+    expect(activity).toMatchObject({ label: '提问  改动范围？', output: '回答：只改测试' });
   });
 });

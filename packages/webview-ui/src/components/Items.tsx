@@ -1,9 +1,9 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
-import { memo, useState } from 'react';
-import type { Item } from '@dsh-copilot/shared';
+import { memo, useState, type ReactNode } from 'react';
+import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';
-import { ChevronRightIcon, ErrorIcon, InfoIcon, SpinnerIcon, ToolIcon } from './icons.tsx';
+import { ChevronRightIcon, ErrorIcon, FileEditIcon, InfoIcon, SearchIcon, SpinnerIcon, TerminalIcon, ToolIcon } from './icons.tsx';
 
 type Of<K extends Item['kind']> = Extract<Item, { kind: K }>;
 
@@ -14,7 +14,11 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
     case 'assistant':
       return <AssistantMessage item={item} />;
     case 'activity':
-      return <ActivityRow item={item} />;
+      return item.variant === 'edit' ? <EditRow item={item} /> : <ActivityRow item={item} />;
+    case 'explore':
+      return <ExploreRow item={item} />;
+    case 'changes':
+      return <ChangesCard item={item} />;
     case 'notice':
       return <Notice item={item} />;
   }
@@ -64,13 +68,21 @@ function Reasoning({ text, active }: { text: string; active: boolean }) {
   );
 }
 
+const openDiff = (ref: DiffRef) => postToHost({ type: 'openDiff', payload: { ref } });
+
+function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon: ReactNode }) {
+  return <span className="activity__icon">{status === 'running' ? <SpinnerIcon /> : status === 'error' ? <ErrorIcon /> : icon}</span>;
+}
+
+/** 命令和其他工具：一行摘要，点开看输出。 */
 function ActivityRow({ item }: { item: Of<'activity'> }) {
   const [open, setOpen] = useState(false);
   const [name, ...rest] = item.label.split('  ');
   const detail = rest.join('  ');
   const expandable = Boolean(item.output);
+  const command = item.variant === 'command';
   return (
-    <div className={`activity activity--${item.status}`}>
+    <div className={`activity activity--${item.status} ${command ? 'activity--command' : ''}`}>
       <button
         type="button"
         className="activity__row"
@@ -79,14 +91,115 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
         onClick={() => setOpen(!open)}
         title={item.label}
       >
-        <span className="activity__icon">
-          {item.status === 'running' ? <SpinnerIcon /> : item.status === 'error' ? <ErrorIcon /> : <ToolIcon />}
-        </span>
-        <span className="activity__name">{name}</span>
-        {detail ? <span className="activity__detail">{detail}</span> : null}
+        <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <ToolIcon />} />
+        {command ? (
+          <span className="activity__name">{item.status === 'running' ? '正在运行' : '已运行'}</span>
+        ) : (
+          <span className="activity__name">{name}</span>
+        )}
+        {(command ? detail || name : detail) ? <span className="activity__detail">{command ? detail || name : detail}</span> : null}
       </button>
       {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
     </div>
+  );
+}
+
+/** 文件修改：「已编辑 src/a.ts +3 −1」，点击打开 Diff。 */
+function EditRow({ item }: { item: Of<'activity'> }) {
+  const [open, setOpen] = useState(false);
+  const verb = item.status === 'running' ? '正在编辑' : item.status === 'error' ? '编辑失败' : item.created ? '已新建' : '已编辑';
+  const diff = item.diff;
+  const onClick = () => (diff ? openDiff(diff) : item.output ? setOpen(!open) : undefined);
+  return (
+    <div className={`activity activity--${item.status} activity--edit`}>
+      <button
+        type="button"
+        className="activity__row"
+        disabled={!diff && !item.output}
+        aria-expanded={!diff && item.output ? open : undefined}
+        onClick={onClick}
+        title={diff ? `查看 ${item.label} 的修改` : item.label}
+      >
+        <StatusIcon status={item.status} icon={<FileEditIcon />} />
+        <span className="activity__name">{verb}</span>
+        <span className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`}>{item.label}</span>
+        {item.stats ? <Stats stats={item.stats} /> : null}
+      </button>
+      {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
+    </div>
+  );
+}
+
+/** 增删行数；只有一侧有变化时不显示另一侧的 0。 */
+function Stats({ stats }: { stats: Partial<LineStats> }) {
+  const { additions, deletions } = stats;
+  if (additions === undefined && deletions === undefined) return null;
+  const both = !additions && !deletions;
+  return (
+    <span className="stats">
+      {additions !== undefined && (additions > 0 || both) ? <span className="stats__add">+{additions}</span> : null}
+      {deletions !== undefined && deletions > 0 ? <span className="stats__del">−{deletions}</span> : null}
+    </span>
+  );
+}
+
+/** 连续的只读操作：「已浏览 读取 3 个文件，搜索 1 次」，点开看每一步。 */
+function ExploreRow({ item }: { item: Of<'explore'> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`activity activity--${item.status}`}>
+      <button type="button" className="activity__row" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <StatusIcon status={item.status} icon={<SearchIcon />} />
+        <span className="activity__name">{item.status === 'running' ? '正在浏览' : '已浏览'}</span>
+        <span className="activity__detail activity__detail--plain">{item.summary}</span>
+        <ChevronRightIcon className={`chevron activity__chevron ${open ? 'chevron--open' : ''}`} />
+      </button>
+      {open ? (
+        <ul className="explore__list">
+          {item.entries.map((entry) => {
+            const [name, ...rest] = entry.label.split('  ');
+            return (
+              <li key={entry.id} className={`explore__entry explore__entry--${entry.status}`}>
+                <span className="explore__tool">{name}</span>
+                <span className="explore__target">{rest.join('  ')}</span>
+                {entry.status === 'error' ? <ErrorIcon className="explore__error" /> : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** 一轮结束时的改动汇总卡片。 */
+function ChangesCard({ item }: { item: Of<'changes'> }) {
+  const total = item.files.reduce(
+    (sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }),
+    { additions: 0, deletions: 0 },
+  );
+  return (
+    <section className="changes" aria-label="本轮改动">
+      <header className="changes__header">
+        <span>{item.total} 个文件已更改</span>
+        <Stats stats={total} />
+      </header>
+      <ul className="changes__list">
+        {item.files.map((file) => (
+          <li key={`${file.path}:${JSON.stringify(file.ref)}`}>
+            <button type="button" className="changes__file" onClick={() => openDiff(file.ref)} title={`查看 ${file.path} 的修改`}>
+              <span className="changes__path">{file.path}</span>
+              {file.created ? <span className="changes__flag">新建</span> : null}
+              {file.flags?.includes('binary') ? <span className="changes__flag">二进制</span> : null}
+              {file.flags?.includes('oversized') ? <span className="changes__flag">过大</span> : null}
+              <Stats stats={file} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {item.source === 'tools' ? <p className="changes__note">dsh 重启过，这里只列出文件工具的修改，命令造成的改动不在其中。</p> : null}
+      {item.total > item.files.length ? <p className="changes__note">还有 {item.total - item.files.length} 个文件未列出。</p> : null}
+    </section>
   );
 }
 

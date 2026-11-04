@@ -17,6 +17,8 @@ import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
 import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { ChatController } from '../src/vm/ChatController.ts';
+import { reverseHunks, reverseToolDiffs } from '../src/vm/diffs.ts';
+import type { DiffRequest, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';
 import { loadPlaywright, type Page } from './playwright-lite.ts';
 import { DARK_THEME, LIGHT_THEME } from './theme-vars.ts';
@@ -81,6 +83,51 @@ const env = await createDshTestEnv({
       after: '看过了：README 介绍了项目，`src/index.ts` 导出了 `answer`，测试全部通过。',
     },
     E2E_SLOW: { kind: 'hold', chunks: ['正在', '仔细', '分析'] },
+    E2E_EDIT: {
+      kind: 'tools',
+      tools: [
+        { name: 'read', input: { file_path: 'README.md' } },
+        { name: 'edit', input: { file_path: 'README.md', old_string: '一个演示项目。', new_string: '一个用来演示的项目。\n\n## 用法\n\n运行 `pnpm dev`。' } },
+        { name: 'write', input: { file_path: 'docs/notes.md', content: '# 笔记\n\n- 第一条\n- 第二条\n' } },
+      ],
+      after: '改好了：README 补充了用法，另外新建了 `docs/notes.md`。',
+    },
+    E2E_APPROVE: {
+      kind: 'tool',
+      tool: {
+        name: 'bash',
+        input: { description: 'Install deps', command: 'echo installed', sandbox_permissions: 'danger-full-access', justification: '需要访问网络下载依赖' },
+      },
+      after: '依赖装好了。',
+    },
+    E2E_DENY: {
+      kind: 'tool',
+      tool: {
+        name: 'bash',
+        input: { description: 'Clean cache', command: 'echo should-not-run', sandbox_permissions: 'danger-full-access', justification: '需要清理全局缓存' },
+      },
+      after: '好的，不清理了。',
+    },
+    E2E_ASK: {
+      kind: 'tool',
+      tool: {
+        name: 'ask_user_question',
+        input: {
+          questions: [
+            {
+              id: 'scope',
+              header: '范围',
+              question: '这次改动要包括哪些部分？',
+              options: [
+                { label: '只改测试', description: '不动实现代码' },
+                { label: '一起改实现', description: '同时修复发现的问题' },
+              ],
+            },
+          ],
+        },
+      },
+      after: '明白，按你的选择来。',
+    },
     default: { kind: 'text', chunks: ['你好！', '有什么可以帮你？'], delayMs: 40 },
   },
 });
@@ -96,7 +143,25 @@ const runtime = new RuntimeManager({
 });
 const connection = new DshConnection({ log: (line) => console.log(`  [connection] ${line}`) });
 let activeSessionId: string | undefined;
+// 记录打开 Diff 等编辑器操作；确认框总是同意
+const diffRequests: DiffRequest[] = [];
+const confirms: string[] = [];
+let dirtyFiles: string[] = [];
+const workbench: Workbench = {
+  openDiff: async (request) => void diffRequests.push(request),
+  openFile: async () => undefined,
+  dirtyFiles: () => dirtyFiles,
+  saveAll: async () => {
+    dirtyFiles = [];
+    controller.workspaceChanged();
+  },
+  confirm: async (message) => {
+    confirms.push(message);
+    return true;
+  },
+};
 const controller = new ChatController({
+  workbench,
   workspacePath: env.workspace,
   post: (message) => {
     posted.push(message);
@@ -234,12 +299,102 @@ try {
   await send('E2E_TOOL 看看 README，再跑一下测试');
   await page.locator('.assistant', { hasText: '测试全部通过' }).waitFor({ timeout: 30_000 });
   const activities = page.locator('.activity');
-  check('三次工具调用各显示为一行活动', (await activities.count()) === 3, String(await activities.count()));
-  check('活动行显示相对路径和命令', (await page.locator('.activity__detail', { hasText: 'README.md' }).count()) === 1 && (await page.locator('.activity__detail', { hasText: 'echo "3 passed"' }).count()) === 1);
+  check('读文件和搜索合并成一行「浏览」，命令单独一行', (await activities.count()) === 2, String(await activities.count()));
+  check('浏览行显示摘要', (await page.locator('.activity', { hasText: '已浏览' }).locator('.activity__detail', { hasText: '读取 1 个文件，搜索 1 次' }).count()) === 1);
+  check('命令行显示命令', (await page.locator('.activity__detail', { hasText: 'echo "3 passed"' }).count()) === 1);
+  await page.locator('.activity__row', { hasText: '已浏览' }).click();
+  check('展开浏览行显示每一步和相对路径', await page.locator('.explore__entry', { hasText: 'README.md' }).isVisible());
   await shot('05-tools');
-  await page.locator('.activity__row', { hasText: 'bash' }).click();
-  check('展开活动行显示命令输出', await page.locator('.activity__output', { hasText: '3 passed' }).isVisible());
+  await page.locator('.activity__row', { hasText: 'echo' }).click();
+  check('展开命令行显示输出', await page.locator('.activity__output', { hasText: '3 passed' }).isVisible());
   await shot('06-tool-output');
+
+  // 2b. 文件修改：增删行数、Diff、本轮改动汇总
+  await send('E2E_EDIT 给 README 补充用法，再记一份笔记');
+  await page.locator('.assistant', { hasText: '改好了' }).waitFor({ timeout: 30_000 });
+  const editRow = page.locator('.activity--edit', { hasText: 'README.md' });
+  check('修改行显示「已编辑」和增删行数', (await editRow.locator('.activity__name').innerText()) === '已编辑' && (await editRow.locator('.stats').innerText()).replace(/\s+/gu, ' ') === '+5 −1', await editRow.innerText());
+  check('新建文件显示「已新建」', (await page.locator('.activity--edit', { hasText: 'docs/notes.md' }).locator('.activity__name').innerText()) === '已新建');
+  await page.locator('.changes').waitFor({ timeout: 10_000 }).then(
+    () => check('本轮结束显示改动汇总卡片', true),
+    () => check('本轮结束显示改动汇总卡片', false),
+  );
+  check('改动汇总列出两个文件', (await page.locator('.changes__file').count()) === 2 && (await page.locator('.changes__header').innerText()).includes('2 个文件已更改'));
+  await shot('13-edits');
+  await editRow.locator('.activity__row').click();
+  await page.waitForTimeout(200);
+  const toolDiff = diffRequests.at(-1);
+  const readmeNow = await readFile(join(env.workspace, 'README.md'), 'utf8');
+  check(
+    '点击修改行：用工具片段还原出修改前的 README',
+    toolDiff?.kind === 'tool' && reverseToolDiffs(readmeNow, toolDiff.diffs) === '# demo\n\n一个演示项目。\n',
+    JSON.stringify(toolDiff),
+  );
+  await page.locator('.changes__file', { hasText: 'README.md' }).click();
+  await page.waitForTimeout(500);
+  const turnDiff = diffRequests.at(-1);
+  check(
+    '点击汇总里的文件：用本轮 hunk 还原出修改前的 README',
+    turnDiff?.kind === 'turn' && turnDiff.path === join(env.workspace, 'README.md') && reverseHunks(readmeNow, turnDiff.hunks) === '# demo\n\n一个演示项目。\n',
+    JSON.stringify(turnDiff),
+  );
+
+  // 2c. 审批：允许
+  await send('E2E_APPROVE 装一下依赖');
+  const approval = page.getByTestId('approval-card');
+  await approval.waitFor({ timeout: 30_000 });
+  check('审批卡片显示要运行的命令', (await approval.locator('.interaction__command').innerText()).includes('echo installed'));
+  check('审批卡片显示原因', (await approval.locator('.interaction__reason').innerText()).includes('需要访问网络下载依赖'));
+  check('等待审批时不显示「思考中」', (await page.locator('.thinking').count()) === 0);
+  await shot('14-approval');
+  await approval.getByRole('button', { name: '允许本次' }).click();
+  await page.locator('.assistant', { hasText: '依赖装好了' }).waitFor({ timeout: 30_000 });
+  check('允许后卡片消失，命令执行成功', (await approval.count()) === 0 && (await page.locator('.activity--ok', { hasText: 'echo installed' }).count()) === 1);
+
+  // 2d. 审批：拒绝
+  await send('E2E_DENY 顺便清一下缓存');
+  await approval.waitFor({ timeout: 30_000 });
+  await approval.getByRole('button', { name: '拒绝' }).click();
+  await page.locator('.assistant', { hasText: '不清理了' }).waitFor({ timeout: 30_000 });
+  check('拒绝后命令标记为失败', (await page.locator('.activity--error', { hasText: 'should-not-run' }).count()) === 1);
+
+  // 2e. 提问
+  await send('E2E_ASK 帮我修一下测试');
+  const question = page.getByTestId('question-card');
+  await question.waitFor({ timeout: 30_000 });
+  check('提问卡片显示问题和选项', (await question.innerText()).includes('这次改动要包括哪些部分？') && (await question.getByRole('radio').count()) === 2);
+  check('没选之前不能提交', await question.getByRole('button', { name: '提交' }).isDisabled());
+  await question.getByRole('radio', { name: /一起改实现/u }).click();
+  await shot('15-question');
+  await question.getByRole('button', { name: '提交' }).click();
+  await page.locator('.assistant', { hasText: '按你的选择来' }).waitFor({ timeout: 30_000 });
+  check('提交后卡片消失，dsh 收到选择', (await question.count()) === 0);
+
+  // 2f. 权限预设
+  const permission = page.getByTestId('permission-picker');
+  check('输入框工具条显示当前权限', (await permission.innerText()).includes('工作区可写'));
+  await permission.click();
+  await page.getByRole('menuitem', { name: /只读/u }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('只读'), undefined, { timeout: 10_000 });
+  check('切换到只读', true);
+  await permission.click();
+  await shot('16-permissions');
+  await page.getByRole('menuitem', { name: /完全访问/u }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('完全访问'), undefined, { timeout: 10_000 });
+  check('切换到完全访问前先确认，按钮标为警告色', confirms.length === 1 && (await permission.getAttribute('class'))?.includes('toolbar-button--danger') === true);
+  await permission.click();
+  await page.getByRole('menuitem', { name: /工作区可写/u }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('工作区可写'), undefined, { timeout: 10_000 });
+
+  // 2g. 未保存的文件
+  dirtyFiles = [join(env.workspace, 'README.md')];
+  controller.workspaceChanged();
+  await page.getByTestId('dirty-strip').waitFor({ timeout: 5_000 });
+  check('有未保存文件时输入框上方提示', (await page.getByTestId('dirty-strip').innerText()).includes('1 个文件有未保存的修改'));
+  await shot('17-dirty');
+  await page.getByTestId('dirty-strip').getByRole('button', { name: '全部保存' }).click();
+  await page.getByTestId('dirty-strip').waitFor({ state: 'detached', timeout: 5_000 });
+  check('全部保存后提示消失', true);
 
   // 3. 停止生成
   await send('E2E_SLOW 慢慢分析');
@@ -267,7 +422,7 @@ try {
   await shot('09-sessions');
   await page.locator('.sessions-menu .menu-item', { hasNotText: '你好' }).first().click();
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
-  check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.activity').count()) === 3);
+  check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === 8, String(await page.locator('.activity').count()));
 
   // 5. Webview 重新加载：Host 是状态的唯一来源
   await load();
@@ -287,6 +442,18 @@ try {
   check('dsh 自动重启并重新连接', runtime.pid !== undefined && runtime.pid !== pid);
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
   check('重启后当前会话的历史仍在', true);
+  await page.locator('.changes__note', { hasText: 'dsh 重启过' }).waitFor({ timeout: 15_000 }).then(
+    () => check('重启后改动汇总退回按文件工具汇总', true),
+    () => check('重启后改动汇总退回按文件工具汇总', false),
+  );
+  const before = diffRequests.length;
+  await page.locator('.changes__file', { hasText: 'README.md' }).click();
+  await page.waitForTimeout(300);
+  const afterRestart = diffRequests.at(-1);
+  check(
+    '重启后历史 Diff 仍能打开（来自会话日志）',
+    diffRequests.length === before + 1 && afterRestart?.kind === 'tool' && reverseToolDiffs(readmeNow, afterRestart.diffs) === '# demo\n\n一个演示项目。\n',
+  );
   await send('重启之后还能继续吗');
   await page.locator('.assistant', { hasText: '有什么可以帮你' }).waitFor({ timeout: 30_000 });
   check('重启后可以继续对话', true);

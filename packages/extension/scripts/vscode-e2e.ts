@@ -63,6 +63,14 @@ const env = await createDshTestEnv({
       ],
       after: '看过了 README，测试全部通过。\n\n```ts\nexport const answer = 42;\n```',
     },
+    E2E_EDIT: {
+      kind: 'tools',
+      tools: [
+        { name: 'read', input: { file_path: 'README.md' } },
+        { name: 'edit', input: { file_path: 'README.md', old_string: '# demo', new_string: '# demo\n\n一个演示项目。' } },
+      ],
+      after: 'README 改好了。',
+    },
     default: { kind: 'text', chunks: ['你好！', '我是 **dsh**，', '可以帮你阅读和修改代码。'], delayMs: 60 },
   },
 });
@@ -152,6 +160,42 @@ try {
   const status = await page.locator('.statusbar-item', { hasText: 'DSH' }).first().innerText();
   check(`状态栏显示当前模型（${status.replace(/\s+/gu, ' ').trim()}）`, status.includes('·'));
   await page.screenshot({ path: join(outDir, 'conversation.png') });
+
+  // 文件修改：点击修改行和改动汇总，在 VS Code 的 Diff 编辑器里打开
+  await input.fill('E2E_EDIT 给 README 加一句介绍');
+  await input.press('Enter');
+  await webview.locator('.assistant', { hasText: 'README 改好了' }).waitFor({ timeout: 60_000 });
+  await webview.locator('.activity--edit .activity__row').click();
+  await page.locator('.monaco-diff-editor').first().waitFor({ timeout: 15_000 }).then(
+    () => check('点击修改行在 Diff 编辑器里打开', true),
+    () => check('点击修改行在 Diff 编辑器里打开', false),
+  );
+  const tab = await page.locator('.tab.active').first().innerText().catch(() => '');
+  check(`Diff 标签标明修改前后（${tab.replace(/\s+/gu, ' ').trim()}）`, tab.includes('修改前'));
+  const original = await page.locator('.monaco-diff-editor .editor.original .view-lines').first().innerText().catch(() => '');
+  const modified = await page.locator('.monaco-diff-editor .editor.modified .view-lines').first().innerText().catch(() => '');
+  check('Diff 左侧是修改前的内容，右侧是当前文件', !original.includes('一个演示项目') && modified.includes('一个演示项目'));
+  await page.screenshot({ path: join(outDir, 'diff.png') });
+  await webview.locator('.changes__file').first().click();
+  await page.waitForFunction(() => document.querySelector('.tab.active')?.textContent?.includes('本轮修改前') ?? false, undefined, { timeout: 15_000 }).then(
+    () => check('点击改动汇总里的文件打开本轮 Diff', true),
+    () => check('点击改动汇总里的文件打开本轮 Diff', false),
+  );
+
+  // 切换到完全访问时弹出 VS Code 的模态确认框
+  await webview.getByTestId('permission-picker').click();
+  await webview.getByRole('menuitem', { name: /完全访问/u }).click();
+  const dialog = page.locator('.monaco-dialog-box');
+  await dialog.waitFor({ timeout: 10_000 }).then(
+    () => check('切换到完全访问前弹出模态确认框', true),
+    () => check('切换到完全访问前弹出模态确认框', false),
+  );
+  await page.screenshot({ path: join(outDir, 'permission-confirm.png') });
+  await dialog.getByRole('button', { name: '允许完全访问' }).click();
+  await webview.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('完全访问') ?? false, undefined, { timeout: 10_000 }).then(
+    () => check('确认后权限切换为完全访问', true),
+    () => check('确认后权限切换为完全访问', false),
+  );
 
   await runCommand('DSH: 切换模型');
   await page.waitForTimeout(800);

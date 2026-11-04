@@ -89,6 +89,64 @@ const controlFrameSchema = z.union([
 ]);
 export type ControlFrame = z.infer<typeof controlFrameSchema>;
 
+const permissionCatalogSchema = z.object({
+  options: z.array(z.object({ value: z.string(), name: z.string().optional() })),
+  defaultPreset: z.string().optional(),
+});
+export type PermissionCatalog = z.infer<typeof permissionCatalogSchema>;
+
+const commandResultSchema = z.object({
+  commandId: z.string().optional(),
+  result: z.object({ kind: z.string(), text: z.string().optional() }).loose(),
+});
+export type CommandResult = z.infer<typeof commandResultSchema>['result'];
+
+/** `/api/changes.summary`：一轮里改动过的文件（包括命令造成的）。 */
+const changesSummarySchema = z.object({
+  turn: z.number(),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      display: z.string().optional(),
+      added: z.number().optional(),
+      deleted: z.number().optional(),
+      binary: z.boolean().optional(),
+      oversized: z.boolean().optional(),
+    }),
+  ),
+  total: z.number(),
+});
+export type ChangesSummary = z.infer<typeof changesSummarySchema>;
+
+const hunkSchema = z.object({
+  oldStart: z.number(),
+  oldLines: z.number(),
+  newStart: z.number(),
+  newLines: z.number(),
+  lines: z.array(z.string()),
+});
+
+/** `/api/changes.diff`：一轮里一个文件的改动。 */
+const changesDiffSchema = z.union([
+  z.object({
+    kind: z.literal('text'),
+    path: z.string(),
+    before: z.boolean(),
+    after: z.boolean(),
+    hunks: z.array(hunkSchema),
+  }),
+  z.object({ kind: z.enum(['binary', 'oversized']), path: z.string() }).loose(),
+]);
+export type ChangesDiff = z.infer<typeof changesDiffSchema>;
+
+/** 改动汇总只保存在 Host 内存里，Host 重启后返回 404。 */
+export class ChangesUnavailableError extends Error {
+  constructor() {
+    super('本轮改动记录已不可用（dsh 重启过）');
+    this.name = 'ChangesUnavailableError';
+  }
+}
+
 export interface DshClientOptions {
   readonly origin: string;
   readonly token: string;
@@ -106,6 +164,7 @@ export class DshClient {
     readonly mux: MuxClient,
     readonly events: RemoteEvents,
     readonly ready: ReadyInfo,
+    private readonly fetchImpl: FetchLike,
   ) {}
 
   /**
@@ -120,7 +179,7 @@ export class DshClient {
     await mux.connect();
     const events = new RemoteEvents(mux, unary, log);
     const ready = await events.start();
-    return new DshClient(credential, unary, mux, events, ready);
+    return new DshClient(credential, unary, mux, events, ready, options.fetchImpl ?? ((input, init) => fetch(input, init)));
   }
 
   close(): void {
@@ -198,6 +257,50 @@ export class DshClient {
       if (parsed.success) yield parsed.data;
       else log(`session/control：跳过无法识别的帧（${describeFrame(raw)}）`);
     }
+  }
+
+  /** 权限预设目录（read-only、workspace-write、danger-full-access 及用户自定义的）。 */
+  async permissionCatalog(): Promise<PermissionCatalog> {
+    return parse(permissionCatalogSchema, await this.unary.call('permissionPresets/catalog', {}), 'permissionPresets/catalog');
+  }
+
+  /** 执行一条斜杠命令，例如 `/permission read-only`。 */
+  async executeCommand(sessionId: string, line: string): Promise<CommandResult> {
+    const value = await this.unary.call('commands/execute', { agentId: sessionId, line, submittedAttachments: [] });
+    return parse(commandResultSchema, value, 'commands/execute').result;
+  }
+
+  /**
+   * 一轮的改动汇总。`seq` 是该轮 `workspace/changes` 事件的序号。
+   * @throws ChangesUnavailableError Host 重启后汇总不再可用时。
+   */
+  async changesSummary(sessionId: string, seq: number): Promise<ChangesSummary> {
+    return parse(changesSummarySchema, await this.getJson('/api/changes.summary', { sessionId, seq: String(seq) }), 'changes.summary');
+  }
+
+  /** 一轮里第 `index` 个文件的改动。 */
+  async changesDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
+    return parse(changesDiffSchema, await this.getJson('/api/changes.diff', { sessionId, seq: String(seq), index: String(index) }), 'changes.diff');
+  }
+
+  private async getJson(path: string, query: Record<string, string>): Promise<unknown> {
+    const url = new URL(path, this.credential.origin);
+    for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url.toString(), { method: 'GET', headers: { cookie: this.credential.cookie }, signal: AbortSignal.timeout(30_000) });
+    } catch (cause) {
+      throw new TransportError(`${path} 请求失败`, { cause });
+    }
+    if (response.status === 404) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new ChangesUnavailableError();
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new TransportError(`${path}: HTTP ${response.status}`);
+    }
+    return response.json();
   }
 
   async cancel(sessionId: string): Promise<void> {

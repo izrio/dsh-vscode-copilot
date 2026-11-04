@@ -1,6 +1,6 @@
 # dsh 对接说明
 
-> 状态：v0.4（M1 已验证）｜ 日期：2026-11-04
+> 状态：v0.5（M2 已验证）｜ 日期：2026-11-04
 >
 > 本文记录调研到的 dsh 事实、参考项目的做法、插件与 dsh 的对接细节，以及 M0 的实测结果。设计决策见 [DESIGN.md](./DESIGN.md)。
 >
@@ -23,7 +23,8 @@
 7. [会话事件模型](#7-会话事件模型)
 8. [版本策略](#8-版本策略)
 9. [M0 验证结果](#9-m0-验证结果)
-10. [参考资料](#10-参考资料)
+10. [M2 验证结果](#10-m2-验证结果)
+11. [参考资料](#11-参考资料)
 
 ---
 
@@ -285,8 +286,8 @@ dsh --profile web [启动器参数] --no-open --host 127.0.0.1 --port 0
 
 | | 单次工具调用（`tool/result.meta`） | 每轮汇总（`workspace/changes`） |
 | --- | --- | --- |
-| 结构 | `{ operation?, path, diffs: [{ path, oldText, newText }] }` ✅ | 事件只带 `{ turn }`，摘要和单文件对比由 Host 服务提供 |
-| 覆盖范围 | 文件工具（`write`、`edit`；`apply_patch` **【待验证】**） | 本轮所有改动，含 shell 命令造成的改动（需要 git） |
+| 结构 | `{ operation?, path, diffs: [{ path, oldText, newText }] }` ✅ | 事件只带 `{ turn }`，摘要和单文件对比由 Host 的 HTTP 接口提供（见 10.1）✅ |
+| 覆盖范围 | 文件工具（`write`、`edit`；0.2.1-rc.5 的文件工具里没有 `apply_patch`）✅ | 本轮所有改动，含 shell 命令造成的改动（需要 git） |
 | 新建文件 | `operation: 'create'`，`diffs: []`；改动后的内容就是 `tool/call` 参数里的 `content` ✅ | |
 | 修改文件 | 每个片段带三行上下文；纯插入时 `oldText` 为 `null`；**没有行号，也没有完整的改动前文件** ✅ | 带三行上下文的片段 |
 | 路径 | 绝对路径 ✅ | 工作区内为相对路径 |
@@ -372,7 +373,38 @@ pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
 
 ---
 
-## 10. 参考资料
+## 10. M2 验证结果
+
+在 `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上用 `scripts/ui-e2e.ts`（50 项）验证，`0.2.1-rc.5` 上另用 code-server 跑 `scripts/vscode-e2e.ts`（13 项）。
+
+### 10.1 接口
+
+| 用途 | 接口 | 参数 | 返回 |
+| --- | --- | --- | --- |
+| 审批 | `$events` waterfall `approval/request` | `{ toolName, callId?, reason?, displayReason?: { en, zh } }` | `{ kind: 'result', value: 'allowed-once' \| 'rejected' }`（dsh 还接受 `cancelled` / `unavailable`） |
+| 提问 | `$events` waterfall `user-questions/request` | `{ questions: [{ id, question, header?, detail?, options?: [{ label, description? }], multiSelect? }] }` | `{ kind: 'result', value: { answers: [{ id, selected: string[], custom? }] } }` 或 `{ cancelled: true }` |
+| 权限目录 | `permissionPresets/catalog` | `{}` | `{ options: [{ value, name }], defaultPreset }` |
+| 切换权限 | `commands/execute` | `{ agentId, line: '/permission <预设>', submittedAttachments: [] }` | `{ commandId, result: { kind: 'success', text } }`；当前值在投影 `permissions.currentValue` |
+| 本轮改动摘要 | `GET /api/changes.summary?sessionId=&seq=`（带认证 Cookie，`seq` 是 `workspace/changes` 事件的序号） | — | `{ turn, files: [{ path, display, added, deleted, binary?, oversized? }], total, added, deleted }` |
+| 本轮单文件对比 | `GET /api/changes.diff?sessionId=&seq=&index=` | — | `{ kind: 'text', path, before, after, hunks: [{ oldStart, oldLines, newStart, newLines, lines: [' 上下文', '-旧', '+新'] }], coarse }`；二进制、过大文件 `kind` 为 `binary` / `oversized` |
+
+两个 changes 接口不是 Remote 方法，是普通的 HTTP GET；Host 重启后返回 404。
+
+### 10.2 发现
+
+| 主题 | 发现 | 插件的处理 |
+| --- | --- | --- |
+| 审批请求的内容 | 只有工具名、`callId` 和原因，没有命令或文件路径；`tool/call` 事件先于审批持久化 | 用 `callId` 在会话日志里找 `tool/call` 参数，显示命令或文件 |
+| 审批原因 | `reason` 是英文（`escalate sandbox to danger-full-access: <justification>`），`displayReason.zh` 是中文 | 优先 `displayReason.zh` |
+| 提问的投影 | 0.2.1-rc.5 默认阻塞模式：等待回答期间 `userQuestions` 投影的 `active` 一直为空 | 只靠 waterfall；不做"超时后延迟回答" |
+| 提问结果 | `tool/result` 的内容是回答的 JSON | 活动行显示"回答：…" |
+| `edit` 的片段 | `oldText` / `newText` 带上下文，最后一行通常没有换行符 | 统计增删行数前补齐结尾换行，否则最后一行会被算成修改 |
+| 本轮 hunk | 与 unified diff 一致：新建文件 `oldLines: 0`，删除的文件 `after: false` | 从当前文件逐行核对后反向应用；新建/删除分别用空文档做一侧 |
+| Host 重启 | 新 Host 使用新端口；之前轮次的 changes 接口返回 404，`tool/result.meta` 仍在会话日志里 | origin 变化时清掉缓存，404 时卡片退回按文件工具汇总，Diff 用会话日志里的片段 |
+
+---
+
+## 11. 参考资料
 
 **dsh 仓库**：
 

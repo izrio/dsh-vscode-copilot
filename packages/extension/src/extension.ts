@@ -10,6 +10,7 @@ import { DshConnection } from './dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from './runtime/RuntimeManager.ts';
 import { ChatController } from './vm/ChatController.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
+import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
 
@@ -46,7 +47,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   let provider: ChatViewProvider | undefined;
+  const workbench = new VscodeWorkbench((line) => output.info(line));
   const chat = new ChatController({
+    workbench,
     workspacePath,
     post: (message) => provider?.post(message),
     log: (line) => output.info(line),
@@ -70,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
   controller = chat;
+  context.subscriptions.push(workbench.register(() => chat.workspaceChanged()));
 
   const startIfTrusted = (): void => {
     if (!vscode.workspace.isTrusted) {

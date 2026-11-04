@@ -8,9 +8,12 @@ import type {
   HostToWebview,
   Item,
   ModelState,
+  PendingInteraction,
+  PermissionState,
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  WorkspaceState,
 } from '@dsh-copilot/shared';
 
 export interface Toast {
@@ -28,6 +31,10 @@ export interface ViewState {
   readonly sessionKey: string;
   readonly items: readonly Item[];
   readonly models: ModelState;
+  /** 当前会话等待处理的审批和提问。 */
+  readonly interactions: readonly PendingInteraction[];
+  readonly permissions: PermissionState;
+  readonly workspace: WorkspaceState;
   readonly toasts: readonly Toast[];
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
@@ -42,6 +49,9 @@ const initialState: ViewState = {
   sessionKey: '',
   items: [],
   models: { options: [] },
+  interactions: [],
+  permissions: { options: [] },
+  workspace: { dirtyFiles: 0 },
   toasts: [],
   focusRequests: 0,
 };
@@ -87,6 +97,9 @@ export function applyHostMessage(message: HostToWebview): void {
         sessionKey: p.session.id ?? '',
         items: p.items,
         models: p.models,
+        interactions: p.interactions,
+        permissions: p.permissions,
+        workspace: p.workspace,
       });
       return;
     }
@@ -104,6 +117,15 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'models':
       set({ models: message.payload });
+      return;
+    case 'interactions':
+      set({ interactions: message.payload });
+      return;
+    case 'permissions':
+      set({ permissions: message.payload });
+      return;
+    case 'workspace':
+      set({ workspace: message.payload });
       return;
     case 'items': {
       const patch = message.payload;

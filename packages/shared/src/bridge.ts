@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
-import type { ConnectionState, Item, ModelState, SessionHeader, SessionListItem } from './viewModel.ts';
+import type {
+  ConnectionState,
+  Item,
+  ModelState,
+  PendingInteraction,
+  PermissionState,
+  SessionHeader,
+  SessionListItem,
+  WorkspaceState,
+} from './viewModel.ts';
 
 /**
  * Host ↔ Webview 消息。所有消息都是 `{ type, payload }`；Host 收到 Webview 消息后先用 schema 校验再处理。
@@ -8,6 +17,11 @@ import type { ConnectionState, Item, ModelState, SessionHeader, SessionListItem 
  */
 
 const empty = z.object({});
+
+const diffRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('tool'), callId: z.string().min(1) }),
+  z.object({ kind: z.literal('turn'), seq: z.number().int().nonnegative(), index: z.number().int().nonnegative() }),
+]);
 
 export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), payload: empty }),
@@ -26,6 +40,22 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restartRuntime'), payload: empty }),
   z.object({ type: z.literal('showLogs'), payload: empty }),
   z.object({ type: z.literal('openWebUI'), payload: empty }),
+  z.object({ type: z.literal('respondApproval'), payload: z.object({ id: z.string().min(1), decision: z.enum(['allow', 'reject']) }) }),
+  z.object({ type: z.literal('previewApproval'), payload: z.object({ id: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('answerQuestion'),
+    payload: z.union([
+      z.object({
+        id: z.string().min(1),
+        answers: z.array(z.object({ id: z.string(), selected: z.array(z.string()), custom: z.string().max(20_000).optional() })),
+      }),
+      z.object({ id: z.string().min(1), cancelled: z.literal(true) }),
+    ]),
+  }),
+  z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema }) }),
+  z.object({ type: z.literal('openFile'), payload: z.object({ path: z.string().min(1) }) }),
+  z.object({ type: z.literal('selectPermission'), payload: z.object({ preset: z.string().min(1) }) }),
+  z.object({ type: z.literal('saveAll'), payload: empty }),
 ]);
 
 export type WebviewToHost = z.infer<typeof webviewToHostSchema>;
@@ -37,6 +67,9 @@ export interface HostSnapshot {
   readonly session: SessionHeader;
   readonly items: readonly Item[];
   readonly models: ModelState;
+  readonly interactions: readonly PendingInteraction[];
+  readonly permissions: PermissionState;
+  readonly workspace: WorkspaceState;
 }
 
 /**
@@ -58,6 +91,9 @@ export type HostToWebview =
   | { readonly type: 'session'; readonly payload: SessionHeader }
   | { readonly type: 'items'; readonly payload: ItemsPatch }
   | { readonly type: 'models'; readonly payload: ModelState }
+  | { readonly type: 'interactions'; readonly payload: readonly PendingInteraction[] }
+  | { readonly type: 'permissions'; readonly payload: PermissionState }
+  | { readonly type: 'workspace'; readonly payload: WorkspaceState }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }
   | { readonly type: 'focusComposer'; readonly payload: Record<string, never> };
 

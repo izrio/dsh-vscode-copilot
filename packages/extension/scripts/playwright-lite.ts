@@ -18,6 +18,10 @@ export interface Locator {
   innerText(): Promise<string>;
   allInnerTexts(): Promise<string[]>;
   evaluate<R>(fn: (element: HTMLElement) => R): Promise<R>;
+  isDisabled(): Promise<boolean>;
+  getAttribute(name: string): Promise<string | null>;
+  locator(selector: string, options?: LocatorOptions): Locator;
+  getByRole(role: string, options?: { name?: string | RegExp }): Locator;
 }
 
 export interface LocatorOptions {
@@ -27,8 +31,9 @@ export interface LocatorOptions {
 
 export interface Frame {
   locator(selector: string, options?: LocatorOptions): Locator;
-  getByRole(role: string, options?: { name?: string }): Locator;
-  waitForFunction(fn: () => boolean, arg?: undefined, options?: { timeout?: number }): Promise<unknown>;
+  getByRole(role: string, options?: { name?: string | RegExp }): Locator;
+  getByTestId(id: string): Locator;
+  waitForFunction(fn: () => boolean | undefined, arg?: undefined, options?: { timeout?: number }): Promise<unknown>;
   evaluate<R>(fn: () => R): Promise<R>;
 }
 

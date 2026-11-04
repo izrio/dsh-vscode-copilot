@@ -4,24 +4,31 @@
  * Extension Host 是状态的唯一来源（docs/DESIGN.md D7）：Webview 加载后取一次快照，之后只收增量。
  * 推送按约 30ms 合并，流式输出时不会产生消息风暴。不依赖 vscode API，便于测试。
  */
+import { isAbsolute, resolve } from 'node:path';
 import type {
   ConnectionState,
+  DiffRef,
   HostSnapshot,
   HostToWebview,
   Item,
   ModelOption,
   ModelState,
+  PendingInteraction,
+  PermissionState,
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
   WebviewToHost,
+  WorkspaceState,
 } from '@dsh-copilot/shared';
-import type { DshClient, ModelSelection } from '../dsh/DshClient.ts';
+import { ChangesUnavailableError, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
+import { InteractionService, type Pending } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { SessionService } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
-import { project } from './projector.ts';
+import { displayPath, project, toolVariant, type ToolCallInfo } from './projector.ts';
+import { noWorkbench, type Workbench } from './workbench.ts';
 
 export interface ChatControllerOptions {
   readonly workspacePath: string;
@@ -36,10 +43,13 @@ export interface ChatControllerOptions {
   readonly openWebUI: () => void;
   /** 当前模型的显示名变化时调用（状态栏用）。 */
   readonly onModelChange?: (label: string | undefined) => void;
+  /** 打开 Diff、未保存文件、确认框。 */
+  readonly workbench?: Workbench;
   readonly renderDelayMs?: number;
 }
 
 const NEW_SESSION_TITLE = '新对话';
+const DANGER_PRESET = 'danger-full-access';
 
 export class ChatController {
   private runtime: RuntimeStatus = { kind: 'idle' };
@@ -54,6 +64,15 @@ export class ChatController {
   private staleStream: SessionStream | undefined;
   private activeId: string | undefined;
   private draftModel: ModelSelection | undefined;
+  /** 新对话选择的权限预设，创建会话时应用。 */
+  private draftPermission: string | undefined;
+  private interactions: InteractionService | undefined;
+  /** 每轮改动汇总的读取结果，键是 `sessionId:seq`。 */
+  private readonly changes = new Map<string, ChangesSummary | 'unavailable' | 'loading'>();
+  /** 当前会话最近一次投影里的工具调用，用于打开 Diff 和审批预览。 */
+  private toolCalls: ReadonlyMap<string, ToolCallInfo> = new Map();
+  /** 改动汇总来自哪个 Host；Host 重启（换了端口）后内存里的汇总都没了，要重新读取。 */
+  private changesOrigin: string | undefined;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private serviceGeneration = 0;
 
@@ -61,16 +80,26 @@ export class ChatController {
   private sentSessionKey: string | undefined;
   private sentItems = new Map<string, string>();
   private sentOrder: readonly string[] = [];
-  private sentJson = { sessions: '', session: '', models: '' };
+  private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '' };
 
   constructor(private readonly options: ChatControllerOptions) {
     this.activeId = options.loadActiveSessionId();
+  }
+
+  private get workbench(): Workbench {
+    return this.options.workbench ?? noWorkbench;
   }
 
   dispose(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer);
     this.stream?.dispose();
     this.service?.dispose();
+    this.interactions?.dispose();
+  }
+
+  /** 编辑器里文件的未保存状态变化时调用。 */
+  workspaceChanged(): void {
+    this.scheduleRender();
   }
 
   setRuntimeStatus(status: RuntimeStatus): void {
@@ -98,8 +127,18 @@ export class ChatController {
     }
     this.stream = undefined;
     this.service = undefined;
+    // 挂起的审批和提问绑定在旧连接上，dsh 会在新连接上重新转发还在等待的请求
+    this.interactions?.dispose();
+    this.interactions = undefined;
+    for (const [key, value] of this.changes) if (value === 'loading') this.changes.delete(key);
     this.scheduleRender();
     if (!client) return;
+    this.interactions = new InteractionService(client, () => this.scheduleRender(), this.options.log);
+    const origin = client.credential?.origin;
+    if (origin !== this.changesOrigin) {
+      this.changes.clear();
+      this.changesOrigin = origin;
+    }
     const service = new SessionService({
       client,
       workspacePath: this.options.workspacePath,
@@ -135,7 +174,14 @@ export class ChatController {
     this.sentSessionKey = view.sessionKey;
     this.sentItems = new Map(view.items.map((item) => [item.id, JSON.stringify(item)]));
     this.sentOrder = view.items.map((item) => item.id);
-    this.sentJson = { sessions: JSON.stringify(view.sessions), session: JSON.stringify(view.session), models: JSON.stringify(view.models) };
+    this.sentJson = {
+      sessions: JSON.stringify(view.sessions),
+      session: JSON.stringify(view.session),
+      models: JSON.stringify(view.models),
+      interactions: JSON.stringify(view.interactions),
+      permissions: JSON.stringify(view.permissions),
+      workspace: JSON.stringify(view.workspace),
+    };
     return {
       runtime: this.runtime,
       connection: this.connection,
@@ -143,6 +189,9 @@ export class ChatController {
       session: view.session,
       items: view.items,
       models: view.models,
+      interactions: view.interactions,
+      permissions: view.permissions,
+      workspace: view.workspace,
     };
   }
 
@@ -183,7 +232,106 @@ export class ChatController {
       case 'openWebUI':
         this.options.openWebUI();
         return;
+      case 'respondApproval':
+        return this.respondApproval(message.payload.id, message.payload.decision === 'allow');
+      case 'previewApproval':
+        return this.previewApproval(message.payload.id);
+      case 'answerQuestion': {
+        const { id, ...answer } = message.payload;
+        if (!this.interactions?.answerQuestion(id, 'cancelled' in answer ? { cancelled: true } : { answers: answer.answers })) {
+          this.toast('info', '这个问题已经结束');
+        }
+        return;
+      }
+      case 'openDiff':
+        return this.openDiff(message.payload.ref);
+      case 'openFile':
+        return this.workbench.openFile(this.absolute(message.payload.path));
+      case 'selectPermission':
+        return this.selectPermission(message.payload.preset);
+      case 'saveAll':
+        return this.workbench.saveAll();
     }
+  }
+
+  private respondApproval(id: string, allow: boolean): void {
+    const pending = this.interactions?.get(id);
+    if (!pending || pending.kind !== 'approval') {
+      this.toast('info', '这个请求已经结束');
+      return;
+    }
+    if (allow && this.approvalView(pending).dirtyFiles.length > 0) {
+      // 编辑器里还有未保存的内容，dsh 写入后会和编辑器冲突
+      this.toast('error', '要修改的文件有未保存的内容，请先保存');
+      return;
+    }
+    this.interactions?.respondApproval(id, allow);
+  }
+
+  private async previewApproval(id: string): Promise<void> {
+    const pending = this.interactions?.get(id);
+    const call = pending?.kind === 'approval' && pending.request.callId ? this.toolCalls.get(pending.request.callId) : undefined;
+    if (!call?.path) {
+      this.toast('info', '没有可以预览的内容');
+      return;
+    }
+    await this.workbench.openDiff({ kind: 'proposed', path: call.path, tool: call.tool, args: call.args });
+  }
+
+  private async openDiff(ref: DiffRef): Promise<void> {
+    if (ref.kind === 'tool') {
+      const call = this.toolCalls.get(ref.callId);
+      if (!call?.path) {
+        this.toast('info', '找不到这次修改的记录');
+        return;
+      }
+      if (!call.created && !call.diffs?.length) return this.workbench.openFile(call.path);
+      return this.workbench.openDiff({ kind: 'tool', path: call.path, diffs: call.diffs ?? [], created: call.created ?? false });
+    }
+    const sessionId = this.activeId;
+    const client = this.service?.client;
+    if (!sessionId || !client) return;
+    try {
+      const diff = await client.changesDiff(sessionId, ref.seq, ref.index);
+      const path = this.absolute(diff.path);
+      if (diff.kind !== 'text') {
+        this.toast('info', diff.kind === 'binary' ? '二进制文件，无法显示 Diff' : '文件太大，无法显示 Diff');
+        return this.workbench.openFile(path);
+      }
+      await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
+    } catch (error) {
+      if (error instanceof ChangesUnavailableError) {
+        // 汇总已经不在 Host 内存里：卡片改为按文件工具汇总，那里的 Diff 来自会话日志
+        this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
+        this.scheduleRender();
+        this.toast('info', '这一轮的改动记录已不可用（dsh 重启过），已改为显示文件工具的修改');
+      } else this.toast('error', `无法读取改动：${describe(error)}`);
+    }
+  }
+
+  private async selectPermission(preset: string): Promise<void> {
+    if (preset === DANGER_PRESET) {
+      const ok = await this.workbench.confirm(
+        '允许 dsh 完全访问？',
+        'danger-full-access 下 dsh 执行命令和修改文件不再受工作区沙箱限制，可以访问整台机器。只在你信任当前任务时使用。',
+        '允许完全访问',
+      );
+      if (!ok) return;
+    }
+    if (!this.activeId || !this.service) {
+      this.draftPermission = preset;
+      this.scheduleRender();
+      return;
+    }
+    try {
+      await this.service.setPermission(this.activeId, preset);
+    } catch (error) {
+      this.toast('error', `切换权限失败：${describe(error)}`);
+    }
+  }
+
+  private absolute(path: string): string {
+    return isAbsolute(path) ? path : resolve(this.options.workspacePath, path);
   }
 
   /** 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。 */
@@ -204,6 +352,12 @@ export class ChatController {
           });
           this.draftModel = undefined;
         }
+        if (this.draftPermission && this.draftPermission !== service.permissions?.defaultPreset) {
+          await service.setPermission(sessionId, this.draftPermission).catch((error: unknown) => {
+            this.toast('error', `为新会话设置权限失败：${describe(error)}`);
+          });
+        }
+        this.draftPermission = undefined;
       }
       await service.prompt(sessionId, text);
     } catch (error) {
@@ -307,6 +461,22 @@ export class ChatController {
       this.options.post({ type: 'session', payload: view.session });
     }
     this.postItems(view.sessionKey, view.items);
+    // 卡片放在条目之后推送：Webview 先有条目，再显示末尾的审批
+    const interactionsJson = JSON.stringify(view.interactions);
+    if (interactionsJson !== this.sentJson.interactions) {
+      this.sentJson.interactions = interactionsJson;
+      this.options.post({ type: 'interactions', payload: view.interactions });
+    }
+    const permissionsJson = JSON.stringify(view.permissions);
+    if (permissionsJson !== this.sentJson.permissions) {
+      this.sentJson.permissions = permissionsJson;
+      this.options.post({ type: 'permissions', payload: view.permissions });
+    }
+    const workspaceJson = JSON.stringify(view.workspace);
+    if (workspaceJson !== this.sentJson.workspace) {
+      this.sentJson.workspace = workspaceJson;
+      this.options.post({ type: 'workspace', payload: view.workspace });
+    }
   }
 
   private postItems(sessionKey: string, items: readonly Item[]): void {
@@ -327,7 +497,16 @@ export class ChatController {
     this.options.post({ type: 'items', payload: { sessionKey, reset, order, upsert } });
   }
 
-  private compute(): { sessionKey: string; sessions: SessionListItem[]; session: SessionHeader; items: Item[]; models: ModelState } {
+  private compute(): {
+    sessionKey: string;
+    sessions: SessionListItem[];
+    session: SessionHeader;
+    items: Item[];
+    models: ModelState;
+    interactions: PendingInteraction[];
+    permissions: PermissionState;
+    workspace: WorkspaceState;
+  } {
     // 新连接还没准备好时，先显示断线前的内容
     if (this.service?.initialized) this.staleService = undefined;
     if (this.stream?.status.kind === 'live') this.staleStream = undefined;
@@ -346,7 +525,13 @@ export class ChatController {
       pending,
       ...(streamLive ? {} : { fallbackRunning: summary?.running ?? false }),
       workspacePath: this.options.workspacePath,
+      changes: (seq) => {
+        const value = sessionId ? this.changes.get(`${sessionId}:${seq}`) : undefined;
+        return value === 'loading' ? undefined : value;
+      },
     });
+    this.toolCalls = projection.toolCalls;
+    if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
     if (sessionId && service && projection.persistedRequestIds.size > 0) {
       service.retirePending(sessionId, projection.persistedRequestIds);
     }
@@ -365,12 +550,24 @@ export class ChatController {
       ...contextUsageOf(projections),
     };
 
+    const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();
     const sessions: SessionListItem[] = (service?.sessions ?? []).map((s) => ({
       id: s.sessionId,
       title: titleOf(service?.projections(s.sessionId) ?? {}, []),
       updatedAt: s.updatedAt,
       running: s.sessionId === sessionId && streamLive ? running : s.running,
+      ...(attention.has(s.sessionId) ? { needsAttention: true } : {}),
     }));
+
+    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => this.interactionView(p)) : [];
+    const catalog = service?.permissions;
+    const currentPermission = sessionId
+      ? (projections.permissions as { currentValue?: string } | undefined)?.currentValue
+      : (this.draftPermission ?? catalog?.defaultPreset);
+    const permissions: PermissionState = {
+      options: catalog?.options.map((o) => o.value) ?? [],
+      ...(currentPermission ? { current: currentPermission } : {}),
+    };
 
     return {
       sessionKey: sessionId ?? '',
@@ -378,6 +575,68 @@ export class ChatController {
       session,
       items: projection.items,
       models: this.buildModelState(projections, service),
+      interactions,
+      permissions,
+      workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
+    };
+  }
+
+  /** 读取还没读过的改动汇总。Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。 */
+  private loadChanges(sessionId: string, seqs: readonly number[]): void {
+    const client = this.service?.client;
+    if (!client) return;
+    for (const seq of seqs) {
+      const key = `${sessionId}:${seq}`;
+      if (this.changes.has(key)) continue;
+      this.changes.set(key, 'loading');
+      void client.changesSummary(sessionId, seq).then(
+        (summary) => this.changes.set(key, summary),
+        (error: unknown) => {
+          if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
+          this.changes.set(key, 'unavailable');
+        },
+      ).finally(() => this.scheduleRender());
+    }
+  }
+
+  private interactionView(pending: Pending): PendingInteraction {
+    if (pending.kind === 'approval') return this.approvalView(pending);
+    return {
+      kind: 'question',
+      id: pending.id,
+      questions: pending.request.questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        ...(q.header ? { header: q.header } : {}),
+        ...(q.detail ? { detail: q.detail } : {}),
+        options: q.options ?? [],
+        multiSelect: q.multiSelect ?? q.multi_select ?? false,
+      })),
+    };
+  }
+
+  /** 审批卡片：从会话日志里找到对应的工具调用，显示要执行的命令或要修改的文件。 */
+  private approvalView(pending: Extract<Pending, { kind: 'approval' }>): Extract<PendingInteraction, { kind: 'approval' }> {
+    const request = pending.request;
+    const call = request.callId ? this.toolCalls.get(request.callId) : undefined;
+    const tool = call?.tool ?? request.toolName;
+    const variant = toolVariant(tool);
+    const display = request.displayReason;
+    const reason = display?.zh ?? display?.['zh-CN'] ?? request.reason ?? display?.en ?? '';
+    const command = call && variant === 'command' ? (call.args.command ?? call.args.cmd) : undefined;
+    const path = call?.path;
+    let subject: { subject: string; subjectKind: 'command' | 'file' } | undefined;
+    if (typeof command === 'string' && command.trim()) subject = { subject: command.trim(), subjectKind: 'command' };
+    else if (path) subject = { subject: displayPath(path, this.options.workspacePath), subjectKind: 'file' };
+    const dirty = path && variant === 'edit' && this.workbench.dirtyFiles().includes(path) ? [displayPath(path, this.options.workspacePath)] : [];
+    return {
+      kind: 'approval',
+      id: pending.id,
+      toolName: tool,
+      reason,
+      ...(subject ?? {}),
+      previewable: Boolean(path && (tool === 'edit' || tool === 'write')),
+      dirtyFiles: dirty,
     };
   }
 

@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, relative } from 'node:path';
-import type { DshClient, ModelCatalog, ModelSelection, SessionSummaryWire } from './DshClient.ts';
+import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, SessionSummaryWire } from './DshClient.ts';
 import { isMethodUnavailable } from './remote/errors.ts';
 
 export type Projections = Readonly<Record<string, unknown>>;
@@ -37,6 +37,7 @@ export class SessionService {
   private readonly projectionValues = new Map<string, Record<string, unknown>>();
   private readonly pendingBySession = new Map<string, PendingPrompt[]>();
   private catalog: ModelCatalog | undefined;
+  private permissionCatalog: PermissionCatalog | undefined;
   private readonly abort = new AbortController();
   private readonly disposers: (() => void)[] = [];
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -57,6 +58,10 @@ export class SessionService {
     return this.catalog;
   }
 
+  get permissions(): PermissionCatalog | undefined {
+    return this.permissionCatalog;
+  }
+
   /** 当前工作区的会话，按最近更新排序；空白会话不列出。 */
   get sessions(): readonly SessionSummaryWire[] {
     return this.summaries;
@@ -75,6 +80,12 @@ export class SessionService {
           this.catalog = catalog;
         },
         (error: unknown) => this.log(`读取模型目录失败：${describe(error)}`),
+      ),
+      this.client.permissionCatalog().then(
+        (catalog) => {
+          this.permissionCatalog = catalog;
+        },
+        (error: unknown) => this.log(`读取权限预设失败：${describe(error)}`),
       ),
     ]);
     void this.followControl();
@@ -152,6 +163,18 @@ export class SessionService {
     const current = this.projectionValues.get(sessionId) ?? {};
     const modelSelection = (current.modelSelection as Record<string, unknown> | undefined) ?? {};
     this.projectionValues.set(sessionId, { ...current, modelSelection: { ...modelSelection, next: selected } });
+    this.options.onChange();
+  }
+
+  /**
+   * 切换会话的权限预设（`/permission <preset>`）。dsh 通过 session/control 推送新值，这里先乐观更新。
+   * @throws Error dsh 拒绝时，消息是 dsh 给出的原因。
+   */
+  async setPermission(sessionId: string, preset: string): Promise<void> {
+    const result = await this.client.executeCommand(sessionId, `/permission ${preset}`);
+    if (result.kind !== 'success') throw new Error(result.text ?? `无法切换到 ${preset}`);
+    const current = this.projectionValues.get(sessionId) ?? {};
+    this.projectionValues.set(sessionId, { ...current, permissions: { ...(current.permissions as object | undefined), currentValue: preset } });
     this.options.onChange();
   }
 
