@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 强调色改为运行时从主题里挑第一个有颜色的（主按钮 → 焦点边框 → 链接 → 进度条 → 图表蓝），并配好文字色。按钮、输入框边框和焦点、链接、进度、选中项都用它，按钮和焦点色是灰色的主题下也不会再"没有颜色"。
+  The accent color is picked at runtime from the first colorful theme color (button → focus border → link → progress bar → chart blue) with a matching text color, and used for buttons, the input border and focus, links, progress and selections, so themes with gray button or focus colors still look colored.
+
 - 提问卡片逐题回答：多个问题时一次显示一道，顶部显示「第 1 / 3 题」和可点击的进度条，单选后自动进入下一题，可以返回上一题，最后一题才提交。选项改成带单选圈 / 多选框的卡片。
   Questions are answered one at a time: a "1 of 3" counter and clickable progress steps, single-choice answers advance automatically, Back/Next, and Submit on the last question. Options show radio or checkbox marks.
 
