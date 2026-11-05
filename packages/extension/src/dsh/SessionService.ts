@@ -8,17 +8,25 @@
  */
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, relative } from 'node:path';
-import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, SessionSummaryWire } from './DshClient.ts';
-import { isMethodUnavailable } from './remote/errors.ts';
+import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, PromptImageInput, SessionSummaryWire } from './DshClient.ts';
+import { isMethodUnavailable, RemoteError } from './remote/errors.ts';
+import { t } from '../i18n.ts';
 
 export type Projections = Readonly<Record<string, unknown>>;
 
 export interface PendingPrompt {
   readonly requestId: string;
   readonly text: string;
+  /** 随消息发送的图片；保留内容，失败重试时原样再发。 */
+  readonly images?: readonly PendingImage[];
   readonly sentAt: number;
   readonly state: 'sending' | 'accepted' | 'failed';
   readonly error?: string;
+}
+
+export interface PendingImage extends PromptImageInput {
+  /** Webview 里这张图片的标识，本地回显据此显示。 */
+  readonly localId: string;
 }
 
 export interface SessionServiceOptions {
@@ -149,13 +157,15 @@ export class SessionService {
    * 发送一条消息。立即加入本地回显；失败时回显标记为失败，可以重试。
    * @returns requestId。
    */
-  async prompt(sessionId: string, text: string, requestId: string = randomUUID()): Promise<string> {
-    this.setPending(sessionId, requestId, { requestId, text, sentAt: Date.now(), state: 'sending' });
+  async prompt(sessionId: string, text: string, requestId: string = randomUUID(), images: readonly PendingImage[] = []): Promise<string> {
+    this.setPending(sessionId, requestId, { requestId, text, ...(images.length ? { images } : {}), sentAt: Date.now(), state: 'sending' });
     try {
-      await this.client.prompt(sessionId, text, requestId);
+      await this.client.prompt(sessionId, text, requestId, images);
       this.updatePending(sessionId, requestId, { state: 'accepted' });
     } catch (error) {
-      this.updatePending(sessionId, requestId, { state: 'failed', error: describe(error) });
+      // 图片被 dsh 拒绝时给出能看懂的原因，其他错误保留原文
+      const reason = error instanceof RemoteError && error.code.startsWith('session/attachment') ? t('send.imageInvalid') : describe(error);
+      this.updatePending(sessionId, requestId, { state: 'failed', error: reason });
       throw error;
     }
     return requestId;

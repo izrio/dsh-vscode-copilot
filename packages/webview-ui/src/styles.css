@@ -2444,3 +2444,119 @@ body.resizing {
     animation: none;
   }
 }
+
+/* ---------- 图片：输入框里的待发送缩略图、消息里的图片、大图 ---------- */
+
+.composer__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.user__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 4px;
+}
+
+.image-thumb {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.image-thumb__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 90px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bubble);
+  cursor: zoom-in;
+}
+
+.image-thumb--small .image-thumb__button {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+}
+
+.image-thumb__button:hover {
+  border-color: var(--accent);
+}
+
+.image-thumb__button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-thumb__placeholder {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.image-thumb__placeholder--loading {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.image-thumb__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--vscode-editorWidget-background, var(--surface));
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.image-thumb__remove:hover {
+  background: var(--vscode-errorForeground, #f14c4c);
+  color: #fff;
+}
+
+.image-thumb__remove svg {
+  width: 10px;
+  height: 10px;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  background: color-mix(in srgb, var(--vscode-editor-background, #000) 88%, transparent);
+  cursor: zoom-out;
+}
+
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  object-fit: contain;
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}

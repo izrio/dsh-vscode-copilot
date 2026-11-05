@@ -133,6 +133,8 @@ export function friendlyError(error: unknown): string {
         return t('send.noCredentials');
       case 'session/agent-busy':
         return t('send.busy');
+      case 'session/attachment-invalid':
+        return t('send.imageInvalid');
       default:
         return t('send.failed', error.message);
     }

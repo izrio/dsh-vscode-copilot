@@ -29,7 +29,7 @@ export type Script =
 export interface MockModel {
   readonly url: string;
   /** 收到的请求；`userText` 是最近一条用户文本（用于检查 dsh 实际发给模型的内容）。 */
-  readonly requests: { readonly path: string; readonly marker?: string; readonly userText?: string }[];
+  readonly requests: { readonly path: string; readonly marker?: string; readonly userText?: string; readonly images?: number }[];
   close(): Promise<void>;
 }
 
@@ -43,7 +43,7 @@ interface AnthropicMessage {
  * @param scripts - 标记 → 脚本；最近一条用户文本包含某个标记时使用对应脚本，否则用 `default`。
  */
 export async function startMockModel(scripts: Readonly<Record<string, Script>>): Promise<MockModel> {
-  const requests: { path: string; marker?: string; userText?: string }[] = [];
+  const requests: { path: string; marker?: string; userText?: string; images?: number }[] = [];
   const openResponses = new Set<ServerResponse>();
 
   const server: Server = createServer((request, response) => {
@@ -72,7 +72,8 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
     const payload = JSON.parse(body) as { model?: string; messages?: readonly AnthropicMessage[] };
     const messages = payload.messages ?? [];
     const marker = Object.keys(scripts).find((key) => key !== 'default' && lastUserText(messages).includes(key));
-    requests.push({ path, ...(marker ? { marker } : {}), userText: lastUserText(messages) });
+    const images = lastUserImages(messages);
+    requests.push({ path, ...(marker ? { marker } : {}), userText: lastUserText(messages), ...(images ? { images } : {}) });
     const script = scripts[marker ?? 'default'] ?? { kind: 'text', chunks: ['OK'] };
     const afterTool = lastMessageIsToolResult(messages);
     const completedTools = toolResultsSinceUserText(messages);
@@ -131,6 +132,17 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
         server.close(() => resolve());
       }),
   };
+}
+
+/** 最近一条带文字的用户消息里的图片数（检查 dsh 有没有把图片发给模型）。 */
+function lastUserImages(messages: readonly AnthropicMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== 'user' || typeof message.content === 'string') continue;
+    if (!message.content.some((block) => block.type === 'text')) continue;
+    return message.content.filter((block) => block.type === 'image').length;
+  }
+  return 0;
 }
 
 function lastUserText(messages: readonly AnthropicMessage[]): string {

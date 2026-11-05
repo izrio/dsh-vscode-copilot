@@ -7,6 +7,7 @@ import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
 import { TurnDone } from './RunStatus.tsx';
+import { ImageThumb } from './Images.tsx';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -65,6 +66,13 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.text ? (
         <div className="user__bubble">
           <UserText text={item.text} />
+        </div>
+      ) : null}
+      {item.images?.length ? (
+        <div className="user__images">
+          {item.images.map((image, index) => (
+            <ImageThumb key={image.attachmentId ?? image.localId ?? index} image={image} />
+          ))}
         </div>
       ) : null}
       {item.attachments?.length ? (

@@ -202,6 +202,23 @@ describe('project：按工具类型渲染（M2）', () => {
     ]);
   });
 
+  it('用户消息里的图片显示成缩略图（dsh 存成附件后的格式）', () => {
+    const events = [
+      event(1, 'user/message', {
+        content: [
+          { type: 'text', text: '看看这张图' },
+          { type: 'image', attachment: { attachmentId: 'sha256:c4', mediaType: 'image/png', width: 1, height: 1, bytes: 70, name: 'shot.png' } },
+        ],
+        source: { kind: 'user', rpcId: 'r1' },
+      }),
+      event(2, 'user/message', { content: [{ type: 'image', attachment: { attachmentId: 'sha256:d5', mediaType: 'image/jpeg' } }], source: { kind: 'user' } }),
+    ];
+    expect(project({ events, pending: [] }).items).toEqual([
+      { kind: 'user', id: 'u:1', text: '看看这张图', images: [{ attachmentId: 'sha256:c4', mediaType: 'image/png', name: 'shot.png', width: 1, height: 1 }] },
+      { kind: 'user', id: 'u:2', text: '', images: [{ attachmentId: 'sha256:d5', mediaType: 'image/jpeg' }] },
+    ]);
+  });
+
   it('write 新建文件：标记新建，新增行数取内容行数', () => {
     const items = project({
       events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],

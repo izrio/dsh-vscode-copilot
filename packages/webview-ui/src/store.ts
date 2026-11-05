@@ -3,6 +3,7 @@
  * Host 是唯一的状态来源，这里只做缓存和按 id 的增量合并。
  */
 import { useSyncExternalStore } from 'react';
+import { postToHost } from './vscode.ts';
 import type {
   AppearanceState,
   CommandView,
@@ -54,6 +55,8 @@ export interface ViewState {
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
   readonly appearance: AppearanceState;
+  /** 图片内容缓存：`local:<localId>` 或 attachmentId → data URL；'loading' 读取中，'error' 读不到。 */
+  readonly images: Readonly<Record<string, string>>;
   /** 正在打开的 Diff：`key` 是 DiffRef 的 JSON，对应的行显示加载中。 */
   readonly openingDiff?: { readonly token: number; readonly key: string };
 }
@@ -79,6 +82,7 @@ const initialState: ViewState = {
   prefill: { text: '', n: 0 },
   focusRequests: 0,
   appearance: {},
+  images: {},
 };
 
 let state: ViewState = initialState;
@@ -102,6 +106,28 @@ export function useView<T>(selector: (state: ViewState) => T): T {
     },
     () => selector(state),
   );
+}
+
+/** 图片在缓存里的键。 */
+export function imageKey(image: { readonly attachmentId?: string; readonly localId?: string }): string | undefined {
+  return image.attachmentId ?? (image.localId ? `local:${image.localId}` : undefined);
+}
+
+/** 记下本地图片（粘贴或拖进来的），发送中的回显用它显示。 */
+export function registerLocalImage(localId: string, dataUrl: string): void {
+  set({ images: { ...state.images, [`local:${localId}`]: dataUrl } });
+}
+
+/** 向 Host 读取 dsh 保存的图片；已经在读或读过时不重复请求。 */
+export function requestImage(attachmentId: string): void {
+  if (state.images[attachmentId] !== undefined) return;
+  set({ images: { ...state.images, [attachmentId]: 'loading' } });
+  postToHost({ type: 'loadImage', payload: { attachmentId } });
+}
+
+/** Webview 自己发出的提示（例如粘贴的图片不能用）。 */
+export function showToast(level: 'info' | 'error', text: string): void {
+  applyHostMessage({ type: 'toast', payload: { level, text } });
 }
 
 let diffToken = 0;
@@ -190,6 +216,9 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'appearance':
       set({ appearance: message.payload });
+      return;
+    case 'imageData':
+      set({ images: { ...state.images, [message.payload.attachmentId]: message.payload.dataUrl ?? 'error' } });
       return;
     case 'diffOpened':
       if (state.openingDiff?.token === message.payload.token) set({ openingDiff: undefined });

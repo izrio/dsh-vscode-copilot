@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 支持图片：在输入框里粘贴截图或复制的图片（也可以按住 Shift 拖进来），显示成缩略图，可以移除，随消息发给 dsh，可以只发图片。消息里显示发送过的图片（从 dsh 读取），点击放大。图片被 dsh 拒绝时提示原因。
+  Images: paste a screenshot or copied image into the input box (or Shift-drag one in); it shows as a removable thumbnail and is sent with the message, text optional. Sent images appear in the conversation (read back from dsh) and open larger on click.
+
 - 修复「在浏览器中打开 dsh」认证失败：VS Code 的 Uri 会把地址里的 `?token=` 编码成 `?token%3D`，dsh 认不出令牌，返回 401。现在打开的地址和 `dsh web` 打印的完全一样（远程开发时只转发端口）。回复里带参数的链接也不再被改写。
   Fix "Open dsh in browser" failing to log in: vscode.Uri encoded `?token=` as `?token%3D`, so dsh returned 401. The browser now gets exactly the URL `dsh web` prints (only the port is forwarded in remote setups). Links with query strings are no longer rewritten either.
 

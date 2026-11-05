@@ -6,9 +6,15 @@
  * 列表打开时 ↑↓ 选择，Enter / Tab 确认，Esc 关闭。
  *
  * 输入框顶边可以上下拖动调整高度（也可以聚焦后用 ↑↓），双击恢复随内容自动增高。高度保存在 Webview 状态里。
+ *
+ * 图片：粘贴（截图、复制的图片）或拖进输入框，显示成缩略图，随消息一起发送；可以只发图片不写文字。
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { useView } from '../store.ts';
+import type { PromptImage } from '@dsh-copilot/shared';
+// 只引入常量模块：包入口会把 zod 打进 Webview（zod 探测 new Function 会触发 CSP 违规）
+import { IMAGE_MEDIA_TYPES, MAX_IMAGES, type ImageMediaType } from '@dsh-copilot/shared/limits';
+import { registerLocalImage, showToast, useView } from '../store.ts';
+import { ImageThumb } from './Images.tsx';
 import { activeAtToken, formatFileMention, type ActiveAtToken } from '../mentions.ts';
 import { loadState, postToHost, saveState } from '../vscode.ts';
 import { Completion, type CompletionItem } from './Completion.tsx';
@@ -22,6 +28,25 @@ import { StatusStrip } from './StatusStrip.tsx';
 import { useT } from '../i18n.ts';
 
 /** 自动增高的上限；拖动设定的高度可以更高。 */
+/** 单张图片的原始大小上限（dsh 还有自己的限制，超过时发送会报错）。 */
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+let imageCounter = 0;
+const nextImageId = () => `${Date.now().toString(36)}-${(++imageCounter).toString(36)}`;
+
+/** 读成 data URL，返回 base64 部分和整个 data URL。 */
+function readImage(file: File): Promise<{ data: string; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      resolve({ dataUrl, data: dataUrl.slice(dataUrl.indexOf(',') + 1) });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
 const MAX_HEIGHT = 200;
 const MIN_HEIGHT = 40;
 const RESIZE_STEP = 16;
@@ -56,6 +81,9 @@ export function Composer() {
   const candidates = useView((s) => s.fileCandidates);
   const t = useT();
   const tabKey = useView((s) => s.tabs.active);
+  /** 待发送的图片；切换标签时按标签暂存。 */
+  const [images, setImages] = useState<PromptImage[]>([]);
+  const imageStash = useRef(new Map<string, PromptImage[]>());
   const [text, setText] = useState(() => loadState().draft ?? '');
   /** 草稿属于哪个标签；切换标签时存下当前草稿，换成目标标签的草稿。 */
   const draftOwner = useRef(tabKey);
@@ -82,6 +110,9 @@ export function Composer() {
     const { [tabKey]: next = '', ...rest } = loadState().drafts ?? {};
     saveState({ drafts: text.trim() ? { ...rest, [previous]: text } : rest });
     setText(next);
+    imageStash.current.set(previous, images);
+    setImages(imageStash.current.get(tabKey) ?? []);
+    imageStash.current.delete(tabKey);
     setCaret(next.length);
   }, [tabKey]);
 
@@ -219,12 +250,53 @@ export function Composer() {
   const active = context.active;
   const includeActive = active ? context.includeActiveByDefault !== (toggledKey === active.key) : true;
 
-  const canSend = connected && text.trim().length > 0;
+  const addImages = async (files: readonly File[]) => {
+    let room = MAX_IMAGES - images.length;
+    const added: PromptImage[] = [];
+    for (const file of files) {
+      if (!(IMAGE_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+        showToast('error', t('image.unsupported', file.type || file.name));
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        showToast('error', t('image.tooLarge', file.name || t('image.label'), MAX_IMAGE_BYTES / 1024 / 1024));
+        continue;
+      }
+      if (room <= 0) {
+        showToast('error', t('image.tooMany', MAX_IMAGES));
+        break;
+      }
+      try {
+        const { data, dataUrl } = await readImage(file);
+        const localId = nextImageId();
+        registerLocalImage(localId, dataUrl);
+        // 截图粘贴时文件名总是 image.png，不当作名字
+        const name = file.name && file.name !== 'image.png' ? file.name : undefined;
+        added.push({ localId, mediaType: file.type as ImageMediaType, data, ...(name ? { name } : {}) });
+        room--;
+      } catch {
+        showToast('error', t('image.failed'));
+      }
+    }
+    if (added.length) setImages((current) => [...current, ...added].slice(0, MAX_IMAGES));
+  };
+
+  const imageFiles = (list: DataTransferItemList | FileList | null | undefined): File[] => {
+    if (!list) return [];
+    if ('length' in list && list.length > 0 && list[0] instanceof File) return [...(list as FileList)].filter((f) => f.type.startsWith('image/'));
+    return [...(list as DataTransferItemList)]
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+  };
+
+  const canSend = connected && (text.trim().length > 0 || images.length > 0);
   const send = () => {
     if (!canSend) return;
-    postToHost({ type: 'sendMessage', payload: { text: text.trim(), includeActive } });
+    postToHost({ type: 'sendMessage', payload: { text: text.trim(), includeActive, ...(images.length ? { images } : {}) } });
     setText('');
     setCaret(0);
+    setImages([]);
     setToggledKey(undefined);
   };
 
@@ -258,7 +330,7 @@ export function Composer() {
   const syncCaret = () => setCaret(ref.current?.selectionStart ?? 0);
 
   // 运行中输入框仍可发送：dsh 会把消息排进队列，当前回复结束后处理
-  const showStop = session.running && text.trim().length === 0;
+  const showStop = session.running && text.trim().length === 0 && images.length === 0;
   return (
     <div className="composer-wrap">
       <StatusStrip />
@@ -283,7 +355,18 @@ export function Composer() {
           {...(trigger.kind === 'file' && requestId !== candidates.requestId ? { loading: t('completion.searching') } : {})}
         />
       ) : null}
-      <div className="composer">
+      <div
+        className="composer"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          const files = imageFiles(event.dataTransfer.files);
+          if (files.length === 0) return;
+          event.preventDefault();
+          void addImages(files);
+        }}
+      >
         <div
           className="composer__resize"
           role="separator"
@@ -297,6 +380,13 @@ export function Composer() {
           data-testid="composer-resize"
         />
         <ContextChips active={active} included={includeActive} onToggle={() => active && setToggledKey(toggledKey === active.key ? undefined : active.key)} pinned={context.pinned} />
+        {images.length ? (
+          <div className="composer__images" data-testid="composer-images">
+            {images.map((image) => (
+              <ImageThumb key={image.localId} image={image} size="small" onRemove={() => setImages((current) => current.filter((i) => i.localId !== image.localId))} />
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={ref}
           className="composer__input"
@@ -308,6 +398,13 @@ export function Composer() {
           onSelect={syncCaret}
           onClick={syncCaret}
           onKeyDown={onKeyDown}
+          onPaste={(event) => {
+            const files = imageFiles(event.clipboardData.items);
+            if (files.length === 0) return;
+            // 同时有文字时（例如从文档里复制）照常粘贴文字，图片一并附上
+            if (!event.clipboardData.types.includes('text/plain')) event.preventDefault();
+            void addImages(files);
+          }}
           placeholder={
             connected ? (session.running ? t('composer.placeholderRunning') : t('composer.placeholder')) : t('composer.placeholderOffline')
           }

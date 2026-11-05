@@ -13,17 +13,19 @@ export interface PersistedState {
   readonly changesDismissed?: string;
 }
 
-const api = acquireVsCodeApi<PersistedState>();
+/** 第一次用到时才取（acquireVsCodeApi 每个页面只能调一次；测试里没有它）。 */
+let cached: ReturnType<typeof acquireVsCodeApi<PersistedState>> | undefined;
+const vscodeApi = () => (cached ??= acquireVsCodeApi<PersistedState>());
 
 /** 向 Extension Host 发消息。 */
 export function postToHost(message: WebviewToHost): void {
-  api.postMessage(message);
+  vscodeApi().postMessage(message);
 }
 
 export function loadState(): PersistedState {
-  return api.getState() ?? {};
+  return vscodeApi().getState() ?? {};
 }
 
 export function saveState(patch: Partial<PersistedState>): void {
-  api.setState({ ...loadState(), ...patch });
+  vscodeApi().setState({ ...loadState(), ...patch });
 }

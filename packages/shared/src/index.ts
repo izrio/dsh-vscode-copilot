@@ -1,4 +1,5 @@
 export type { RuntimeStatus } from './runtime.ts';
+export { IMAGE_MEDIA_TYPES, MAX_IMAGE_BASE64, MAX_IMAGES } from './limits.ts';
 export type {
   AppearanceState,
   AttachmentView,
@@ -8,6 +9,8 @@ export type {
   ContextState,
   DiffRef,
   FileCandidate,
+  ImageMediaType,
+  ImageView,
   Item,
   LineStats,
   Locale,
@@ -29,5 +32,6 @@ export {
   type HostSnapshot,
   type HostToWebview,
   type ItemsPatch,
+  type PromptImage,
   type WebviewToHost,
 } from './bridge.ts';

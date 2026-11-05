@@ -137,6 +137,7 @@ const env = await createDshTestEnv({
       },
       after: '明白，按你的选择来。',
     },
+    E2E_IMAGE: { kind: 'text', chunks: ['图片', '收到了。'] },
     default: { kind: 'text', chunks: ['你好！', '有什么可以帮你？'], delayMs: 40 },
   },
 });
@@ -219,7 +220,9 @@ const harnessHtml = (theme: 'dark' | 'light', origin: string) => `<!doctype html
 <script nonce="${NONCE}">
   let state;
   window.__cspViolations = [];
-  document.addEventListener('securitypolicyviolation', (e) => window.__cspViolations.push(e.violatedDirective + ' ' + (e.blockedURI || 'inline')));
+  document.addEventListener('securitypolicyviolation', (e) =>
+    window.__cspViolations.push(e.violatedDirective + ' ' + (e.blockedURI || 'inline') + (e.sourceFile ? ' @ ' + e.sourceFile.split('/').pop() + ':' + e.lineNumber + ':' + e.columnNumber : '') + (e.sample ? ' ' + e.sample : '')),
+  );
   window.acquireVsCodeApi = () => ({
     postMessage: (m) => window.__toHost(JSON.stringify(m)),
     getState: () => state,
@@ -405,6 +408,30 @@ try {
   await page.getByTestId('composer-resize').evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
   await page.waitForTimeout(100);
   check('双击拖动条恢复自动高度', Math.abs((await inputBox()) - autoHeight) < 2, `${autoHeight} vs ${await inputBox()}`);
+
+  // 2b2. 粘贴图片：输入框显示缩略图，随消息发给 dsh，消息里显示 dsh 保存的图片
+  // 图片数据直接写在函数里：带参数的 evaluate 在页面里走 eval，会被 CSP 拦下并记成违规
+  await composer.evaluate((el) => {
+    const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await page.getByTestId('composer-images').locator('img').waitFor({ timeout: 5_000 }).then(
+    () => check('粘贴图片后输入框显示缩略图', true),
+    () => check('粘贴图片后输入框显示缩略图', false),
+  );
+  await send('E2E_IMAGE 看看这张图');
+  await page.locator('.user', { hasText: 'E2E_IMAGE' }).locator('.user__images img').waitFor({ timeout: 20_000 }).then(
+    () => check('消息里显示发送的图片', true),
+    () => check('消息里显示发送的图片', false),
+  );
+  for (let i = 0; i < 40 && !env.model.requests.some((r) => r.userText?.includes('E2E_IMAGE')); i++) await page.waitForTimeout(250);
+  check('dsh 把图片发给了模型', env.model.requests.some((r) => r.userText?.includes('E2E_IMAGE') && (r.images ?? 0) === 1), JSON.stringify(env.model.requests.filter((r) => r.userText?.includes('E2E_IMAGE'))));
+  check('发送后输入框里的缩略图清空', (await page.getByTestId('composer-images').count()) === 0);
+  await page.locator('.assistant', { hasText: '图片收到了' }).waitFor({ timeout: 20_000 });
+  await shot('14b-image');
 
   // 2c. 审批：允许
   await send('E2E_APPROVE 装一下依赖');

@@ -25,7 +25,7 @@ import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type Ds
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
 import { InteractionService } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
-import { SessionService } from '../dsh/SessionService.ts';
+import { SessionService, type PendingImage } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
 import {
   CONTEXT_OPEN,
@@ -118,6 +118,8 @@ export interface SendOptions {
   readonly extra?: readonly ContextAttachment[];
   /** 附带选区的诊断信息（/fix）。 */
   readonly diagnostics?: boolean;
+  /** 粘贴或拖进来的图片。 */
+  readonly images?: readonly PendingImage[];
 }
 
 export class ChatController {
@@ -483,7 +485,9 @@ export class ChatController {
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
       case 'sendMessage':
-        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true });
+        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, ...(message.payload.images ? { images: message.payload.images } : {}) });
+      case 'loadImage':
+        return this.loadImage(message.payload.attachmentId);
       case 'searchFiles':
         return this.searchFiles(message.payload.requestId, message.payload.query);
       case 'queueAction':
@@ -779,10 +783,26 @@ export class ChatController {
         this.toast('info', t('template.needsContext', slash.name));
         return;
       }
-      return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments);
+      return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments, options.images);
     }
     if (slash && this.dshCommands.some((c) => c.name === slash.name)) return this.runCommand(text.trim());
-    return this.sendPrompt(text, this.gatherContext(options));
+    return this.sendPrompt(text, this.gatherContext(options), options.images);
+  }
+
+  /** 历史消息里的图片：向 dsh 读取后以 data URL 回传，Webview 缓存。读不到时回传空，显示占位。 */
+  private async loadImage(attachmentId: string): Promise<void> {
+    const sessionId = this.activeId;
+    const client = this.service?.client;
+    let dataUrl: string | undefined;
+    if (sessionId && client) {
+      try {
+        const image = await client.attachment(sessionId, attachmentId);
+        dataUrl = `data:${image.mediaType};base64,${image.data}`;
+      } catch (error) {
+        this.options.log(`读取图片失败：${describe(error)}`);
+      }
+    }
+    this.options.post({ type: 'imageData', payload: { attachmentId, ...(dataUrl ? { dataUrl } : {}) } });
   }
 
   /** 本条消息附带的上下文：固定的、额外的、当前编辑器。诊断信息只在 /fix 时附带。 */
@@ -792,7 +812,7 @@ export class ChatController {
     return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
   }
 
-  private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<void> {
+  private async sendPrompt(text: string, attachments: readonly ContextAttachment[], images: readonly PendingImage[] = []): Promise<void> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
@@ -800,7 +820,7 @@ export class ChatController {
     }
     try {
       const sessionId = await this.ensureSession(service);
-      await service.prompt(sessionId, withContext(text, attachments, this.workspacePath));
+      await service.prompt(sessionId, withContext(text, attachments, this.workspacePath), undefined, images);
       if (this.pinned.length) {
         this.pinned = [];
         this.scheduleRender();
@@ -982,7 +1002,7 @@ export class ChatController {
     if (!sessionId || !service || !pending) return;
     try {
       // 复用同一个 requestId：dsh 对已接收的请求直接返回原结果，不会重复插入
-      await service.prompt(sessionId, pending.text, requestId);
+      await service.prompt(sessionId, pending.text, requestId, pending.images ?? []);
     } catch (error) {
       this.toast('error', friendlyError(error));
     }

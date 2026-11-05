@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
+import { IMAGE_MEDIA_TYPES, MAX_IMAGE_BASE64, MAX_IMAGES } from './limits.ts';
 import type {
   AppearanceState,
   CommandView,
@@ -24,6 +25,16 @@ import type {
 
 const empty = z.object({});
 
+const imageSchema = z.object({
+  /** Webview 生成的标识：发送中的本地回显用它找到图片。 */
+  localId: z.string().min(1).max(100),
+  mediaType: z.enum(IMAGE_MEDIA_TYPES),
+  data: z.string().min(1).max(MAX_IMAGE_BASE64),
+  name: z.string().max(255).optional(),
+});
+
+export type PromptImage = z.infer<typeof imageSchema>;
+
 const diffRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tool'), callId: z.string().min(1) }),
   z.object({ kind: z.literal('turn'), seq: z.number().int().nonnegative(), index: z.number().int().nonnegative() }),
@@ -34,12 +45,18 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), payload: empty }),
   z.object({
     type: z.literal('sendMessage'),
-    payload: z.object({
-      text: z.string().min(1).max(200_000),
-      /** 是否附带当前编辑器（输入框上方的标签被关掉时为 false）。 */
-      includeActive: z.boolean().optional(),
-    }),
+    payload: z
+      .object({
+        text: z.string().max(200_000),
+        /** 是否附带当前编辑器（输入框上方的标签被关掉时为 false）。 */
+        includeActive: z.boolean().optional(),
+        /** 粘贴或拖进来的图片（base64，不带 data: 前缀）。 */
+        images: z.array(imageSchema).max(MAX_IMAGES).optional(),
+      })
+      .refine((payload) => payload.text.trim().length > 0 || (payload.images?.length ?? 0) > 0, { message: 'empty message' }),
   }),
+  /** 读取历史消息里的图片（dsh 的 session/attachment），结果用 imageData 回传。 */
+  z.object({ type: z.literal('loadImage'), payload: z.object({ attachmentId: z.string().min(1).max(512) }) }),
   z.object({ type: z.literal('searchFiles'), payload: z.object({ requestId: z.number().int(), query: z.string().max(1_000) }) }),
   z.object({ type: z.literal('removeAttachment'), payload: z.object({ id: z.string().min(1) }) }),
   z.object({
@@ -143,6 +160,7 @@ export type HostToWebview =
   | { readonly type: 'locale'; readonly payload: Locale }
   | { readonly type: 'appearance'; readonly payload: AppearanceState }
   | { readonly type: 'diffOpened'; readonly payload: { readonly token: number } }
+  | { readonly type: 'imageData'; readonly payload: { readonly attachmentId: string; readonly dataUrl?: string } }
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
   | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }

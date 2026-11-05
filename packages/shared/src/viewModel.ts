@@ -54,6 +54,21 @@ export interface AttachmentView {
   readonly endLine?: number;
 }
 
+export type { ImageMediaType } from './limits.ts';
+
+/**
+ * 消息里的一张图片。已经存进 dsh 的用 `attachmentId` 按需读取；还在发送中的本地回显用 `localId`，
+ * 图片内容留在 Webview 里，不随视图模型来回传。
+ */
+export interface ImageView {
+  readonly attachmentId?: string;
+  readonly localId?: string;
+  readonly mediaType: string;
+  readonly name?: string;
+  readonly width?: number;
+  readonly height?: number;
+}
+
 /** 输入框上方的上下文标签。 */
 export interface ContextState {
   /** 当前编辑器：有选区时是选区，否则是文件。`key` 变化时 Webview 恢复默认的附带状态。 */
@@ -91,6 +106,8 @@ export type Item =
       readonly error?: string;
       /** 随消息附带的编辑器上下文（从消息末尾的上下文块解析出来，正文里不显示）。 */
       readonly attachments?: readonly AttachmentView[];
+      /** 随消息发送的图片。 */
+      readonly images?: readonly ImageView[];
       /** 在 dsh 队列里等待的消息：可以编辑、删除、插队。`next-step` 表示已插队，在当前回复的下一步送达。 */
       readonly queue?: { readonly itemId: string; readonly target: 'next-turn' | 'next-step' };
     }

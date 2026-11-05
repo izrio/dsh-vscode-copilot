@@ -7,7 +7,7 @@
  * - 工具调用按类型渲染：命令一行、文件修改带增删行数、连续的只读操作合并成一行「浏览」；
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
-import type { ChangedFileView, Item, LineStats, SessionChangesView } from '@dsh-copilot/shared';
+import type { ChangedFileView, ImageView, Item, LineStats, SessionChangesView } from '@dsh-copilot/shared';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';
@@ -181,7 +181,10 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         if (source?.kind !== 'user') break;
         if (source.rpcId) persistedRequestIds.add(source.rpcId);
         const { text, attachments } = splitContext(textOf(data.content));
-        if (text || attachments.length) items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}) });
+        const images = imagesOf(data.content);
+        if (text || attachments.length || images.length) {
+          items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}), ...(images.length ? { images } : {}) });
+        }
         break;
       }
       case 'command/run': {
@@ -452,6 +455,7 @@ export function project(input: ProjectionInput, base: EventsProjection = project
       id: queued.rpcId ? `p:${queued.rpcId}` : `q:${queued.id}`,
       text,
       ...(attachments.length ? { attachments } : {}),
+      ...(queued.images.length ? { images: queued.images } : {}),
       pending: 'queued',
       ...(queued.rpcId ? { requestId: queued.rpcId } : {}),
       queue: { itemId: queued.id, target: queued.target },
@@ -464,11 +468,13 @@ export function project(input: ProjectionInput, base: EventsProjection = project
     if (persistedRequestIds.has(pending.requestId) || inboxRpcIds.has(pending.requestId)) continue;
     const state = pending.state === 'failed' ? 'failed' : pending.state === 'accepted' && running ? 'queued' : 'sending';
     const { text, attachments } = splitContext(pending.text);
+    const images = (pending.images ?? []).map((image): ImageView => ({ localId: image.localId, mediaType: image.mediaType, ...(image.name ? { name: image.name } : {}) }));
     items.push({
       kind: 'user',
       id: `p:${pending.requestId}`,
       text,
       ...(attachments.length ? { attachments } : {}),
+      ...(images.length ? { images } : {}),
       pending: state,
       requestId: pending.requestId,
       ...(pending.error ? { error: pending.error } : {}),
@@ -492,6 +498,7 @@ interface InboxItem {
   readonly id: string;
   readonly rpcId?: string;
   readonly text: string;
+  readonly images: readonly ImageView[];
   readonly target: 'next-turn' | 'next-step';
 }
 
@@ -505,7 +512,7 @@ function inboxItems(inbox: unknown): InboxItem[] {
     for (const raw of list) {
       const item = raw as { id?: unknown; content?: unknown; source?: { kind?: unknown; rpcId?: unknown } };
       if (typeof item.id !== 'string' || item.source?.kind !== 'user') continue;
-      result.push({ id: item.id, text: textOf(item.content), target, ...(typeof item.source.rpcId === 'string' ? { rpcId: item.source.rpcId } : {}) });
+      result.push({ id: item.id, text: textOf(item.content), images: imagesOf(item.content), target, ...(typeof item.source.rpcId === 'string' ? { rpcId: item.source.rpcId } : {}) });
     }
   }
   return result;
@@ -630,6 +637,25 @@ function stringArg(args: Readonly<Record<string, unknown>>, ...keys: string[]): 
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+/** 消息里的图片：dsh 收下后存成附件 `{ type: 'image', attachment: { attachmentId, mediaType, width, height, name } }`。 */
+function imagesOf(content: unknown): ImageView[] {
+  if (!Array.isArray(content)) return [];
+  const images: ImageView[] = [];
+  for (const block of content as { type?: unknown; attachment?: unknown }[]) {
+    if (block?.type !== 'image' || !block.attachment || typeof block.attachment !== 'object') continue;
+    const a = block.attachment as { attachmentId?: unknown; mediaType?: unknown; width?: unknown; height?: unknown; name?: unknown };
+    if (typeof a.attachmentId !== 'string') continue;
+    images.push({
+      attachmentId: a.attachmentId,
+      mediaType: typeof a.mediaType === 'string' ? a.mediaType : 'image/png',
+      ...(typeof a.name === 'string' && a.name ? { name: a.name } : {}),
+      ...(typeof a.width === 'number' ? { width: a.width } : {}),
+      ...(typeof a.height === 'number' ? { height: a.height } : {}),
+    });
+  }
+  return images;
 }
 
 function textOf(content: unknown): string {

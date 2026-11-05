@@ -150,6 +150,16 @@ const changesDiffSchema = z.union([
 ]);
 export type ChangesDiff = z.infer<typeof changesDiffSchema>;
 
+const attachmentValue = z.object({ attachment: z.object({ mediaType: z.string() }).loose(), data: z.string() });
+
+/** 随消息发送的一张图片。 */
+export interface PromptImageInput {
+  readonly mediaType: string;
+  /** base64，不带 data: 前缀。 */
+  readonly data: string;
+  readonly name?: string;
+}
+
 /** 改动汇总只保存在 Host 内存里，Host 重启后返回 404。 */
 export class ChangesUnavailableError extends Error {
   constructor() {
@@ -214,12 +224,17 @@ export class DshClient {
   }
 
   /**
-   * 发送一条文本消息。`requestId` 由插件生成，重试时复用同一个可以避免重复插入。
+   * 发送一条消息（文字和图片）。`requestId` 由插件生成，重试时复用同一个可以避免重复插入。
+   * 图片直接以 base64 放进 content，dsh 收下后转存成附件（历史里是 `{ type: 'image', attachment }`）。
    * @returns 本次请求的 requestId。
    */
-  async prompt(sessionId: string, text: string, requestId: string = randomUUID()): Promise<string> {
+  async prompt(sessionId: string, text: string, requestId: string = randomUUID(), images: readonly PromptImageInput[] = []): Promise<string> {
+    const content = [
+      ...(text.trim() ? [{ type: 'text', text }] : []),
+      ...images.map((image) => ({ type: 'image', mediaType: image.mediaType, data: image.data, ...(image.name ? { name: image.name } : {}) })),
+    ];
     const value = await this.unary.call('session/prompt', {
-      request: { requestId, sessionId, mode: 'queue', content: [{ type: 'text', text }] },
+      request: { requestId, sessionId, mode: 'queue', content },
     });
     parse(acceptedValue, value, 'session/prompt');
     return requestId;
@@ -300,6 +315,12 @@ export class DshClient {
    */
   async changesSummary(sessionId: string, seq: number): Promise<ChangesSummary> {
     return parse(changesSummarySchema, await this.getJson('/api/changes.summary', { sessionId, seq: String(seq) }), 'changes.summary');
+  }
+
+  /** 读取消息里的一张图片（`session/attachment`）。 */
+  async attachment(sessionId: string, attachmentId: string): Promise<{ mediaType: string; data: string }> {
+    const value = parse(attachmentValue, await this.unary.call('session/attachment', { request: { sessionId, attachmentId } }), 'session/attachment');
+    return { mediaType: value.attachment.mediaType, data: value.data };
   }
 
   /** 一轮里第 `index` 个文件的改动。 */

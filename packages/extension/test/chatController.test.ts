@@ -12,7 +12,7 @@ import { noWorkbench, type DiffRequest, type Workbench } from '../src/vm/workben
 function fakeClient() {
   const summaries: SessionSummaryWire[] = [];
   const follows = new Map<string, AsyncQueue<FollowFrame>>();
-  const prompts: { sessionId: string; text: string; requestId: string }[] = [];
+  const prompts: { sessionId: string; text: string; requestId: string; images?: unknown[] }[] = [];
   const commands: { sessionId: string; line: string }[] = [];
   const calls: { method: string; args: unknown[] }[] = [];
   const waterfalls = new Map<string, WaterfallHandler>();
@@ -77,8 +77,8 @@ function fakeClient() {
       summaries.push({ sessionId: id, updatedAt: Date.now(), running: false, blank: false, cwd: '/w' });
       return id;
     },
-    prompt: async (sessionId: string, text: string, requestId: string) => {
-      prompts.push({ sessionId, text, requestId });
+    prompt: async (sessionId: string, text: string, requestId: string, images: unknown[] = []) => {
+      prompts.push({ sessionId, text, requestId, ...(images.length ? { images } : {}) });
       return requestId;
     },
     cancel: async () => undefined,
@@ -463,6 +463,33 @@ describe('ChatController', () => {
       controller.snapshot();
       await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'tool', callId: 'c1' } } });
       expect(diffs).toEqual([{ kind: 'tool', path: '/w/a.ts', diffs: [{ path: '/w/a.ts', oldText: 'a', newText: 'b' }], created: false }]);
+    });
+  });
+
+  describe('图片', () => {
+    const image = { localId: 'l1', mediaType: 'image/png' as const, data: 'iVBORw0KGgo=', name: 'shot.png' };
+
+    it('图片随消息发给 dsh；可以只发图片；发送中的回显带图片', async () => {
+      const { controller, fake } = setup();
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '', images: [image], includeActive: false } });
+      await flush();
+      expect(fake.prompts[0]).toMatchObject({ text: '', images: [image] });
+      const echo = controller.snapshot().items.find((item) => item.kind === 'user');
+      expect(echo).toMatchObject({ images: [{ localId: 'l1', mediaType: 'image/png', name: 'shot.png' }] });
+      expect(JSON.stringify(echo)).not.toContain(image.data);
+    });
+
+    it('历史消息里的图片按需读取，结果以 data URL 回传', async () => {
+      const { controller, fake, posted } = setup();
+      Object.assign(fake.client, { attachment: async () => ({ mediaType: 'image/png', data: 'AAAA' }) });
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '看图' } });
+      await flush();
+      await controller.handle({ type: 'loadImage', payload: { attachmentId: 'sha256:abc' } });
+      expect(posted).toContainEqual({ type: 'imageData', payload: { attachmentId: 'sha256:abc', dataUrl: 'data:image/png;base64,AAAA' } });
     });
   });
 
