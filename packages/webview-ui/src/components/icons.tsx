@@ -258,3 +258,13 @@ export const TextSizeIcon = (p: IconProps) => (
     <path d="M2 13l3.5-9 3.5 9M3.3 10h4.4M10 13l2-5 2 5M10.7 11.5h2.6" />
   </svg>
 );
+export const ArrowLeftIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M13 8H3M7 4L3 8l4 4" />
+  </svg>
+);
+export const ArrowRightIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 8h10M9 4l4 4-4 4" />
+  </svg>
+);
