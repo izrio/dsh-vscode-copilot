@@ -12,20 +12,16 @@ import type {
   DiffRef,
   HostSnapshot,
   HostToWebview,
-  Item,
-  ModelOption,
   ModelState,
-  PendingInteraction,
   PermissionState,
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
   WebviewToHost,
-  WorkspaceState,
 } from '@dsh-copilot/shared';
 import { ChangesUnavailableError, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
-import { InteractionService, type Pending } from '../dsh/InteractionService.ts';
+import { InteractionService } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { SessionService } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
@@ -38,11 +34,26 @@ import {
   templatePrompt,
   withContext,
   type ContextAttachment,
-  type SelectionContext,
   type TemplateName,
 } from './context.ts';
-import { displayPath, project, projectEvents, toolVariant, type EventsProjection, type ToolCallInfo } from './projector.ts';
+import { displayPath, project, projectEvents, type EventsProjection, type ToolCallInfo } from './projector.ts';
 import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
+import { approvalView, interactionView, type ViewContext } from './interactionViews.ts';
+import { ViewPublisher, type ControllerView } from './ViewPublisher.ts';
+import {
+  buildModelState,
+  contextUsageOf,
+  describe,
+  friendlyError,
+  goalOf,
+  newSessionTitle,
+  queuedText,
+  titleOf,
+  todosOf,
+  withoutDiagnostics,
+} from './viewHelpers.ts';
+
+export { friendlyError, plainTitle } from './viewHelpers.ts';
 import { getLocale, t } from '../i18n.ts';
 
 export interface ChatControllerOptions {
@@ -69,7 +80,6 @@ export interface ChatControllerOptions {
   readonly renderDelayMs?: number;
 }
 
-const newSessionTitle = (): string => t('session.new');
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
 /** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
@@ -118,21 +128,16 @@ export class ChatController {
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private serviceGeneration = 0;
 
-  // 上次推送给 Webview 的内容，用来计算增量
-  private sentSessionKey: string | undefined;
-  private sentItems = new Map<string, string>();
-  /** 上次推送的条目对象：对象没变时不用再序列化比较。 */
-  private sentObjects = new Map<string, Item>();
   /** 持久事件投影的缓存（流式输出时持久事件不变）。 */
   private eventsMemo: { readonly key: readonly unknown[]; readonly value: EventsProjection } | undefined;
   /** 改动汇总每读到一份递增，作为缓存键的一部分。 */
   private changesVersion = 0;
-  private sentOrder: readonly string[] = [];
-  private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '', context: '', commands: '' };
+  private readonly publisher: ViewPublisher;
 
   constructor(private readonly options: ChatControllerOptions) {
     this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
+    this.publisher = new ViewPublisher(options.post, options.onModelChange);
   }
 
   /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
@@ -271,20 +276,7 @@ export class ChatController {
   /** Webview 加载（或重新加载）后取完整快照；之后的增量都相对于这份快照。 */
   snapshot(): HostSnapshot {
     const view = this.compute();
-    this.sentSessionKey = view.sessionKey;
-    this.sentItems = new Map(view.items.map((item) => [item.id, JSON.stringify(item)]));
-    this.sentObjects = new Map(view.items.map((item) => [item.id, item]));
-    this.sentOrder = view.items.map((item) => item.id);
-    this.sentJson = {
-      sessions: JSON.stringify(view.sessions),
-      session: JSON.stringify(view.session),
-      context: JSON.stringify(view.context),
-      commands: JSON.stringify(view.commands),
-      models: JSON.stringify(view.models),
-      interactions: JSON.stringify(view.interactions),
-      permissions: JSON.stringify(view.permissions),
-      workspace: JSON.stringify(view.workspace),
-    };
+    this.publisher.reset(view);
     return {
       runtime: this.runtime,
       connection: this.connection,
@@ -383,7 +375,7 @@ export class ChatController {
       this.toast('info', t('request.ended'));
       return;
     }
-    if (allow && this.approvalView(pending).dirtyFiles.length > 0) {
+    if (allow && approvalView(pending, this.viewContext()).dirtyFiles.length > 0) {
       // 编辑器里还有未保存的内容，dsh 写入后会和编辑器冲突
       this.toast('error', t('approval.dirty'));
       return;
@@ -723,88 +715,10 @@ export class ChatController {
 
   /** 计算当前视图并推送变化的部分。 */
   render(): void {
-    const view = this.compute();
-    const sessionsJson = JSON.stringify(view.sessions);
-    if (sessionsJson !== this.sentJson.sessions) {
-      this.sentJson.sessions = sessionsJson;
-      this.options.post({ type: 'sessions', payload: view.sessions });
-    }
-    const modelsJson = JSON.stringify(view.models);
-    if (modelsJson !== this.sentJson.models) {
-      this.sentJson.models = modelsJson;
-      this.options.post({ type: 'models', payload: view.models });
-      const current = view.models.current;
-      const option = view.models.options.find((o) => o.provider === current?.provider && o.model === current?.model);
-      this.options.onModelChange?.(option?.name ?? current?.model);
-    }
-    const sessionJson = JSON.stringify(view.session);
-    if (sessionJson !== this.sentJson.session) {
-      this.sentJson.session = sessionJson;
-      this.options.post({ type: 'session', payload: view.session });
-    }
-    this.postItems(view.sessionKey, view.items);
-    // 卡片放在条目之后推送：Webview 先有条目，再显示末尾的审批
-    const interactionsJson = JSON.stringify(view.interactions);
-    if (interactionsJson !== this.sentJson.interactions) {
-      this.sentJson.interactions = interactionsJson;
-      this.options.post({ type: 'interactions', payload: view.interactions });
-    }
-    const permissionsJson = JSON.stringify(view.permissions);
-    if (permissionsJson !== this.sentJson.permissions) {
-      this.sentJson.permissions = permissionsJson;
-      this.options.post({ type: 'permissions', payload: view.permissions });
-    }
-    const contextJson = JSON.stringify(view.context);
-    if (contextJson !== this.sentJson.context) {
-      this.sentJson.context = contextJson;
-      this.options.post({ type: 'context', payload: view.context });
-    }
-    const commandsJson = JSON.stringify(view.commands);
-    if (commandsJson !== this.sentJson.commands) {
-      this.sentJson.commands = commandsJson;
-      this.options.post({ type: 'commands', payload: view.commands });
-    }
-    const workspaceJson = JSON.stringify(view.workspace);
-    if (workspaceJson !== this.sentJson.workspace) {
-      this.sentJson.workspace = workspaceJson;
-      this.options.post({ type: 'workspace', payload: view.workspace });
-    }
+    this.publisher.publish(this.compute());
   }
 
-  private postItems(sessionKey: string, items: readonly Item[]): void {
-    const reset = sessionKey !== this.sentSessionKey;
-    const order = items.map((item) => item.id);
-    const upsert: Item[] = [];
-    const next = new Map<string, string>();
-    const objects = new Map<string, Item>();
-    for (const item of items) {
-      objects.set(item.id, item);
-      // 同一个对象（来自缓存的持久事件投影）内容一定没变
-      const json = this.sentObjects.get(item.id) === item ? this.sentItems.get(item.id) : JSON.stringify(item);
-      next.set(item.id, json ?? JSON.stringify(item));
-      if (reset || this.sentItems.get(item.id) !== json) upsert.push(item);
-    }
-    this.sentObjects = objects;
-    const orderChanged = reset || order.length !== this.sentOrder.length || order.some((id, i) => id !== this.sentOrder[i]);
-    this.sentSessionKey = sessionKey;
-    this.sentItems = next;
-    this.sentOrder = order;
-    if (!reset && !orderChanged && upsert.length === 0) return;
-    this.options.post({ type: 'items', payload: { sessionKey, reset, order, upsert } });
-  }
-
-  private compute(): {
-    sessionKey: string;
-    sessions: SessionListItem[];
-    session: SessionHeader;
-    items: Item[];
-    models: ModelState;
-    interactions: PendingInteraction[];
-    permissions: PermissionState;
-    workspace: WorkspaceState;
-    context: ContextState;
-    commands: CommandView[];
-  } {
+  private compute(): ControllerView {
     // 新连接还没准备好时，先显示断线前的内容
     if (this.service?.initialized) this.staleService = undefined;
     if (this.stream?.status.kind === 'live') this.staleStream = undefined;
@@ -870,7 +784,7 @@ export class ChatController {
       ...(attention.has(s.sessionId) ? { needsAttention: true } : {}),
     }));
 
-    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => this.interactionView(p)) : [];
+    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => interactionView(p, this.viewContext())) : [];
     const catalog = service?.permissions;
     const currentPermission = sessionId
       ? (projections.permissions as { currentValue?: string } | undefined)?.currentValue
@@ -885,7 +799,7 @@ export class ChatController {
       sessions,
       session,
       items: projection.items,
-      models: this.buildModelState(projections, service),
+      models: buildModelState(projections, service?.models, this.draftModel),
       interactions,
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
@@ -929,77 +843,14 @@ export class ChatController {
     }
   }
 
-  private interactionView(pending: Pending): PendingInteraction {
-    if (pending.kind === 'approval') return this.approvalView(pending);
-    return {
-      kind: 'question',
-      id: pending.id,
-      questions: pending.request.questions.map((q) => ({
-        id: q.id,
-        question: q.question,
-        ...(q.header ? { header: q.header } : {}),
-        ...(q.detail ? { detail: q.detail } : {}),
-        options: q.options ?? [],
-        multiSelect: q.multiSelect ?? q.multi_select ?? false,
-        ...(q.intent?.kind === 'plan-review' && q.intent.approve
-          ? { intent: { kind: 'plan-review' as const, approve: q.intent.approve, ...(keepPlanningLabel(q) ? { keepPlanning: keepPlanningLabel(q) } : {}) } }
-          : {}),
-      })),
-    };
-  }
-
-  /** 审批卡片：从会话日志里找到对应的工具调用，显示要执行的命令或要修改的文件。 */
-  private approvalView(pending: Extract<Pending, { kind: 'approval' }>): Extract<PendingInteraction, { kind: 'approval' }> {
-    const request = pending.request;
-    const call = request.callId ? this.toolCalls.get(request.callId) : undefined;
-    const tool = call?.tool ?? request.toolName;
-    const variant = toolVariant(tool);
-    const display = request.displayReason;
-    const reason = display?.zh ?? display?.['zh-CN'] ?? request.reason ?? display?.en ?? '';
-    const command = call && variant === 'command' ? (call.args.command ?? call.args.cmd) : undefined;
-    const path = call?.path;
-    let subject: { subject: string; subjectKind: 'command' | 'file' } | undefined;
-    if (typeof command === 'string' && command.trim()) subject = { subject: command.trim(), subjectKind: 'command' };
-    else if (path) subject = { subject: displayPath(path, this.workspacePath), subjectKind: 'file' };
-    const dirty = path && variant === 'edit' && this.workbench.dirtyFiles().includes(path) ? [displayPath(path, this.workspacePath)] : [];
-    return {
-      kind: 'approval',
-      id: pending.id,
-      toolName: tool,
-      reason,
-      ...(subject ?? {}),
-      previewable: Boolean(path && (tool === 'edit' || tool === 'write')),
-      dirtyFiles: dirty,
-    };
-  }
-
   /** 当前会话可选的模型和当前选择（供命令面板的模型选择使用）。 */
   modelState(): ModelState {
     const projections = this.activeId && this.service ? this.service.projections(this.activeId) : {};
-    return this.buildModelState(projections, this.service);
+    return buildModelState(projections, this.service?.models, this.draftModel);
   }
 
-  private buildModelState(projections: Readonly<Record<string, unknown>>, service: SessionService | undefined): ModelState {
-    const catalog = service?.models;
-    const options: ModelOption[] = [];
-    for (const group of catalog?.groups ?? []) {
-      for (const model of group.models) {
-        options.push({
-          provider: group.id,
-          model: model.id,
-          name: model.name,
-          group: group.name,
-          ...(model.description ? { description: model.description } : {}),
-          efforts: model.reasoning?.efforts.map((e) => ({ id: e.id, name: e.name })) ?? [],
-          ...(model.reasoning?.defaultEffort ? { defaultEffort: model.reasoning.defaultEffort } : {}),
-        });
-      }
-    }
-    const selection = (projections.modelSelection as { next?: ModelSelection } | undefined)?.next;
-    const current = selection ?? this.draftModel ?? (catalog?.default?.provider && catalog.default.model ? (catalog.default as ModelSelection) : undefined);
-    // 目录读到了但一个模型都没有：DeepSeek 官方服务在没有 API Key 时不列出模型
-    const needsApiKey = catalog !== undefined && options.length === 0;
-    return { ...(needsApiKey ? { needsApiKey } : {}), options, ...(current ? { current: { provider: current.provider, model: current.model, ...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}) } } : {}) };
+  private viewContext(): ViewContext {
+    return { toolCalls: this.toolCalls, workspacePath: this.workspacePath, dirtyFiles: this.workbench.dirtyFiles() };
   }
 
   private toast(level: 'info' | 'error', text: string): void {
@@ -1007,100 +858,3 @@ export class ChatController {
   }
 }
 
-function titleOf(projections: Readonly<Record<string, unknown>>, items: readonly Item[]): string {
-  const title = typeof projections.title === 'string' ? plainTitle(projections.title) : '';
-  if (title) return title;
-  const outline = projections.turnOutline as { prompt?: string }[] | undefined;
-  const prompt = plainTitle(outline?.[0]?.prompt ?? items.find((item) => item.kind === 'user')?.text ?? '');
-  if (prompt) return prompt.length > 40 ? `${prompt.slice(0, 40)}…` : prompt;
-  return newSessionTitle();
-}
-
-/** 标题只取第一行，去掉 Markdown 标题符号、强调符号和包裹的引号。 */
-export function plainTitle(text: string): string {
-  const line = text.trim().split('\n', 1)[0] ?? '';
-  return line
-    .replace(/^#{1,6}\s+/u, '')
-    .replace(/[*_`]+/gu, '')
-    .replace(/^["'“”「」『』]+|["'“”「」『』]+$/gu, '')
-    .trim();
-}
-
-function contextUsageOf(projections: Readonly<Record<string, unknown>>): { contextUsage?: number } {
-  const pressure = projections.contextPressure as { pressureTokens?: number; contextWindow?: number } | undefined;
-  if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return {};
-  return { contextUsage: Math.min(1, Math.max(0, pressure.pressureTokens / pressure.contextWindow)) };
-}
-
-/** 队列里某条消息的完整文本（含上下文块）。 */
-function queuedText(inbox: unknown, itemId: string): string | undefined {
-  if (!inbox || typeof inbox !== 'object') return undefined;
-  for (const list of Object.values(inbox as Record<string, unknown>)) {
-    if (!Array.isArray(list)) continue;
-    const item = list.find((entry: { id?: unknown }) => entry?.id === itemId) as { content?: { type?: string; text?: string }[] } | undefined;
-    if (item) return (item.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
-  }
-  return undefined;
-}
-
-/** 计划审阅里"继续完善"的选项标签：不是批准的那个。 */
-function keepPlanningLabel(q: { options?: { label: string }[]; intent?: { approve?: string } }): string | undefined {
-  return q.options?.find((o) => o.label !== q.intent?.approve)?.label;
-}
-
-function todosOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'todos'> {
-  const todos = projections.todos;
-  if (!Array.isArray(todos) || todos.length === 0) return {};
-  const valid = todos.filter(
-    (t): t is { content: string; status: 'pending' | 'in_progress' | 'completed' } =>
-      !!t && typeof t.content === 'string' && ['pending', 'in_progress', 'completed'].includes(t.status),
-  );
-  return valid.length ? { todos: valid.map((t) => ({ content: t.content, status: t.status })) } : {};
-}
-
-function goalOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'goal'> {
-  const value = projections.goal as
-    | { goal?: { objective?: string; phase?: string; maxGoalRounds?: number; blockedReason?: { message?: string } }; roundsStarted?: number }
-    | null
-    | undefined;
-  const goal = value?.goal;
-  if (!goal?.objective || !['active', 'paused', 'blocked', 'complete'].includes(goal.phase ?? '')) return {};
-  return {
-    goal: {
-      objective: goal.objective,
-      phase: goal.phase as 'active' | 'paused' | 'blocked' | 'complete',
-      round: value?.roundsStarted ?? 0,
-      maxRounds: goal.maxGoalRounds ?? 0,
-      ...(goal.blockedReason?.message ? { blockedReason: goal.blockedReason.message } : {}),
-    },
-  };
-}
-
-function withoutDiagnostics(selection: SelectionContext): SelectionContext {
-  const { diagnostics: _omit, ...rest } = selection;
-  return rest;
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** 把 dsh 的错误码翻译成用户能看懂、知道下一步怎么做的提示。 */
-export function friendlyError(error: unknown): string {
-  if (error instanceof RemoteError) {
-    switch (error.code) {
-      case 'session/writer-held':
-        return t('send.writerHeld');
-      case 'session/model-unavailable':
-        return t('send.modelUnavailable');
-      case 'session/provider-credentials-unavailable':
-      case 'session/provider-models-unavailable':
-        return t('send.noCredentials');
-      case 'session/agent-busy':
-        return t('send.busy');
-      default:
-        return t('send.failed', error.message);
-    }
-  }
-  return t('send.failed', describe(error));
-}

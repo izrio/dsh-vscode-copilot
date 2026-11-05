@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.7（M4 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.8（M5 完成，v0.1.0）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -36,7 +36,8 @@
 | v0.4 | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
 | v0.5 | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
 | v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
-| **v0.7** | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
+| v0.7 | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
+| **v0.8** | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
 
 ---
 
@@ -103,6 +104,21 @@ dsh 有五个对外入口：`dsh web`、Desktop、`dsh sdk`、`dsh acp`、`dsh h
 - **路径一律相对**：相对于工作区显示，过长时省略中间部分
 - **状态靠图标和颜色**：运行中显示旋转图标，失败显示红色，不写"完成"两个字
 - **跟随 VS Code**：只用 `--vscode-*` 主题变量，字体和字号跟随编辑器设置
+
+#### 3.1.1 M5 自查结果
+
+| 原则 | 结果 |
+| --- | --- |
+| 不显示角色标签，用户消息用气泡 | ✅ |
+| 工具调用压成单行活动行，只读操作合并 | ✅ |
+| 没有正文不渲染，推理折叠 | ✅ |
+| 顶部只有一行 | ✅ |
+| 输入框整宽卡片 + 一行工具条，状态只在有内容时出现 | ✅ |
+| 本轮改动卡片在对话流中 | ✅ |
+| 用户消息悬停时"复制 / 编辑后重发" | 自查时发现没做，M5 补上（编辑后重发 = 放回输入框修改再发送，不分叉会话） |
+| 单文件尽量不超过 500 行 | 部分：`ChatController` 从 1106 行拆到约 860 行（拆出 `viewHelpers`、`interactionViews`、`ViewPublisher`），剩下的是会话编排；`projector` 约 580 行。其余文件都在 400 行以内 |
+| 路径相对显示，过长时省略中间 | 部分：相对路径 ✅；过长时省略的是末尾（CSS 省略号），没有做中间省略 |
+| 状态靠图标和颜色，跟随 VS Code 主题 | ✅（深色、浅色主题都有截图验证） |
 
 ### 3.2 界面布局
 
@@ -397,7 +413,6 @@ sequenceDiagram
 
 | 模块 | 职责 | 里程碑 |
 | --- | --- | --- |
-| 中英文界面 | 界面文字按 VS Code 显示语言切换 | M5 |
 
 M1 中确定的几条规则：
 
@@ -552,6 +567,7 @@ interface BridgeMessage<T extends string = string, P = unknown> {
 | `interactions` / `permissions` / `workspace` / `context` / `commands` | 对应部分变化 |
 | `fileCandidates` | `{ requestId, items }`：`@` 补全结果，Webview 只用最新一次请求的 |
 | `toast` / `focusComposer` | 提示 / 聚焦输入框 |
+| `locale` | 界面语言变化（`zh` / `en`），快照里也带 |
 
 消息类型和 zod schema 定义在 `packages/shared`，Host 和 Webview 共用，收到消息先校验再处理。
 
@@ -666,6 +682,21 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | 绕过 dsh 安全边界 | 插件本身不写工作区文件、不执行命令（[D6](#d6-插件不读写工作区文件不执行命令)） |
 | 数据外发 | 模型请求由 dsh 发出；插件说明哪些上下文会被附加，并允许关闭"自动附带当前文件" |
 
+### 7.1 M5 自查结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 启动令牌 | ✅ 只在内存里；dsh 的 stdout/stderr、启动失败信息先脱敏再写日志。自查后补充：插件自己的日志也统一脱敏，并增加 `sk-…` API Key 和 `Bearer` 令牌的脱敏规则 |
+| 端口 | ✅ 启动参数固定 `--host 127.0.0.1`，没有修改绑定地址的设置 |
+| 未受信任的工作区 | ✅ `untrustedWorkspaces.supported: false`，未受信任时不启动（说明文字已本地化） |
+| 最高权限 | ✅ 切换到 `danger-full-access` 前 VS Code 模态确认（真实 VS Code 测试覆盖） |
+| 未保存内容 | ✅ 审批写文件前检查，卡片和 Host 两处拦截 |
+| Webview 注入 | ✅ CSP 没有 `'unsafe-inline'`，端到端测试用生产 CSP 并检查没有违规；Markdown 不渲染原始 HTML，图片不加载；外部链接只放行 http(s)，由 Host 打开 |
+| 消息伪造 | ✅ Webview 消息用 zod 校验；审批和提问回答一次后作废，dsh 取消的请求再回答只提示 |
+| API Key | ✅ 用 VS Code 的密码输入框，不经过 Webview；只传给 dsh 的 `credentials/set`，不写日志 |
+| 插件不写工作区文件、不执行命令 | ✅ 唯一的写操作是用户点击"全部保存"时调用 VS Code 保存 |
+| 数据外发 | ✅ 插件只连本机的 dsh；附带的上下文在输入框上方可见，可逐条关闭，设置可整体关闭 |
+
 ---
 
 ## 8. 配置项与命令
@@ -679,6 +710,7 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | `dsh.runtime.path` | string / `""` | 指定 dsh 可执行文件；为空时在 `PATH` 中查找（`machine-overridable`，远程场景写在远端的 Machine 设置里） |
 | `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile |
 | `dsh.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
+| `dsh.ui.language` | `auto` / `zh` / `en`，默认 `auto` | 界面语言；`auto` 跟随 VS Code 的显示语言 |
 
 计划中：`dsh.runtime.env`（追加环境变量）、`dsh.ui.showReasoning`、`dsh.log.level`。
 
@@ -896,13 +928,21 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - 多根工作区切换文件夹只有单元测试，没有在真实 VS Code 里跑
 - 没有 API Key 时，空状态的引导写入默认的 `DEEPSEEK_API_KEY`；改过 `apiKeyEnv` 的用户要先发一条消息，从 `MISSING_CREDENTIAL` 的提示里配置（那里带着 dsh 要求的名字）
 
-### M5：稳定性与发布（约 1 周）
+### M5：稳定性与发布（已完成，除手工验收）
 
-- [ ] 中英文界面（从 M4 移过来）
-- [ ] 集成测试 + fixture 回归测试 + 多版本兼容 CI
-- [ ] 安全自查（第 7 节逐条）、界面原则自查（3.1 逐条）
-- [ ] 三平台 + Remote-SSH 手工验收
-- [ ] 用户文档、CHANGELOG、发布 v0.1.0
+- [x] 中英文界面：跟随 VS Code 显示语言，设置 `dsh.ui.language` 可以覆盖；命令和设置说明用 `package.nls*.json`
+- [x] fixture 回归测试（单元测试回放录制的 follow 帧）+ 多版本兼容 CI：`dsh-compat.yml` 每天用最低版本、`latest`、`alpha` 跑冒烟和界面端到端，用 `latest` 跑真实 VS Code（code-server）
+- [x] 安全自查（7.1）、界面原则自查（3.1.1），发现的问题已修
+- [ ] 三平台 + Remote-SSH 手工验收（需要在 Windows、macOS 和 Remote-SSH 环境里手工完成，见下方清单）
+- [x] 用户文档（`packages/extension/README.md`，中英文）、CHANGELOG、版本 0.1.0
+
+**验收结果**：界面端到端测试 91/91（dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3`，含英文界面）、真实 VS Code 17/17（英文界面）、冒烟测试 33/33、单元测试 169 个。
+
+**手工验收清单**（每个平台）：安装 vsix → 找到 dsh（含 `dsh.runtime.path`）→ 配置 API Key → 对话、停止 → 改文件并打开 Diff → 审批允许/拒绝 → 右键解释选区 → 切换会话 → 关闭再打开 VS Code 恢复会话 → 结束 dsh 进程后自动恢复。Windows 额外检查 `dsh.cmd` 的启动和进程退出；Remote-SSH 检查 dsh 在远端启动、设置写在远端。
+
+**说明**：
+- `dsh-compat.yml` 里新增的界面端到端和真实 VS Code 两个任务，命令在本地都跑通过，但还没在 GitHub Actions 上运行过，第一次运行可能需要调整环境（例如 code-server 的依赖）
+- 发布到扩展市场需要先确定许可证（`package.json` 现在是 `UNLICENSED`、`private: true`）和发布者账号；`pnpm package` 产出的 vsix 可以直接安装
 
 **合计约 8.5 周**。
 

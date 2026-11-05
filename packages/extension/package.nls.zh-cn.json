@@ -24,5 +24,6 @@
   "submenu.editor": "DSH",
   "config.title": "DSH",
   "container.title": "DSH",
-  "extension.description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。"
+  "extension.description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。",
+  "capabilities.untrusted": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。"
 }

@@ -1162,6 +1162,20 @@ button.chip:hover {
   text-decoration: underline;
 }
 
+.user__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: 0.85em;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.user:hover .user__actions,
+.user__actions:focus-within {
+  opacity: 1;
+}
+
 .user__attachments {
   display: flex;
   flex-wrap: wrap;

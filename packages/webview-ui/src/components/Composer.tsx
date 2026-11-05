@@ -38,6 +38,7 @@ export function Composer() {
   const session = useView((s) => s.session);
   const connected = useView((s) => s.connection === 'connected');
   const focusRequests = useView((s) => s.focusRequests);
+  const prefill = useView((s) => s.prefill);
   const dirtyFiles = useView((s) => s.workspace.dirtyFiles);
   const context = useView((s) => s.context);
   const commands = useView((s) => s.commands);
@@ -64,6 +65,17 @@ export function Composer() {
   useEffect(() => {
     ref.current?.focus();
   }, [focusRequests, session.id]);
+
+  // "编辑后重发"：把历史消息放回输入框，光标放到末尾
+  useEffect(() => {
+    if (prefill.n === 0) return;
+    setText(prefill.text);
+    setCaret(prefill.text.length);
+    requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.setSelectionRange(prefill.text.length, prefill.text.length);
+    });
+  }, [prefill]);
 
   const trigger = dismissedFor === text ? undefined : triggerAt(text, caret);
   const fileQuery = trigger?.kind === 'file' ? trigger.token.query : undefined;

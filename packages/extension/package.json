@@ -2,7 +2,7 @@
   "name": "dsh-copilot",
   "displayName": "DSH Copilot",
   "description": "%extension.description%",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "izrio",
   "private": true,
   "license": "UNLICENSED",
@@ -21,7 +21,7 @@
     "virtualWorkspaces": false,
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。"
+      "description": "%capabilities.untrusted%"
     }
   },
   "categories": [

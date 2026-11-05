@@ -40,5 +40,8 @@ describe('redactSecrets', () => {
 
   it('没有凭据的文本保持不变', () => {
     expect(redactSecrets('Tokens prefixed with @ are paths')).toBe('Tokens prefixed with @ are paths');
+    expect(redactSecrets('401 for key sk-0123456789abcdef0123')).toBe('401 for key sk-<redacted>');
+    expect(redactSecrets('authorization: Bearer abc.def-ghi_123')).toBe('authorization: Bearer <redacted>');
+    expect(redactSecrets('use the risk-free sk-ip option')).toBe('use the risk-free sk-ip option');
   });
 });

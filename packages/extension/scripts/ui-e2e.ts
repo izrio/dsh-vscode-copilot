@@ -622,6 +622,14 @@ try {
   await send('你好');
   await page.locator('.assistant', { hasText: '有什么可以帮你' }).waitFor({ timeout: 20_000 });
   check('新对话第一条消息发送时才创建会话', activeSessionId !== undefined && activeSessionId !== firstSession);
+  const sentBubble = page.locator('.user', { hasText: '你好' }).first();
+  await sentBubble.hover();
+  await sentBubble.getByRole('button', { name: '编辑后重发' }).click();
+  await page.waitForFunction(() => document.querySelector('textarea')?.value === '你好', undefined, { timeout: 5_000 }).then(
+    () => check('悬停用户消息可以"编辑后重发"（放回输入框）', true),
+    async () => check('悬停用户消息可以"编辑后重发"（放回输入框）', false, await composer.inputValue()),
+  );
+  await composer.fill('');
   await page.locator('.header__title').click();
   await page.locator('.sessions-menu .menu-item').nth(1).waitFor({ timeout: 10_000 });
   check('会话列表里有两个会话', (await page.locator('.sessions-menu .menu-item').count()) === 2);

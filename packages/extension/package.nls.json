@@ -24,5 +24,6 @@
   "submenu.editor": "DSH",
   "config.title": "DSH",
   "container.title": "DSH",
-  "extension.description": "Codex-style VS Code front end for DeepSeek Harness (dsh)"
+  "extension.description": "Codex-style VS Code front end for DeepSeek Harness (dsh)",
+  "capabilities.untrusted": "dsh reads and writes files and runs commands in the workspace, so the workspace must be trusted."
 }

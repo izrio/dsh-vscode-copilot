@@ -2,7 +2,7 @@
 import { memo, useState, type ReactNode } from 'react';
 import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
 import { splitMentions } from '../mentions.ts';
-import { useView } from '../store.ts';
+import { requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -50,6 +50,7 @@ function UserBubble({ item }: { item: Of<'user'> }) {
         </div>
       ) : null}
       {item.pending === 'queued' ? <QueuedMeta item={item} onEdit={() => setEditing(true)} /> : null}
+      {!item.pending && item.text ? <UserActions text={item.text} /> : null}
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
           <span>{item.error ? t('user.failedWith', item.error) : t('user.failed')}</span>
@@ -61,6 +62,31 @@ function UserBubble({ item }: { item: Of<'user'> }) {
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** 已发送的消息：悬停时显示复制、编辑后重发。 */
+function UserActions({ text }: { text: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="user__actions">
+      <button
+        type="button"
+        className="link-button"
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1_200);
+          })
+        }
+      >
+        {copied ? t('user.copied') : t('user.copy')}
+      </button>
+      <button type="button" className="link-button" title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
+        {t('user.editResend')}
+      </button>
     </div>
   );
 }

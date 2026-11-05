@@ -45,6 +45,8 @@ export interface ViewState {
   /** 最近一次 `@` 补全的结果。 */
   readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
   readonly toasts: readonly Toast[];
+  /** 把一段文字放进输入框（"编辑后重发"）；`n` 每次递增，输入框据此更新。 */
+  readonly prefill: { readonly text: string; readonly n: number };
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
 }
@@ -66,6 +68,7 @@ const initialState: ViewState = {
   commands: [],
   fileCandidates: { requestId: -1, items: [] },
   toasts: [],
+  prefill: { text: '', n: 0 },
   focusRequests: 0,
 };
 
@@ -90,6 +93,10 @@ export function useView<T>(selector: (state: ViewState) => T): T {
     },
     () => selector(state),
   );
+}
+
+export function requestPrefill(text: string): void {
+  set({ prefill: { text, n: state.prefill.n + 1 } });
 }
 
 export function dismissToast(id: number): void {

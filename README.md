@@ -4,7 +4,7 @@
 
 Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
 
-> 当前阶段：**M4 已完成**。基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区。
+> 当前版本：**v0.1.0**（M0–M5 完成）。使用说明见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。功能：基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区；中英文界面。
 
 ![点击修改记录，在 VS Code 的 Diff 编辑器里查看改动](docs/images/m2-vscode-diff.png)
 
@@ -54,7 +54,7 @@ dsh Host 子进程（dsh --profile web --no-open --host 127.0.0.1 --port 0）
 模型 API（DeepSeek 等）
 ```
 
-使用前需要能在终端运行 `dsh`（支持 `0.2.1-rc.5` 及以上，已测试到 `0.2.2-alpha.3`）：推荐安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/) 并在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令（自带运行时），也可以 `npm install -g @deepseek-ai/dsh`（需要 Node ≥ 24.9）。模型 API Key 在 dsh 里配置（插件的「更多 → 在浏览器中打开 dsh」进入 dsh 的模型设置页）。
+使用前需要能在终端运行 `dsh`（支持 `0.2.1-rc.5` 及以上，已测试到 `0.2.2-alpha.3`）：推荐安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/) 并在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令（自带运行时），也可以 `npm install -g @deepseek-ai/dsh`（需要 Node ≥ 24.9）。第一次使用时插件会引导配置 DeepSeek API Key（保存到 dsh 的凭据存储）。
 
 ## 开发
 
@@ -135,6 +135,6 @@ packages/
 | M2 | 工具活动行细化、审批与提问、权限切换、Diff、本轮改动、未保存保护 | ✅ |
 | M3 | VS Code 上下文：选区、`@文件`、右键菜单、斜杠命令 | ✅ |
 | M4 | 排队消息、计划审阅、状态条、API Key 引导、多根工作区、长会话性能 | ✅ |
-| M5 | 中英文界面、测试、多版本兼容 CI、三平台验收、发布 | |
+| M5 | 中英文界面、多版本兼容 CI、安全与界面自查、用户文档、v0.1.0 | ✅（三平台手工验收待做） |
 
 详见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)。

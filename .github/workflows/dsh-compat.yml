@@ -1,5 +1,8 @@
-# 用真实 dsh + 本地假模型跑 M0 冒烟测试（不需要 API Key）。
-# minimum：插件声明支持的最低版本；latest / alpha：提前发现 dsh 的破坏性变更。
+# 用真实 dsh + 本地假模型跑测试（不需要 API Key）：
+# - 冒烟测试：插件的协议客户端（minimum / latest / alpha 三个 dsh 版本）
+# - 界面端到端：Host 侧全部真实，界面在 Chromium 里加载构建产物（同样三个版本）
+# - 真实 VS Code：code-server 加载打包好的 vsix（latest）
+# minimum 是插件声明支持的最低版本；latest / alpha 用来提前发现 dsh 的破坏性变更。
 name: dsh compatibility
 
 on:
@@ -7,8 +10,12 @@ on:
     - cron: '17 3 * * *'
   workflow_dispatch:
 
+env:
+  # 与 scripts/playwright-lite.ts 的约定一致：使用全局安装的 playwright
+  PLAYWRIGHT_VERSION: '1.63.0'
+
 jobs:
-  smoke:
+  smoke-and-ui:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,8 +34,42 @@ jobs:
         run: npm install -g "@deepseek-ai/dsh@${{ matrix.dsh }}" && dsh --version
       - name: Smoke test
         run: pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
+      - name: Install Playwright and Chromium
+        run: npm install -g "playwright@${PLAYWRIGHT_VERSION}" && npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+      - name: UI end-to-end test
+        run: |
+          pnpm build
+          NODE_PATH="$(npm root -g)" pnpm --filter dsh-copilot e2e -- --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/e2e-screenshots"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-report-${{ matrix.dsh }}
-          path: packages/extension/smoke-report.json
+          name: reports-${{ matrix.dsh }}
+          path: |
+            packages/extension/smoke-report.json
+            e2e-screenshots/
+
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npm install -g @deepseek-ai/dsh@latest && dsh --version
+      - name: Install code-server, Playwright and Chromium
+        run: |
+          sudo apt-get update && sudo apt-get install -y libkrb5-dev
+          npm install -g code-server "playwright@${PLAYWRIGHT_VERSION}"
+          npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+      - name: Real VS Code test
+        run: |
+          pnpm package
+          NODE_PATH="$(npm root -g)" pnpm --filter dsh-copilot vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/vscode-screenshots"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-screenshots
+          path: vscode-screenshots/

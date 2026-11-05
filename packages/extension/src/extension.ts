@@ -12,6 +12,7 @@ import { ChatController } from './vm/ChatController.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
 import { resolveLocale, setLocale, t } from './i18n.ts';
+import { redactSecrets } from './util/redact.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
 const FOLDER_KEY = 'dsh.folder';
@@ -25,6 +26,8 @@ export function activate(context: vscode.ExtensionContext): void {
     setLocale(resolveLocale(vscode.env.language, vscode.workspace.getConfiguration('dsh.ui').get<string>('language', 'auto')));
   applyLocale();
   const output = vscode.window.createOutputChannel('DSH', { log: true });
+  // 所有日志都先脱敏：错误信息里可能带着 dsh 回显的令牌或 API Key
+  const log = (line: string): void => output.info(redactSecrets(line));
   const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
@@ -36,11 +39,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const manager = new RuntimeManager({
     getConfig: () => readRuntimeConfig(workspacePath),
-    log: (line) => output.info(line),
+    log: log,
     runtimeLog: (line, stream) => (stream === 'stderr' ? runtimeOutput.warn(line) : runtimeOutput.info(line)),
   });
   runtime = manager;
-  const dsh = new DshConnection({ log: (line) => output.info(line) });
+  const dsh = new DshConnection({ log: log });
   connection = dsh;
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -56,13 +59,13 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   let provider: ChatViewProvider | undefined;
-  const workbench = new VscodeWorkbench((line) => output.info(line));
+  const workbench = new VscodeWorkbench(log);
   const chat = new ChatController({
     workbench,
     includeActiveEditor: () => vscode.workspace.getConfiguration('dsh.context').get<boolean>('includeActiveEditor', true),
     workspacePath,
     post: (message) => provider?.post(message),
-    log: (line) => output.info(line),
+    log: log,
     loadActiveSessionId: () => context.workspaceState.get<string>(sessionKey()),
     saveActiveSessionId: (sessionId) => void context.workspaceState.update(sessionKey(), sessionId),
     folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
@@ -99,7 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
   provider = new ChatViewProvider(context.extensionUri, {
     onMessage: (message) => void chat.handle(message),
     onViewVisible: startIfTrusted,
-    log: (line) => output.info(line),
+    log: log,
   });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider));
 
