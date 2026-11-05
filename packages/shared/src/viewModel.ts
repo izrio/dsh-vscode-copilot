@@ -250,6 +250,22 @@ export interface SessionHeader {
   readonly changes?: SessionChangesView;
 }
 
+/** 对话面板里打开的一个标签：一个会话，或还没发送第一条消息的新对话。 */
+export interface TabView {
+  /** 标签的标识，切换、关闭时用；新对话的标签在第一条消息发送后仍沿用同一个 key。 */
+  readonly key: string;
+  readonly sessionId?: string;
+  readonly title: string;
+  readonly running: boolean;
+  /** 有等待处理的审批或提问。 */
+  readonly needsAttention?: boolean;
+}
+
+export interface TabsState {
+  readonly items: readonly TabView[];
+  readonly active: string;
+}
+
 export interface WorkspaceState {
   /** 工作区里有未保存内容的文件数。 */
   readonly dirtyFiles: number;

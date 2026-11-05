@@ -13,6 +13,7 @@ import type {
   PermissionState,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WorkspaceState,
 } from './viewModel.ts';
 
@@ -55,8 +56,13 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('configureApiKey'), payload: empty }),
   z.object({ type: z.literal('selectFolder'), payload: empty }),
   z.object({ type: z.literal('interrupt'), payload: empty }),
+  /** 新建对话：打开一个新标签（已有空的新对话标签时切换过去），不覆盖当前会话。 */
   z.object({ type: z.literal('newSession'), payload: empty }),
+  /** 打开会话：已经在某个标签里时切换过去，否则在新标签里打开。 */
   z.object({ type: z.literal('switchSession'), payload: z.object({ sessionId: z.string().min(1) }) }),
+  z.object({ type: z.literal('activateTab'), payload: z.object({ key: z.string().min(1) }) }),
+  /** 关闭标签只是不再显示，会话仍在 dsh 里，可以从会话列表重新打开。 */
+  z.object({ type: z.literal('closeTab'), payload: z.object({ key: z.string().min(1) }) }),
   z.object({ type: z.literal('loadOlder'), payload: empty }),
   z.object({
     type: z.literal('selectModel'),
@@ -97,6 +103,7 @@ export interface HostSnapshot {
   readonly runtime: RuntimeStatus;
   readonly connection: ConnectionState;
   readonly sessions: readonly SessionListItem[];
+  readonly tabs: TabsState;
   readonly session: SessionHeader;
   readonly items: readonly Item[];
   readonly models: ModelState;
@@ -125,6 +132,7 @@ export type HostToWebview =
   | { readonly type: 'runtimeStatus'; readonly payload: RuntimeStatus }
   | { readonly type: 'connection'; readonly payload: ConnectionState }
   | { readonly type: 'sessions'; readonly payload: readonly SessionListItem[] }
+  | { readonly type: 'tabs'; readonly payload: TabsState }
   | { readonly type: 'session'; readonly payload: SessionHeader }
   | { readonly type: 'items'; readonly payload: ItemsPatch }
   | { readonly type: 'models'; readonly payload: ModelState }

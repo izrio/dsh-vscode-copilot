@@ -19,6 +19,7 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WorkspaceState,
 } from '@dsh-copilot/shared';
 
@@ -33,6 +34,7 @@ export interface ViewState {
   readonly runtime: RuntimeStatus;
   readonly connection: ConnectionState;
   readonly sessions: readonly SessionListItem[];
+  readonly tabs: TabsState;
   readonly session: SessionHeader;
   readonly sessionKey: string;
   readonly items: readonly Item[];
@@ -61,6 +63,7 @@ const initialState: ViewState = {
   runtime: { kind: 'idle' },
   connection: 'idle',
   sessions: [],
+  tabs: { items: [], active: '' },
   session: { title: '', running: false, hasOlder: false, loadingOlder: false, sync: 'idle' },
   sessionKey: '',
   items: [],
@@ -137,6 +140,7 @@ export function applyHostMessage(message: HostToWebview): void {
         runtime: p.runtime,
         connection: p.connection,
         sessions: p.sessions,
+        tabs: p.tabs ?? { items: [], active: '' },
         session: p.session,
         sessionKey: p.session.id ?? '',
         items: p.items,
@@ -159,6 +163,9 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'sessions':
       set({ sessions: message.payload });
+      return;
+    case 'tabs':
+      set({ tabs: message.payload });
       return;
     case 'session':
       set({ session: message.payload });

@@ -87,7 +87,7 @@ export function Header() {
           </div>
         </Popover>
       </div>
-      <button type="button" className="icon-button" aria-label={t('header.new')} title={t('header.new')} onClick={() => postToHost({ type: 'newSession', payload: {} })}>
+      <button type="button" className="icon-button" aria-label={t('header.new')} title={t('header.newTab')} onClick={() => postToHost({ type: 'newSession', payload: {} })}>
         <PlusIcon />
       </button>
       <div className="header__more">

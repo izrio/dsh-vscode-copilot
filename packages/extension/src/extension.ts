@@ -15,6 +15,7 @@ import { resolveLocale, setLocale, t } from './i18n.ts';
 import { redactSecrets } from './util/redact.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
+const OPEN_TABS_KEY = 'dsh.openTabs';
 const FOLDER_KEY = 'dsh.folder';
 
 let runtime: RuntimeManager | undefined;
@@ -36,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const savedFolder = context.workspaceState.get<string>(FOLDER_KEY);
   let workspacePath = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath ?? homedir();
   const sessionKey = () => (folders().length > 1 ? `${ACTIVE_SESSION_KEY}:${workspacePath}` : ACTIVE_SESSION_KEY);
+  const tabsKey = () => (folders().length > 1 ? `${OPEN_TABS_KEY}:${workspacePath}` : OPEN_TABS_KEY);
 
   const manager = new RuntimeManager({
     getConfig: () => readRuntimeConfig(workspacePath),
@@ -68,6 +70,8 @@ export function activate(context: vscode.ExtensionContext): void {
     log: log,
     loadActiveSessionId: () => context.workspaceState.get<string>(sessionKey()),
     saveActiveSessionId: (sessionId) => void context.workspaceState.update(sessionKey(), sessionId),
+    loadOpenTabs: () => context.workspaceState.get<string[]>(tabsKey()),
+    saveOpenTabs: (ids) => void context.workspaceState.update(tabsKey(), [...ids]),
     folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
     selectFolder: () => void vscode.commands.executeCommand('dsh.selectFolder'),
     openExternal,

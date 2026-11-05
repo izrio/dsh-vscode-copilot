@@ -5,6 +5,7 @@ import { postToHost } from './vscode.ts';
 import { Composer } from './components/Composer.tsx';
 import { Header } from './components/Header.tsx';
 import { RuntimeBanner } from './components/RuntimeBanner.tsx';
+import { TabBar } from './components/TabBar.tsx';
 import { Thread } from './components/Thread.tsx';
 import { Toasts } from './components/Toasts.tsx';
 import { BeakerIcon, BookIcon, BugIcon, DiffIcon, GlobeIcon, KeyIcon, SparkleIcon, SpinnerIcon } from './components/icons.tsx';
@@ -40,6 +41,7 @@ export function App() {
   return (
     <div className="app">
       <Header />
+      <TabBar />
       <RuntimeBanner status={runtime} connection={connection} />
       {failure ? <div className="banner banner--warn banner--inline">{t('session.failed', failure)}</div> : null}
       {opening ? <SessionLoading /> : empty ? <EmptyState /> : <Thread />}
@@ -83,7 +85,7 @@ function EmptyState() {
       <div className="suggestions" data-testid="suggestions">
         {SUGGESTIONS.map(({ key, icon }) => (
           <button key={key} type="button" className="suggestion" onClick={() => requestPrefill(t(`empty.suggest.${key}Prompt` as MessageKey))}>
-            <span className="suggestion__icon">{icon}</span>
+            <span className={`suggestion__icon suggestion__icon--${key}`}>{icon}</span>
             <span className="suggestion__title">{t(`empty.suggest.${key}` as MessageKey)}</span>
           </button>
         ))}

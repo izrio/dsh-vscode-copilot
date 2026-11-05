@@ -55,7 +55,10 @@ export function Composer() {
   const commands = useView((s) => s.commands);
   const candidates = useView((s) => s.fileCandidates);
   const t = useT();
+  const tabKey = useView((s) => s.tabs.active);
   const [text, setText] = useState(() => loadState().draft ?? '');
+  /** 草稿属于哪个标签；切换标签时存下当前草稿，换成目标标签的草稿。 */
+  const draftOwner = useRef(tabKey);
   const [caret, setCaret] = useState(0);
   const [selected, setSelected] = useState(0);
   /** 按 Esc 关掉补全时的文本；文本变化后才重新打开。 */
@@ -70,6 +73,17 @@ export function Composer() {
   useEffect(() => {
     saveState({ draft: text });
   }, [text]);
+
+  useEffect(() => {
+    const previous = draftOwner.current;
+    draftOwner.current = tabKey;
+    // 还没收到快照时（key 为空）恢复的草稿就属于当前标签
+    if (!previous || previous === tabKey) return;
+    const { [tabKey]: next = '', ...rest } = loadState().drafts ?? {};
+    saveState({ drafts: text.trim() ? { ...rest, [previous]: text } : rest });
+    setText(next);
+    setCaret(next.length);
+  }, [tabKey]);
 
   useEffect(() => {
     const el = ref.current;

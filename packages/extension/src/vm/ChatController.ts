@@ -18,6 +18,7 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WebviewToHost,
 } from '@dsh-copilot/shared';
 import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
@@ -65,6 +66,9 @@ export interface ChatControllerOptions {
   /** 记住每个工作区上次打开的会话（VS Code workspaceState）。 */
   readonly loadActiveSessionId: () => string | undefined;
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
+  /** 记住每个工作区打开的会话标签（VS Code workspaceState）。 */
+  readonly loadOpenTabs?: () => readonly string[] | undefined;
+  readonly saveOpenTabs?: (sessionIds: readonly string[]) => void;
   readonly openExternal: (url: string) => void;
   readonly restartRuntime: () => void;
   readonly showLogs: () => void;
@@ -88,6 +92,13 @@ export interface ChatControllerOptions {
 
 /** 同时读取改动汇总的请求数：打开长会话时不一次发出几十个请求，把 dsh 堵住（点开 Diff 的请求要排在后面）。 */
 const SUMMARY_CONCURRENCY = 2;
+/** 后台标签最多保留几个 follow 流：切回这些标签时内容立即可见，更多的标签切回时重新打开。 */
+const MAX_BACKGROUND_STREAMS = 4;
+
+interface Tab {
+  readonly key: string;
+  sessionId: string | undefined;
+}
 
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
@@ -151,11 +162,142 @@ export class ChatController {
   /** 等待读取的改动汇总（新的在前）。 */
   private summaryQueue: { readonly sessionId: string; readonly seq: number }[] = [];
   private summariesInFlight = 0;
+  /** 对话面板里打开的标签；当前标签的会话就是 activeId。 */
+  private tabs: Tab[] = [];
+  private activeTab = '';
+  private tabCounter = 0;
+  /** 后台标签的 follow 流（会话 id → 流），按切走的先后排列。 */
+  private readonly background = new Map<string, SessionStream>();
 
   constructor(private readonly options: ChatControllerOptions) {
     this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
+    this.restoreTabs();
+  }
+
+  /** 按保存的标签和上次打开的会话恢复标签；上次停在新对话时末尾加一个新对话标签。 */
+  private restoreTabs(): void {
+    const ids = [...new Set(this.options.loadOpenTabs?.() ?? [])];
+    if (this.activeId && !ids.includes(this.activeId)) ids.push(this.activeId);
+    this.tabs = ids.map((sessionId) => ({ key: this.nextTabKey(), sessionId }));
+    let active = this.tabs.find((tab) => tab.sessionId === this.activeId);
+    if (!active) {
+      active = { key: this.nextTabKey(), sessionId: undefined };
+      this.tabs.push(active);
+    }
+    this.activeTab = active.key;
+  }
+
+  private nextTabKey(): string {
+    return `tab-${++this.tabCounter}`;
+  }
+
+  private saveTabs(): void {
+    this.options.saveOpenTabs?.(this.tabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
+  }
+
+  private disposeBackground(): void {
+    for (const stream of this.background.values()) stream.dispose();
+    this.background.clear();
+  }
+
+  /** 新对话：已有空的新对话标签时切过去，否则在当前标签后面新开一个。 */
+  private newTab(): void {
+    const blank = this.tabs.find((tab) => !tab.sessionId);
+    if (blank) return this.activateTab(blank.key);
+    const tab: Tab = { key: this.nextTabKey(), sessionId: undefined };
+    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
+    this.activateTab(tab.key);
+  }
+
+  /** 打开会话：已经在标签里时切过去；当前是空的新对话时就在当前标签打开；否则新开一个标签。 */
+  private openSessionTab(sessionId: string): void {
+    const existing = this.tabs.find((tab) => tab.sessionId === sessionId);
+    if (existing) return this.activateTab(existing.key);
+    const current = this.tabs.find((tab) => tab.key === this.activeTab);
+    if (current && !current.sessionId) {
+      this.setActive(sessionId);
+      return;
+    }
+    const tab: Tab = { key: this.nextTabKey(), sessionId };
+    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
+    this.activateTab(tab.key);
+  }
+
+  private activateTab(key: string): void {
+    const tab = this.tabs.find((t) => t.key === key);
+    if (!tab) return;
+    this.activeTab = key;
+    this.setActive(tab.sessionId);
+    this.saveTabs();
+    this.scheduleRender();
+  }
+
+  /** 关闭标签：会话仍在 dsh 里。关掉最后一个标签时换成新对话。 */
+  private closeTab(key: string): void {
+    const index = this.tabs.findIndex((t) => t.key === key);
+    const tab = this.tabs[index];
+    if (!tab) return;
+    if (tab.sessionId) {
+      this.background.get(tab.sessionId)?.dispose();
+      this.background.delete(tab.sessionId);
+    }
+    if (this.tabs.length === 1) {
+      if (!tab.sessionId) return;
+      this.tabs = [{ key: this.nextTabKey(), sessionId: undefined }];
+      this.activateTab(this.tabs[0]!.key);
+      return;
+    }
+    this.tabs.splice(index, 1);
+    if (key === this.activeTab) {
+      // 当前流属于被关掉的标签：不放进后台，直接关掉
+      if (this.stream && this.stream.sessionId === tab.sessionId) {
+        this.stream.dispose();
+        this.stream = undefined;
+      }
+      this.activateTab((this.tabs[index] ?? this.tabs[index - 1])!.key);
+    } else {
+      this.saveTabs();
+      this.scheduleRender();
+    }
+  }
+
+  /** 当前会话还在某个标签里时把它的流留在后台，否则关掉。 */
+  private parkStream(): void {
+    const stream = this.stream;
+    this.stream = undefined;
+    if (!stream) return;
+    const open = this.tabs.some((tab) => tab.sessionId === stream.sessionId);
+    if (!open || stream.status.kind === 'failed' || stream.status.kind === 'disconnected') {
+      stream.dispose();
+      return;
+    }
+    this.background.delete(stream.sessionId);
+    this.background.set(stream.sessionId, stream);
+    while (this.background.size > MAX_BACKGROUND_STREAMS) {
+      const [oldestId, oldest] = this.background.entries().next().value!;
+      oldest.dispose();
+      this.background.delete(oldestId);
+    }
+  }
+
+  private tabsState(service: SessionService | undefined, current: SessionHeader, attention: ReadonlySet<string>): TabsState {
+    const items = this.tabs.map((tab) => {
+      if (tab.key === this.activeTab) {
+        return { key: tab.key, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}), title: current.title, running: current.running, ...(tab.sessionId && attention.has(tab.sessionId) ? { needsAttention: true } : {}) };
+      }
+      if (!tab.sessionId) return { key: tab.key, title: newSessionTitle(), running: false };
+      const summary = service?.sessions.find((s) => s.sessionId === tab.sessionId);
+      return {
+        key: tab.key,
+        sessionId: tab.sessionId,
+        title: titleOf(service?.projections(tab.sessionId) ?? {}, []),
+        running: summary?.running ?? false,
+        ...(attention.has(tab.sessionId) ? { needsAttention: true } : {}),
+      };
+    });
+    return { items, active: this.activeTab };
   }
 
   /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
@@ -166,6 +308,8 @@ export class ChatController {
     this.activeId = this.options.loadActiveSessionId();
     this.staleService = undefined;
     this.staleStream = undefined;
+    this.disposeBackground();
+    this.restoreTabs();
     this.setClient(this.client);
   }
 
@@ -176,6 +320,7 @@ export class ChatController {
   dispose(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer);
     this.stream?.dispose();
+    this.disposeBackground();
     this.service?.dispose();
     this.interactions?.dispose();
   }
@@ -245,6 +390,8 @@ export class ChatController {
       this.stream.dispose();
       this.staleStream = this.stream;
     }
+    // 后台标签的流绑定在旧连接上；切回时在新连接上重新打开
+    this.disposeBackground();
     if (this.service) {
       this.service.dispose();
       this.staleService = this.service;
@@ -283,6 +430,10 @@ export class ChatController {
         // 斜杠命令目录与会话无关，任选一个已有会话读取，新对话里也能补全 dsh 命令
         const anySession = service.sessions.find((s) => s.sessionId === restoredId)?.sessionId ?? service.sessions[0]?.sessionId;
         if (anySession) this.loadCommands(anySession);
+        // 已经不存在的会话（被删除或不属于这个工作区）不再保留标签
+        const before = this.tabs.length;
+        this.tabs = this.tabs.filter((tab) => !tab.sessionId || tab.sessionId === restoredId || service.sessions.some((s) => s.sessionId === tab.sessionId));
+        if (this.tabs.length !== before) this.saveTabs();
         if (restoredId && !service.sessions.some((s) => s.sessionId === restoredId)) {
           this.options.log(`上次打开的会话 ${restoredId} 已不存在，改为新对话`);
           this.setActive(undefined);
@@ -306,6 +457,7 @@ export class ChatController {
       runtime: this.runtime,
       connection: this.connection,
       sessions: view.sessions,
+      tabs: view.tabs,
       session: view.session,
       items: view.items,
       models: view.models,
@@ -344,10 +496,16 @@ export class ChatController {
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
-        this.setActive(undefined);
+        this.newTab();
         return;
       case 'switchSession':
-        this.setActive(message.payload.sessionId);
+        this.openSessionTab(message.payload.sessionId);
+        return;
+      case 'activateTab':
+        this.activateTab(message.payload.key);
+        return;
+      case 'closeTab':
+        this.closeTab(message.payload.key);
         return;
       case 'loadOlder':
         await this.stream?.loadOlder();
@@ -605,7 +763,7 @@ export class ChatController {
   async send(text: string, options: SendOptions = {}): Promise<void> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
-      this.setActive(undefined);
+      this.newTab();
       if (slash.args.trim()) await this.send(slash.args, options);
       return;
     }
@@ -824,8 +982,18 @@ export class ChatController {
     }
   }
 
+  /** 切换当前标签显示的会话（undefined 为新对话）；标签的切换、新建、关闭见 activateTab 等。 */
   private setActive(sessionId: string | undefined): void {
+    const tab = this.tabs.find((t) => t.key === this.activeTab);
+    if (tab && tab.sessionId !== sessionId) {
+      // 同一个会话不同时出现在两个标签里
+      const duplicate = sessionId ? this.tabs.find((t) => t !== tab && t.sessionId === sessionId) : undefined;
+      if (duplicate) this.tabs = this.tabs.filter((t) => t !== duplicate);
+      tab.sessionId = sessionId;
+      this.saveTabs();
+    }
     if (sessionId === this.activeId && (sessionId === undefined || this.stream)) return;
+    this.parkStream();
     this.activeId = sessionId;
     // 换了会话就不再显示旧会话的残留内容
     if (this.staleStream?.sessionId !== sessionId) this.staleStream = undefined;
@@ -838,7 +1006,14 @@ export class ChatController {
     this.stream = undefined;
     const service = this.service;
     const sessionId = this.activeId;
-    if (service && sessionId) {
+    const parked = sessionId ? this.background.get(sessionId) : undefined;
+    if (sessionId && parked) this.background.delete(sessionId);
+    if (service && sessionId && parked && parked.status.kind !== 'failed' && parked.status.kind !== 'disconnected') {
+      // 后台标签的流一直在跟随，内容立即可见
+      this.stream = parked;
+      this.loadCommands(sessionId);
+    } else if (service && sessionId) {
+      parked?.dispose();
       const stream = new SessionStream({
         client: service.client,
         sessionId,
@@ -948,6 +1123,7 @@ export class ChatController {
     return {
       sessionKey: sessionId ?? '',
       sessions,
+      tabs: this.tabsState(service, session, attention),
       session,
       items: projection.items,
       models: buildModelState(projections, service?.models, this.draftModel),

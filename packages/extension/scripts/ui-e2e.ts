@@ -682,6 +682,23 @@ try {
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
   check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === firstSessionActivities, (await page.locator('.activity').allInnerTexts()).join(' | '));
 
+  // 4b. 多开会话：加号新开标签，不覆盖当前会话
+  const tabBar = page.getByTestId('tabs');
+  check('两个会话各占一个标签', (await tabBar.locator('.tab').count()) === 2, await tabBar.innerText().catch(() => ''));
+  await shot('09b-tabs');
+  const secondSession = await tabBar.locator('.tab').nth(1);
+  await secondSession.click();
+  await page.locator('.assistant', { hasText: '有什么可以帮你' }).waitFor({ timeout: 2_000 }).then(
+    () => check('点击后台标签立即切过去（流一直在跟随）', true),
+    () => check('点击后台标签立即切过去（流一直在跟随）', false),
+  );
+  await tabBar.locator('.tab').first().click();
+  await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 2_000 });
+  await tabBar.locator('.tab').nth(1).hover();
+  await tabBar.locator('.tab').nth(1).locator('.tab__close').click();
+  await page.waitForTimeout(200);
+  check('关闭标签后只剩一个会话，标签栏隐藏', (await page.getByTestId('tabs').count()) === 0 && activeSessionId === firstSession);
+
   // 5. Webview 重新加载：Host 是状态的唯一来源
   await load();
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 10_000 });

@@ -12,6 +12,11 @@
   --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
   --surface: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+  /*
+   * 强调色：图标、进度环、卡片边框。不用 focusBorder——不少主题把它设成灰色或透明，图标就没了颜色。
+   * textLink 在几乎所有主题里都是醒目的彩色。
+   */
+  --accent: var(--vscode-textLink-foreground, var(--vscode-button-background, #3794ff));
   --mono: var(--dsh-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
   /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
   --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
@@ -52,6 +57,102 @@ button {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* ---------- 会话标签 ---------- */
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  max-width: 180px;
+  padding: 4px 4px 5px 10px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--muted);
+  font-size: 0.88em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--hover);
+  color: var(--vscode-foreground);
+}
+
+.tab--active {
+  color: var(--vscode-foreground);
+  cursor: default;
+}
+
+.tab--active::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.tab__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab__close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tab__close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tab:hover .tab__close,
+.tab--active .tab__close,
+.tab:focus-visible .tab__close {
+  opacity: 1;
+}
+
+.tab__close:hover {
+  background: var(--hover);
+}
+
+.tab .dot {
+  flex: none;
 }
 
 /* ---------- 顶栏 ---------- */
@@ -133,7 +234,7 @@ button {
 }
 
 .dot--running {
-  background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  background: var(--vscode-progressBar-background, var(--accent));
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -725,7 +826,7 @@ button {
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--vscode-focusBorder);
+  border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
@@ -847,7 +948,7 @@ button {
 }
 
 .question__option--active {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--accent);
   background: var(--vscode-list-activeSelectionBackground, var(--hover));
   color: var(--vscode-list-activeSelectionForeground, inherit);
 }
@@ -1265,7 +1366,7 @@ button.chip:hover {
   height: 3px;
   margin-left: -16px;
   border-radius: 2px;
-  background: var(--vscode-focusBorder);
+  background: var(--accent);
   opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -1747,8 +1848,8 @@ body.resizing {
   height: 44px;
   margin: 0 auto 12px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
-  color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
 }
 
 .empty__logo svg {
@@ -1782,14 +1883,31 @@ body.resizing {
 }
 
 .suggestion:hover {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--accent);
   background: var(--hover);
 }
 
 .suggestion__icon {
   display: inline-flex;
   flex: none;
-  color: var(--vscode-focusBorder);
+  color: var(--accent);
+}
+
+/* 每个示例任务一种颜色（VS Code 图表色，每个主题都有定义） */
+.suggestion__icon--project {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+
+.suggestion__icon--bugs {
+  color: var(--vscode-charts-red, #f14c4c);
+}
+
+.suggestion__icon--tests {
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.suggestion__icon--commit {
+  color: var(--vscode-charts-purple, #b180d7);
 }
 
 .suggestion__title {
@@ -1895,7 +2013,7 @@ body.resizing {
 }
 
 .context-ring__value {
-  stroke: var(--vscode-focusBorder);
+  stroke: var(--accent);
   transition: stroke-dasharray 0.3s ease;
 }
 

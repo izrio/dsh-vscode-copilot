@@ -466,6 +466,74 @@ describe('ChatController', () => {
     });
   });
 
+  describe('多开会话（标签）', () => {
+    async function withTwoSessions() {
+      const savedTabs: (readonly string[])[] = [];
+      const ctx = setup();
+      // setup 不接收这两个选项：直接挂到 options 上
+      Object.assign((ctx.controller as unknown as { options: object }).options, { saveOpenTabs: (ids: readonly string[]) => savedTabs.push(ids) });
+      ctx.controller.setClient(ctx.fake.client);
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '第一个' } });
+      await flush();
+      await ctx.controller.handle({ type: 'newSession', payload: {} });
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '第二个' } });
+      await flush();
+      return { ...ctx, savedTabs };
+    }
+
+    it('加号打开新标签，不覆盖当前会话；两个会话各占一个标签', async () => {
+      const { controller, savedTabs } = await withTwoSessions();
+      const tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId)).toEqual(['s1', 's2']);
+      expect(tabs.active).toBe(tabs.items[1]!.key);
+      expect(savedTabs.at(-1)).toEqual(['s1', 's2']);
+    });
+
+    it('切回后台标签：复用一直在跟随的流，不重新打开', async () => {
+      const { controller, fake } = await withTwoSessions();
+      const client = fake.client as unknown as { follow: (...args: unknown[]) => unknown };
+      const follow = client.follow.bind(client);
+      let reopened = 0;
+      client.follow = (...args: unknown[]) => (reopened++, follow(...args));
+      const first = controller.snapshot().tabs.items[0]!;
+      await controller.handle({ type: 'activateTab', payload: { key: first.key } });
+      await flush();
+      expect(controller.snapshot().session.id).toBe('s1');
+      expect(controller.snapshot().items.some((item) => item.kind === 'user' && item.text === '第一个')).toBe(true);
+      expect(reopened).toBe(0);
+    });
+
+    it('从会话列表打开已在标签里的会话时切过去；关闭当前标签后切到相邻标签', async () => {
+      const { controller } = await withTwoSessions();
+      await controller.handle({ type: 'switchSession', payload: { sessionId: 's1' } });
+      await flush();
+      let tabs = controller.snapshot().tabs;
+      expect(tabs.items).toHaveLength(2);
+      expect(tabs.active).toBe(tabs.items[0]!.key);
+      await controller.handle({ type: 'closeTab', payload: { key: tabs.items[0]!.key } });
+      await flush();
+      tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId)).toEqual(['s2']);
+      expect(controller.snapshot().session.id).toBe('s2');
+      // 关掉最后一个标签：换成新对话
+      await controller.handle({ type: 'closeTab', payload: { key: tabs.items[0]!.key } });
+      await flush();
+      expect(controller.snapshot().tabs.items).toEqual([expect.objectContaining({ title: expect.any(String), running: false })]);
+      expect(controller.snapshot().session.id).toBeUndefined();
+    });
+
+    it('新对话标签只有一个：再按加号时切回它', async () => {
+      const { controller } = await withTwoSessions();
+      await controller.handle({ type: 'newSession', payload: {} });
+      await controller.handle({ type: 'newSession', payload: {} });
+      await flush();
+      const tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId ?? 'new')).toEqual(['s1', 's2', 'new']);
+    });
+  });
+
   describe('会话改动栏与 Diff 加速', () => {
     /** 改动汇总卡片里第一个文件的 seq。 */
     const turnSeqOf = (controller: ChatController): number => {

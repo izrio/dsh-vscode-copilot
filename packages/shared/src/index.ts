@@ -19,6 +19,8 @@ export type {
   SessionChangesView,
   SessionHeader,
   SessionListItem,
+  TabsState,
+  TabView,
   WorkspaceState,
 } from './viewModel.ts';
 export {
