@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
 import type {
+  AppearanceState,
   CommandView,
   Locale,
   ConnectionState,
@@ -25,6 +26,7 @@ const empty = z.object({});
 const diffRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tool'), callId: z.string().min(1) }),
   z.object({ kind: z.literal('turn'), seq: z.number().int().nonnegative(), index: z.number().int().nonnegative() }),
+  z.object({ kind: z.literal('session'), path: z.string().min(1).max(4_096) }),
 ]);
 
 export const webviewToHostSchema = z.discriminatedUnion('type', [
@@ -78,7 +80,9 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
       z.object({ id: z.string().min(1), cancelled: z.literal(true) }),
     ]),
   }),
-  z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema }) }),
+  /** `token` 由 Webview 生成，Host 打开（或放弃）后用 `diffOpened` 回传，Webview 据此结束加载状态。 */
+  z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema, token: z.number().int().optional() }) }),
+  z.object({ type: z.literal('openSettings'), payload: empty }),
   z.object({
     type: z.literal('openFile'),
     payload: z.object({ path: z.string().min(1), startLine: z.number().int().positive().optional(), endLine: z.number().int().positive().optional() }),
@@ -102,6 +106,7 @@ export interface HostSnapshot {
   readonly context: ContextState;
   readonly commands: readonly CommandView[];
   readonly locale: Locale;
+  readonly appearance: AppearanceState;
 }
 
 /**
@@ -128,6 +133,8 @@ export type HostToWebview =
   | { readonly type: 'workspace'; readonly payload: WorkspaceState }
   | { readonly type: 'context'; readonly payload: ContextState }
   | { readonly type: 'locale'; readonly payload: Locale }
+  | { readonly type: 'appearance'; readonly payload: AppearanceState }
+  | { readonly type: 'diffOpened'; readonly payload: { readonly token: number } }
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
   | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }

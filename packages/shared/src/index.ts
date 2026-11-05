@@ -1,5 +1,6 @@
 export type { RuntimeStatus } from './runtime.ts';
 export type {
+  AppearanceState,
   AttachmentView,
   ChangedFileView,
   CommandView,
@@ -15,6 +16,7 @@ export type {
   PendingInteraction,
   PermissionState,
   QuestionView,
+  SessionChangesView,
   SessionHeader,
   SessionListItem,
   WorkspaceState,

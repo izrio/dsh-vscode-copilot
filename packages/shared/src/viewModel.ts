@@ -3,8 +3,14 @@
  * 这里的类型是插件自己的，不直接暴露 dsh 的事件结构（docs/DESIGN.md D8）。
  */
 
-/** 打开某个改动的 Diff：单次工具调用（来自会话日志，长期可用）或本轮汇总里的一个文件（Host 内存中）。 */
-export type DiffRef = { readonly kind: 'tool'; readonly callId: string } | { readonly kind: 'turn'; readonly seq: number; readonly index: number };
+/**
+ * 打开某个改动的 Diff：单次工具调用（来自会话日志，长期可用）、本轮汇总里的一个文件（Host 内存中），
+ * 或整个会话对某个文件的累计改动（`path` 是 Host 给出的绝对路径）。
+ */
+export type DiffRef =
+  | { readonly kind: 'tool'; readonly callId: string }
+  | { readonly kind: 'turn'; readonly seq: number; readonly index: number }
+  | { readonly kind: 'session'; readonly path: string };
 
 export interface LineStats {
   readonly additions: number;
@@ -17,6 +23,23 @@ export interface ChangedFileView extends Partial<LineStats> {
   readonly ref: DiffRef;
   readonly created?: boolean;
   readonly flags?: readonly ('binary' | 'oversized')[];
+}
+
+/** 当前会话累计改动的文件：显示在输入框上方的改动栏。 */
+export interface SessionChangesView {
+  readonly files: readonly ChangedFileView[];
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+/**
+ * 界面外观（设置 `dsh.ui.fontSize`、`dsh.ui.fontFamily`、`dsh.ui.codeFontFamily`）。
+ * 不设置时跟随 VS Code：字体与工作台相同，字号比工作台大 1px。
+ */
+export interface AppearanceState {
+  readonly fontSize?: number;
+  readonly fontFamily?: string;
+  readonly codeFontFamily?: string;
 }
 
 /**
@@ -223,6 +246,8 @@ export interface SessionHeader {
   };
   /** 多根工作区时当前对应的文件夹名。 */
   readonly folder?: string;
+  /** 本会话（已加载的历史里）改过的文件；没有改动时为 undefined。 */
+  readonly changes?: SessionChangesView;
 }
 
 export interface WorkspaceState {

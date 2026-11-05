@@ -26,6 +26,16 @@ export function App() {
   // 打开已有会话、follow 还没拿到快照：显示加载中，而不是"新对话"的空状态
   const opening = useView((s) => s.session.id !== undefined && s.items.length === 0 && s.session.sync === 'opening');
   const t = useT();
+  const appearance = useView((s) => s.appearance);
+
+  // 字号和字体通过 CSS 变量生效；不设置时样式表里跟随 VS Code（字号大 1px）
+  useEffect(() => {
+    const style = document.documentElement.style;
+    const apply = (name: string, value: string | undefined) => (value ? style.setProperty(name, value) : style.removeProperty(name));
+    apply('--dsh-font-size', appearance.fontSize ? `${appearance.fontSize}px` : undefined);
+    apply('--dsh-font-family', appearance.fontFamily);
+    apply('--dsh-code-font-family', appearance.codeFontFamily);
+  }, [appearance]);
 
   return (
     <div className="app">

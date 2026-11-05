@@ -135,6 +135,38 @@ describe('project：按工具类型渲染（M2）', () => {
     });
   });
 
+  it('文件改动历史：有汇总的轮次带 seq/index 和本轮的工具调用，没有汇总的轮次按工具合并；会话改动栏累计行数', () => {
+    const events = [
+      event(1, 'turn/start', {}),
+      call(2, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }),
+      result(3, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } }),
+      call(4, 'c2', 'edit', { file_path: '/w/a.ts', old_string: 'x', new_string: 'y' }),
+      result(5, 'c2', { meta: { path: '/w/a.ts', diffs: [{ oldText: 'x\n', newText: 'y\n' }] } }),
+      event(6, 'workspace/changes', { turn: 1 }),
+      event(7, 'turn/end', {}),
+      event(8, 'turn/start', {}),
+      call(9, 'c3', 'edit', { file_path: '/w/a.ts', old_string: 'y', new_string: 'z\nw' }),
+      result(10, 'c3', { meta: { path: '/w/a.ts', diffs: [{ oldText: 'y\n', newText: 'z\nw\n' }] } }),
+    ];
+    const summary = { turn: 1, files: [{ path: 'new.txt', added: 2, deleted: 0 }, { path: 'a.ts', added: 1, deleted: 1 }, { path: 'build.log', added: 3, deleted: 0 }], total: 3 };
+    const projection = project({ events, pending: [], workspacePath: '/w', changes: (seq) => (seq === 6 ? summary : undefined) });
+    expect(projection.fileHistory.get('/w/a.ts')).toEqual([
+      { turnSeq: 6, index: 1, calls: ['c2'], stats: { additions: 1, deletions: 1 }, fromSummary: true, created: false },
+      { calls: ['c3'], stats: { additions: 2, deletions: 1 }, fromSummary: false, created: false },
+    ]);
+    expect(projection.fileHistory.get('/w/build.log')).toEqual([{ turnSeq: 6, index: 2, calls: [], stats: { additions: 3, deletions: 0 }, fromSummary: true, created: false }]);
+    expect(projection.fileHistory.get('/w/new.txt')?.[0]).toMatchObject({ calls: ['c1'], created: true });
+    expect(projection.sessionChanges).toEqual({
+      files: [
+        { path: 'new.txt', ref: { kind: 'session', path: '/w/new.txt' }, additions: 2, deletions: 0, created: true },
+        { path: 'a.ts', ref: { kind: 'session', path: '/w/a.ts' }, additions: 3, deletions: 2 },
+        { path: 'build.log', ref: { kind: 'session', path: '/w/build.log' }, additions: 3, deletions: 0 },
+      ],
+      additions: 8,
+      deletions: 2,
+    });
+  });
+
   it('write 新建文件：标记新建，新增行数取内容行数', () => {
     const items = project({
       events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],

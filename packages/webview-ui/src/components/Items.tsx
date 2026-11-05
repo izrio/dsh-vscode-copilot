@@ -1,8 +1,8 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
 import { memo, useState, type ReactNode } from 'react';
-import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
+import type { ChangedFileView, DiffRef, Item, LineStats } from '@dsh-copilot/shared';
 import { splitMentions } from '../mentions.ts';
-import { requestPrefill, useView } from '../store.ts';
+import { diffKey, openDiff as trackDiff, requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -258,7 +258,13 @@ function Reasoning({ text, active }: { text: string; active: boolean }) {
   );
 }
 
-const openDiff = (ref: DiffRef) => postToHost({ type: 'openDiff', payload: { ref } });
+/** 打开 Diff；Host 打开前对应的行显示加载中，重复点击不会重复请求。 */
+export const openDiff = (ref: DiffRef) => trackDiff(ref, (token) => postToHost({ type: 'openDiff', payload: { ref, token } }));
+
+/** 这个 Diff 正在打开。 */
+export function useDiffOpening(ref: DiffRef | undefined): boolean {
+  return useView((s) => ref !== undefined && s.openingDiff?.key === diffKey(ref));
+}
 
 function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon: ReactNode }) {
   return <span className="activity__icon">{status === 'running' ? <SpinnerIcon /> : status === 'error' ? <ErrorIcon /> : icon}</span>;
@@ -310,6 +316,7 @@ function EditRow({ item }: { item: Of<'activity'> }) {
   const [open, setOpen] = useState(false);
   const verb = item.status === 'running' ? t('edit.running') : item.status === 'error' ? t('edit.failed') : item.created ? t('edit.created') : t('edit.done');
   const diff = item.diff;
+  const opening = useDiffOpening(diff);
   const onClick = () => (diff ? openDiff(diff) : item.output ? setOpen(!open) : undefined);
   return (
     <div className={`activity activity--${item.status} activity--edit`}>
@@ -321,7 +328,7 @@ function EditRow({ item }: { item: Of<'activity'> }) {
         onClick={onClick}
         title={diff ? t('edit.view', item.label) : item.label}
       >
-        <StatusIcon status={item.status} icon={<FileEditIcon />} />
+        <StatusIcon status={opening ? 'running' : item.status} icon={<FileEditIcon />} />
         <span className="activity__name">{verb}</span>
         <span className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`}>{item.label}</span>
         {item.stats ? <Stats stats={item.stats} /> : null}
@@ -391,13 +398,7 @@ function ChangesCard({ item }: { item: Of<'changes'> }) {
       <ul className="changes__list">
         {item.files.map((file) => (
           <li key={`${file.path}:${JSON.stringify(file.ref)}`}>
-            <button type="button" className="changes__file" onClick={() => openDiff(file.ref)} title={t('edit.view', file.path)}>
-              <span className="changes__path">{file.path}</span>
-              {file.created ? <span className="changes__flag">{t('changes.created')}</span> : null}
-              {file.flags?.includes('binary') ? <span className="changes__flag">{t('changes.binary')}</span> : null}
-              {file.flags?.includes('oversized') ? <span className="changes__flag">{t('changes.oversized')}</span> : null}
-              <Stats stats={file} />
-            </button>
+            <ChangedFileButton file={file} className="changes__file" />
           </li>
         ))}
       </ul>
@@ -406,6 +407,31 @@ function ChangesCard({ item }: { item: Of<'changes'> }) {
     </section>
   );
 }
+
+/** 改动的文件：文件名在前、目录淡显，点击打开 Diff，打开期间显示加载中。 */
+export function ChangedFileButton({ file, className }: { file: ChangedFileView; className: string }) {
+  const t = useT();
+  const opening = useDiffOpening(file.ref);
+  const slash = file.path.lastIndexOf('/');
+  const name = slash >= 0 ? file.path.slice(slash + 1) : file.path;
+  const dir = slash >= 0 ? file.path.slice(0, slash) : '';
+  return (
+    <button type="button" className={className} onClick={() => openDiff(file.ref)} title={t('edit.view', file.path)} aria-busy={opening}>
+      <span className="changes__icon">{opening ? <SpinnerIcon /> : <FileIcon />}</span>
+      <span className="changes__path">
+        <span className="changes__name">{name}</span>
+        {dir ? <span className="changes__dir">{dir}</span> : null}
+      </span>
+      {file.created ? <span className="changes__flag">{t('changes.created')}</span> : null}
+      {file.flags?.includes('binary') ? <span className="changes__flag">{t('changes.binary')}</span> : null}
+      {file.flags?.includes('oversized') ? <span className="changes__flag">{t('changes.oversized')}</span> : null}
+      <Stats stats={file} />
+    </button>
+  );
+}
+
+/** 增删行数（导出给会话改动栏）。 */
+export { Stats };
 
 function Notice({ item }: { item: Of<'notice'> }) {
   return (

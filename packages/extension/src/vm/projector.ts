@@ -7,7 +7,7 @@
  * - 工具调用按类型渲染：命令一行、文件修改带增删行数、连续的只读操作合并成一行「浏览」；
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
-import type { ChangedFileView, Item, LineStats } from '@dsh-copilot/shared';
+import type { ChangedFileView, Item, LineStats, SessionChangesView } from '@dsh-copilot/shared';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';
@@ -49,6 +49,24 @@ export interface ToolCallInfo {
   readonly created?: boolean;
 }
 
+/**
+ * 某个文件在一轮里的改动。按时间顺序排成文件的改动历史，用于打开累计 Diff（会话改动栏）和某一轮的 Diff。
+ * 能用会话日志里的工具片段还原时不必请求 dsh；命令造成的改动只能用 `/api/changes.diff` 的 hunk。
+ */
+export interface FileStep {
+  /** 本轮 `workspace/changes` 的序号和文件在汇总里的位置；汇总不可用或本轮还没结束时没有。 */
+  readonly turnSeq?: number;
+  readonly index?: number;
+  /** 本轮修改这个文件的工具调用（时间顺序）。 */
+  readonly calls: readonly string[];
+  /** 汇总里的增删行数，没有汇总时是工具片段的合计。 */
+  readonly stats: LineStats;
+  /** 来自 dsh 的汇总（包括命令造成的改动）。 */
+  readonly fromSummary: boolean;
+  readonly created: boolean;
+  readonly flags?: readonly ('binary' | 'oversized')[];
+}
+
 export interface Projection {
   readonly items: Item[];
   /** 已经出现在持久历史里的 requestId，用于撤掉本地回显。 */
@@ -62,6 +80,9 @@ export interface Projection {
   readonly missingCredentialRef?: string;
   /** 已经进入 dsh 队列的 requestId：本地回显可以撤掉（之后由队列或持久历史显示）。 */
   readonly queuedRequestIds: ReadonlySet<string>;
+  /** 绝对路径 → 改动历史。 */
+  readonly fileHistory: ReadonlyMap<string, readonly FileStep[]>;
+  readonly sessionChanges?: SessionChangesView;
 }
 
 const OUTPUT_LIMIT = 4_000;
@@ -100,6 +121,8 @@ export interface EventsProjection {
   readonly toolCalls: ReadonlyMap<string, ToolCallInfo>;
   readonly changeSeqs: readonly number[];
   readonly missingCredentialRef?: string;
+  readonly fileHistory: ReadonlyMap<string, readonly FileStep[]>;
+  readonly sessionChanges?: SessionChangesView;
 }
 
 /** 投影持久事件。结果只取决于 events、workspacePath 和 changes 的返回值。 */
@@ -115,6 +138,18 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
   let missingCredentialRef: string | undefined;
   /** /permission 命令的预设显示名，命令结束时用。 */
   const permissionArgs = new Map<string, string>();
+  const fileHistory = new Map<string, FileStep[]>();
+  const pushStep = (path: string, step: FileStep) => {
+    const steps = fileHistory.get(path);
+    if (steps) steps.push(step);
+    else fileHistory.set(path, [step]);
+  };
+  /** 没有汇总可用的文件工具修改：按文件合并成一步。 */
+  const flushEdits = (edits: readonly TurnEdit[]) => {
+    for (const [path, group] of groupEdits(edits)) {
+      pushStep(path, { calls: group.map((e) => e.callId), stats: sumStats(group.map((e) => e.stats ?? ZERO)), fromSummary: false, created: group[0]?.created ?? false });
+    }
+  };
 
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
@@ -127,6 +162,8 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     switch (event.type) {
       case 'turn/start':
         turnOpen = true;
+        // 上一轮没有 workspace/changes（中断、旧版 dsh）：工具修改单独记一步
+        flushEdits(turnEdits);
         turnEdits = [];
         break;
       case 'user/message': {
@@ -274,8 +311,29 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
       }
       case 'workspace/changes': {
         changeSeqs.push(event.seq);
-        const card = changesCard(event.seq, input.changes?.(event.seq), turnEdits, input.workspacePath);
+        const summary = input.changes?.(event.seq);
+        const card = changesCard(event.seq, summary, turnEdits, input.workspacePath);
         if (card) items.push(card);
+        if (summary && summary !== 'unavailable') {
+          const covered = new Set<string>();
+          summary.files.forEach((file, index) => {
+            const path = input.workspacePath ? resolve(input.workspacePath, file.path) : file.path;
+            covered.add(path);
+            const edits = turnEdits.filter((e) => e.path === path);
+            const flags = [file.binary ? 'binary' : '', file.oversized ? 'oversized' : ''].filter((f): f is 'binary' | 'oversized' => f !== '');
+            pushStep(path, {
+              turnSeq: event.seq,
+              index,
+              calls: edits.map((e) => e.callId),
+              stats: { additions: file.added ?? 0, deletions: file.deleted ?? 0 },
+              fromSummary: true,
+              created: edits[0]?.created ?? false,
+              ...(flags.length ? { flags } : {}),
+            });
+          });
+          flushEdits(turnEdits.filter((e) => !covered.has(e.path)));
+        } else flushEdits(turnEdits);
+        turnEdits = [];
         break;
       }
       case 'turn/end': {
@@ -292,7 +350,56 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     }
   }
 
-  return { items, persistedRequestIds, turnOpen, toolCalls, changeSeqs, ...(missingCredentialRef ? { missingCredentialRef } : {}) };
+  // 进行中的一轮：已经完成的文件修改先计入
+  flushEdits(turnEdits);
+  const sessionChanges = sessionChangesView(fileHistory, input.workspacePath);
+  return {
+    items,
+    persistedRequestIds,
+    turnOpen,
+    toolCalls,
+    changeSeqs,
+    fileHistory,
+    ...(sessionChanges ? { sessionChanges } : {}),
+    ...(missingCredentialRef ? { missingCredentialRef } : {}),
+  };
+}
+
+const ZERO: LineStats = { additions: 0, deletions: 0 };
+
+function groupEdits(edits: readonly TurnEdit[]): Map<string, TurnEdit[]> {
+  const byPath = new Map<string, TurnEdit[]>();
+  for (const edit of edits) {
+    const group = byPath.get(edit.path);
+    if (group) group.push(edit);
+    else byPath.set(edit.path, [edit]);
+  }
+  return byPath;
+}
+
+/**
+ * 会话改动栏：每个文件一行，增删行数是各轮之和（同一处改了几次会重复计算，是近似值）。
+ * 只统计已加载的历史；更早的轮次加载后才计入。
+ */
+function sessionChangesView(history: ReadonlyMap<string, readonly FileStep[]>, workspacePath?: string): SessionChangesView | undefined {
+  const files: ChangedFileView[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const [path, steps] of history) {
+    const stats = sumStats(steps.map((s) => s.stats));
+    const flags = [...new Set(steps.flatMap((s) => s.flags ?? []))];
+    additions += stats.additions;
+    deletions += stats.deletions;
+    files.push({
+      path: displayPath(path, workspacePath),
+      ref: { kind: 'session', path },
+      additions: stats.additions,
+      deletions: stats.deletions,
+      ...(steps[0]?.created ? { created: true } : {}),
+      ...(flags.length ? { flags } : {}),
+    });
+  }
+  return files.length ? { files, additions, deletions } : undefined;
 }
 
 /**
@@ -359,6 +466,8 @@ export function project(input: ProjectionInput, base: EventsProjection = project
     turnOpen,
     toolCalls: base.toolCalls,
     changeSeqs: base.changeSeqs,
+    fileHistory: base.fileHistory,
+    ...(base.sessionChanges ? { sessionChanges: base.sessionChanges } : {}),
     ...(base.missingCredentialRef ? { missingCredentialRef: base.missingCredentialRef } : {}),
   };
 }

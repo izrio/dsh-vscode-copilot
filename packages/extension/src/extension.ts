@@ -5,7 +5,7 @@
  */
 import { homedir } from 'node:os';
 import * as vscode from 'vscode';
-import type { RuntimeStatus } from '@dsh-copilot/shared';
+import type { AppearanceState, RuntimeStatus } from '@dsh-copilot/shared';
 import { DshConnection } from './dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from './runtime/RuntimeManager.ts';
 import { ChatController } from './vm/ChatController.ts';
@@ -82,6 +82,8 @@ export function activate(context: vscode.ExtensionContext): void {
       // 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持会话
       openExternal(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
     },
+    appearance: readAppearance,
+    openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:izrio.dsh-copilot dsh.ui'),
     onModelChange: (label) => {
       modelLabel = label;
       renderStatusBar(status, currentStatus(), modelLabel);
@@ -199,6 +201,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
       if (event.affectsConfiguration('dsh.context')) chat.workspaceChanged();
+      if (event.affectsConfiguration('dsh.ui.fontSize') || event.affectsConfiguration('dsh.ui.fontFamily') || event.affectsConfiguration('dsh.ui.codeFontFamily')) {
+        chat.appearanceChanged();
+      }
       if (event.affectsConfiguration('dsh.ui.language')) {
         applyLocale();
         chat.localeChanged();
@@ -212,6 +217,19 @@ export async function deactivate(): Promise<void> {
   controller?.dispose();
   connection?.dispose();
   await runtime?.stop();
+}
+
+/** 界面字号和字体；0 或空字符串表示跟随 VS Code。 */
+function readAppearance(): AppearanceState {
+  const config = vscode.workspace.getConfiguration('dsh.ui');
+  const size = config.get<number>('fontSize', 0);
+  const family = config.get<string>('fontFamily', '').trim();
+  const code = config.get<string>('codeFontFamily', '').trim();
+  return {
+    ...(Number.isFinite(size) && size > 0 ? { fontSize: Math.min(32, Math.max(8, Math.round(size))) } : {}),
+    ...(family ? { fontFamily: family } : {}),
+    ...(code ? { codeFontFamily: code } : {}),
+  };
 }
 
 function readRuntimeConfig(workspacePath: string): RuntimeConfig {

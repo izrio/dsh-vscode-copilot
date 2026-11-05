@@ -6,6 +6,7 @@
  */
 import { isAbsolute, resolve } from 'node:path';
 import type {
+  AppearanceState,
   CommandView,
   ConnectionState,
   ContextState,
@@ -19,7 +20,7 @@ import type {
   SessionListItem,
   WebviewToHost,
 } from '@dsh-copilot/shared';
-import { ChangesUnavailableError, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
+import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
 import { InteractionService } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
@@ -36,7 +37,8 @@ import {
   type ContextAttachment,
   type TemplateName,
 } from './context.ts';
-import { displayPath, project, projectEvents, type EventsProjection, type ToolCallInfo } from './projector.ts';
+import { displayPath, project, projectEvents, type EventsProjection, type FileStep, type ToolCallInfo } from './projector.ts';
+import { lineStats, reverseHunks, reverseToolDiffs } from './diffs.ts';
 import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
 import { approvalView, interactionView, type ViewContext } from './interactionViews.ts';
 import { ViewPublisher, type ControllerView } from './ViewPublisher.ts';
@@ -78,7 +80,14 @@ export interface ChatControllerOptions {
   /** 多根工作区时当前文件夹的显示名。 */
   readonly folderLabel?: () => string | undefined;
   readonly renderDelayMs?: number;
+  /** 界面字号和字体（设置 `dsh.ui.*`）。 */
+  readonly appearance?: () => AppearanceState;
+  /** 打开插件的界面设置。 */
+  readonly openSettings?: () => void;
 }
+
+/** 同时读取改动汇总的请求数：打开长会话时不一次发出几十个请求，把 dsh 堵住（点开 Diff 的请求要排在后面）。 */
+const SUMMARY_CONCURRENCY = 2;
 
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
@@ -133,6 +142,15 @@ export class ChatController {
   /** 改动汇总每读到一份递增，作为缓存键的一部分。 */
   private changesVersion = 0;
   private readonly publisher: ViewPublisher;
+  /** 当前会话每个文件的改动历史（绝对路径），用于打开累计 Diff 和某一轮的 Diff。 */
+  private fileHistory: ReadonlyMap<string, readonly FileStep[]> = new Map();
+  /** `/api/changes.diff` 的结果，键是 `会话:seq:index`；一轮结束后内容不再变化。 */
+  private readonly turnDiffs = new Map<string, Promise<ChangesDiff>>();
+  /** 正在打开的 Diff：重复点击不重复请求。 */
+  private readonly openingDiffs = new Set<string>();
+  /** 等待读取的改动汇总（新的在前）。 */
+  private summaryQueue: { readonly sessionId: string; readonly seq: number }[] = [];
+  private summariesInFlight = 0;
 
   constructor(private readonly options: ChatControllerOptions) {
     this.workspacePath = options.workspacePath;
@@ -163,6 +181,11 @@ export class ChatController {
   }
 
   /** 界面语言变化（设置 `dsh.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
+  /** 界面字号或字体的设置变化时调用。 */
+  appearanceChanged(): void {
+    this.options.post({ type: 'appearance', payload: this.options.appearance?.() ?? {} });
+  }
+
   localeChanged(): void {
     this.options.post({ type: 'locale', payload: getLocale() });
     this.scheduleRender();
@@ -232,12 +255,14 @@ export class ChatController {
     this.interactions?.dispose();
     this.interactions = undefined;
     for (const [key, value] of this.changes) if (value === 'loading') this.changes.delete(key);
+    this.summaryQueue = [];
     this.scheduleRender();
     if (!client) return;
     this.interactions = new InteractionService(client, () => this.scheduleRender(), this.options.log);
     const origin = client.credential?.origin;
     if (origin !== this.changesOrigin) {
       this.changes.clear();
+      this.turnDiffs.clear();
       this.changesVersion++;
       this.changesOrigin = origin;
     }
@@ -290,6 +315,7 @@ export class ChatController {
       context: view.context,
       commands: view.commands,
       locale: getLocale(),
+      appearance: this.options.appearance?.() ?? {},
     };
   }
 
@@ -356,8 +382,22 @@ export class ChatController {
         }
         return;
       }
-      case 'openDiff':
-        return this.openDiff(message.payload.ref);
+      case 'openDiff': {
+        const { ref, token } = message.payload;
+        const key = JSON.stringify(ref);
+        if (this.openingDiffs.has(key)) return;
+        this.openingDiffs.add(key);
+        try {
+          await this.openDiff(ref);
+        } finally {
+          this.openingDiffs.delete(key);
+          if (token !== undefined) this.options.post({ type: 'diffOpened', payload: { token } });
+        }
+        return;
+      }
+      case 'openSettings':
+        this.options.openSettings?.();
+        return;
       case 'openFile': {
         const { path, startLine, endLine } = message.payload;
         return this.workbench.openFile(this.absolute(path), startLine ? { startLine, ...(endLine ? { endLine } : {}) } : undefined);
@@ -404,25 +444,133 @@ export class ChatController {
       return this.workbench.openDiff({ kind: 'tool', path: call.path, diffs: call.diffs ?? [], created: call.created ?? false });
     }
     const sessionId = this.activeId;
-    const client = this.service?.client;
-    if (!sessionId || !client) return;
+    if (!sessionId) return;
     try {
-      const diff = await client.changesDiff(sessionId, ref.seq, ref.index);
-      const path = this.absolute(diff.path);
-      if (diff.kind !== 'text') {
-        this.toast('info', diff.kind === 'binary' ? t('diff.binary') : t('diff.oversized'));
-        return this.workbench.openFile(path);
-      }
-      await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
+      if (ref.kind === 'session') return await this.openSessionDiff(sessionId, ref.path);
+      return await this.openTurnDiff(sessionId, ref.seq, ref.index);
     } catch (error) {
       if (error instanceof ChangesUnavailableError) {
         // 汇总已经不在 Host 内存里：卡片改为按文件工具汇总，那里的 Diff 来自会话日志
-        this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
+        if (ref.kind === 'turn') this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
         this.changesVersion++;
         this.scheduleRender();
         this.toast('info', t('diff.turnGone'));
       } else this.toast('error', t('diff.readFailed', describe(error)));
     }
+  }
+
+  /** 本会话对一个文件的累计改动：从当前内容依次撤回每一轮的修改。还原不了时打开最后一次修改的 Diff。 */
+  private async openSessionDiff(sessionId: string, path: string): Promise<void> {
+    const steps = this.fileHistory.get(path) ?? [];
+    const last = steps.at(-1);
+    if (!last) return this.workbench.openFile(path);
+    if (steps.some((s) => s.flags?.length)) {
+      this.toast('info', steps.some((s) => s.flags?.includes('binary')) ? t('diff.binary') : t('diff.oversized'));
+      return this.workbench.openFile(path);
+    }
+    const rewound = await this.rewind(sessionId, path, steps, 0, 'session');
+    if (rewound) return this.workbench.openDiff({ kind: 'contents', path, ...rewound, scope: 'session' });
+    this.options.log(`无法还原 ${path} 在本会话修改前的内容，改为显示最后一次修改`);
+    if (last.turnSeq !== undefined && last.index !== undefined) return this.openTurnDiff(sessionId, last.turnSeq, last.index);
+    const callId = last.calls.at(-1);
+    if (callId) return this.openDiff({ kind: 'tool', callId });
+    return this.workbench.openFile(path);
+  }
+
+  /**
+   * 某一轮里一个文件的改动。优先用会话日志里的工具片段在本地还原（不请求 dsh，几乎是即时的）；
+   * 本轮有命令造成的改动、或片段对不上时，才读取 dsh 记录的 hunk。
+   */
+  private async openTurnDiff(sessionId: string, seq: number, index: number): Promise<void> {
+    const summary = this.changes.get(`${sessionId}:${seq}`);
+    const file = typeof summary === 'object' ? summary.files[index] : undefined;
+    if (file) {
+      const path = this.absolute(file.path);
+      if (file.binary || file.oversized) {
+        this.toast('info', file.binary ? t('diff.binary') : t('diff.oversized'));
+        return this.workbench.openFile(path);
+      }
+      const steps = this.fileHistory.get(path) ?? [];
+      const at = steps.findIndex((s) => s.turnSeq === seq && s.index === index);
+      const rewound = at >= 0 ? await this.rewind(sessionId, path, steps, at, 'turn') : undefined;
+      if (rewound) return this.workbench.openDiff({ kind: 'contents', path, ...rewound, scope: 'turn' });
+    }
+    // 还原不了：交给编辑器用 hunk 还原，仍不行时显示修改片段
+    const diff = await this.turnDiff(sessionId, seq, index);
+    const path = this.absolute(diff.path);
+    if (diff.kind !== 'text') {
+      this.toast('info', diff.kind === 'binary' ? t('diff.binary') : t('diff.oversized'));
+      return this.workbench.openFile(path);
+    }
+    await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
+  }
+
+  /**
+   * 从文件的当前内容往回撤，得到第 `at` 步之前的内容。右侧：`turn` 是第 `at` 步之后的内容，`session` 是当前内容。
+   * `after` 为 undefined 表示右侧直接用磁盘上的文件（可以继续编辑）。
+   */
+  private async rewind(
+    sessionId: string,
+    path: string,
+    steps: readonly FileStep[],
+    at: number,
+    scope: 'turn' | 'session',
+  ): Promise<{ before: string; after?: string; created: boolean } | undefined> {
+    const current = await this.workbench.readFile(path);
+    let text = current ?? '';
+    for (let i = steps.length - 1; i > at; i--) {
+      const previous = await this.reverseStep(sessionId, text, steps[i]!);
+      if (previous === undefined) return undefined;
+      text = previous;
+    }
+    const step = steps[at]!;
+    const before = await this.reverseStep(sessionId, text, step);
+    if (before === undefined) return undefined;
+    // 文件已经被删除时右侧是空内容
+    const after = current === undefined ? '' : scope === 'session' || at === steps.length - 1 ? undefined : text;
+    return { before, ...(after === undefined ? {} : { after }), created: before === '' && steps[at]!.created };
+  }
+
+  /** 撤回一步修改。工具片段还原出的结果与 dsh 汇总的增删行数一致时直接采用，否则读取 dsh 的 hunk。 */
+  private async reverseStep(sessionId: string, text: string, step: FileStep): Promise<string | undefined> {
+    const local = this.reverseCalls(text, step.calls);
+    if (step.turnSeq === undefined || step.index === undefined) return local;
+    if (local !== undefined) {
+      const stats = lineStats(local, text);
+      if (stats.additions === step.stats.additions && stats.deletions === step.stats.deletions) return local;
+    }
+    const diff = await this.turnDiff(sessionId, step.turnSeq, step.index);
+    if (diff.kind !== 'text') return undefined;
+    if (!diff.before) return '';
+    return reverseHunks(diff.after ? text : '', diff.hunks);
+  }
+
+  /** 按时间倒序撤回几次工具修改；新建文件的那次撤回后是空内容。 */
+  private reverseCalls(text: string, callIds: readonly string[]): string | undefined {
+    if (callIds.length === 0) return undefined;
+    let result = text;
+    for (const callId of [...callIds].reverse()) {
+      const call = this.toolCalls.get(callId);
+      if (!call) return undefined;
+      if (call.created) return '';
+      const previous = reverseToolDiffs(result, call.diffs ?? []);
+      if (previous === undefined) return undefined;
+      result = previous;
+    }
+    return result;
+  }
+
+  private turnDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
+    const client = this.service?.client;
+    if (!client) return Promise.reject(new Error(t('diff.notConnected')));
+    const key = `${sessionId}:${seq}:${index}`;
+    let pending = this.turnDiffs.get(key);
+    if (!pending) {
+      pending = client.changesDiff(sessionId, seq, index);
+      this.turnDiffs.set(key, pending);
+      pending.catch(() => this.turnDiffs.delete(key));
+    }
+    return pending;
   }
 
   private async selectPermission(preset: string): Promise<void> {
@@ -750,6 +898,7 @@ export class ChatController {
       changes,
     }, this.eventsMemo.value);
     this.toolCalls = projection.toolCalls;
+    this.fileHistory = projection.fileHistory;
     if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
     if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
     // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
@@ -774,6 +923,7 @@ export class ChatController {
       ...todosOf(projections),
       ...goalOf(projections),
       ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
+      ...(projection.sessionChanges ? { changes: projection.sessionChanges } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();
@@ -823,24 +973,42 @@ export class ChatController {
     };
   }
 
-  /** 读取还没读过的改动汇总。Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。 */
+  /**
+   * 读取还没读过的改动汇总。新的轮次先读，同时最多 SUMMARY_CONCURRENCY 个请求。
+   * Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。
+   */
   private loadChanges(sessionId: string, seqs: readonly number[]): void {
+    const fresh = seqs.filter((seq) => !this.changes.has(`${sessionId}:${seq}`));
+    if (fresh.length === 0) return;
+    for (const seq of fresh) this.changes.set(`${sessionId}:${seq}`, 'loading');
+    this.summaryQueue = [...[...fresh].reverse().map((seq) => ({ sessionId, seq })), ...this.summaryQueue];
+    this.pumpSummaries();
+  }
+
+  private pumpSummaries(): void {
     const client = this.service?.client;
     if (!client) return;
-    for (const seq of seqs) {
-      const key = `${sessionId}:${seq}`;
-      if (this.changes.has(key)) continue;
-      this.changes.set(key, 'loading');
-      void client.changesSummary(sessionId, seq).then(
-        (summary) => this.changes.set(key, summary),
-        (error: unknown) => {
-          if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
-          this.changes.set(key, 'unavailable');
-        },
-      ).finally(() => {
-        this.changesVersion++;
-        this.scheduleRender();
-      });
+    while (this.summariesInFlight < SUMMARY_CONCURRENCY) {
+      const next = this.summaryQueue.shift();
+      if (!next) return;
+      const key = `${next.sessionId}:${next.seq}`;
+      if (this.changes.get(key) !== 'loading') continue;
+      this.summariesInFlight++;
+      void client
+        .changesSummary(next.sessionId, next.seq)
+        .then(
+          (summary) => this.changes.set(key, summary),
+          (error: unknown) => {
+            if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
+            this.changes.set(key, 'unavailable');
+          },
+        )
+        .finally(() => {
+          this.summariesInFlight--;
+          this.changesVersion++;
+          this.scheduleRender();
+          this.pumpSummaries();
+        });
     }
   }
 

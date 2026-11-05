@@ -10,6 +10,11 @@ export type DiffRequest =
   | { readonly kind: 'tool'; readonly path: string; readonly diffs: readonly ToolDiff[]; readonly created: boolean }
   /** 一轮的改动：从当前文件反向应用 hunk。 */
   | { readonly kind: 'turn'; readonly path: string; readonly before: boolean; readonly after: boolean; readonly hunks: readonly Hunk[] }
+  /**
+   * 已经算好两侧内容的 Diff（控制器按文件的改动历史还原）。`after` 为 undefined 时右侧是磁盘上的文件，可以直接编辑。
+   * `scope` 决定标题：本轮修改前 / 本会话修改前。
+   */
+  | { readonly kind: 'contents'; readonly path: string; readonly before: string; readonly after?: string; readonly created: boolean; readonly scope: 'turn' | 'session' }
   /** 审批前预览：按工具参数算出修改后的内容。 */
   | { readonly kind: 'proposed'; readonly path: string; readonly tool: string; readonly args: Readonly<Record<string, unknown>> };
 
@@ -30,6 +35,8 @@ export interface EditorSnapshot {
 
 export interface Workbench {
   openDiff(request: DiffRequest): Promise<void>;
+  /** 读取文件的当前内容（编辑器里未保存的内容不算）；文件不存在时返回 undefined。 */
+  readFile(path: string): Promise<string | undefined>;
   /** 打开文件（目录在资源管理器里显示），可以选中一段行。 */
   openFile(path: string, range?: { readonly startLine: number; readonly endLine?: number }): Promise<void>;
   activeEditor(): EditorSnapshot | undefined;
@@ -47,6 +54,7 @@ export interface Workbench {
 /** 测试和没有编辑器时用的空实现。 */
 export const noWorkbench: Workbench = {
   openDiff: () => Promise.resolve(),
+  readFile: () => Promise.resolve(undefined),
   openFile: () => Promise.resolve(),
   activeEditor: () => undefined,
   findFiles: () => Promise.resolve([]),

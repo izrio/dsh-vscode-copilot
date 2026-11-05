@@ -1,6 +1,7 @@
 /*
  * 只使用 VS Code 主题变量，自动适配亮色、暗色和高对比度主题。
  * 布局原则见 docs/DESIGN.md 3.1：对话是主角，其他元素有内容才出现。
+ * 字号和字体可以用设置 dsh.ui.* 指定（--dsh-* 变量由 App 设置）；不设置时字号比 VS Code 工作台大 1px。
  */
 :root {
   color-scheme: light dark;
@@ -11,7 +12,7 @@
   --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
   --surface: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
-  --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+  --mono: var(--dsh-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
   /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
   --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
 }
@@ -31,9 +32,9 @@ body {
   padding: 0;
   color: var(--vscode-foreground);
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  line-height: 1.55;
+  font-family: var(--dsh-font-family, var(--vscode-font-family));
+  font-size: var(--dsh-font-size, calc(var(--vscode-font-size, 13px) + 1px));
+  line-height: 1.6;
   overflow: hidden;
 }
 
@@ -112,6 +113,11 @@ button {
 
 .icon-button:hover {
   background: var(--hover);
+}
+
+.icon-button--small {
+  width: 22px;
+  height: 22px;
 }
 
 .dot {
@@ -479,14 +485,14 @@ button {
   animation: pulse 1.6s ease-in-out infinite;
 }
 
-/* 工具调用：一行活动 */
+/* 工具调用：一行活动。连续的活动行之间留出约半行的间距，不挤在一起 */
 .activity {
-  margin: -6px 0;
+  margin: -4px 0;
   font-size: 0.92em;
 }
 
 .activity + .activity {
-  margin-top: -10px;
+  margin-top: -2px;
 }
 
 .activity__row {
@@ -495,7 +501,7 @@ button {
   gap: 6px;
   width: 100%;
   min-width: 0;
-  padding: 2px 4px;
+  padding: 3px 4px;
   margin-left: -4px;
   border: 0;
   border-radius: 4px;
@@ -600,7 +606,7 @@ button {
   display: flex;
   gap: 6px;
   min-width: 0;
-  line-height: 1.7;
+  line-height: 1.9;
 }
 
 .explore__tool {
@@ -651,7 +657,7 @@ button {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 2px 10px;
+  padding: 3px 10px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -669,8 +675,32 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
   text-align: left;
-  font-family: var(--mono);
-  font-size: 0.95em;
+}
+
+.changes__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.changes__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.changes__name {
+  color: var(--vscode-foreground);
+}
+
+.changes__file:hover .changes__name {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
+.changes__dir {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.9em;
 }
 
 .changes__flag {
@@ -1214,6 +1244,129 @@ button.chip:hover {
   color: var(--vscode-textLink-foreground);
 }
 
+/* 输入框顶边的拖动条：上下拖动调整高度 */
+.composer__resize {
+  position: absolute;
+  top: -5px;
+  left: 12px;
+  right: 12px;
+  height: 9px;
+  z-index: 1;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.composer__resize::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  margin-left: -16px;
+  border-radius: 2px;
+  background: var(--vscode-focusBorder);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.composer__resize:hover::after,
+.composer__resize:focus-visible::after,
+body.resizing .composer__resize::after {
+  opacity: 0.8;
+}
+
+.composer__resize:focus-visible {
+  outline: none;
+}
+
+body.resizing {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+/* ---------- 会话改动栏：输入框正上方，收起时一行 ---------- */
+
+.session-changes {
+  margin: 0 10px -1px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface);
+  font-size: 0.92em;
+}
+
+.session-changes + .composer,
+.session-changes + .completion + .composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.session-changes__header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 2px;
+}
+
+.session-changes__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-changes__toggle:hover {
+  background: var(--hover);
+}
+
+.session-changes__toggle svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.session-changes__title {
+  font-weight: 600;
+}
+
+.session-changes__list {
+  max-height: min(40vh, 260px);
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.session-changes__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 12px 3px 28px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-changes__file:hover {
+  background: var(--hover);
+}
+
+.session-changes__file:hover .changes__name {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
 /* ---------- 状态条：目标、待办 ---------- */
 
 .status-strip {
@@ -1359,6 +1512,7 @@ button.chip:hover {
 }
 
 .composer {
+  position: relative;
   margin: 0 10px 10px;
   border: 1px solid var(--vscode-input-border, var(--border));
   border-radius: var(--radius-lg);
@@ -1373,7 +1527,6 @@ button.chip:hover {
   display: block;
   width: 100%;
   min-height: 40px;
-  max-height: 200px;
   padding: 9px 12px 4px;
   border: 0;
   outline: none;

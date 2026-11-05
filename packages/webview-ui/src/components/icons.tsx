@@ -253,3 +253,8 @@ export const ReplyIcon = (p: IconProps) => (
     <path d="M6.5 4 3 7.5 6.5 11M3 7.5h6a4 4 0 0 1 4 4v1" />
   </svg>
 );
+export const TextSizeIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M2 13l3.5-9 3.5 9M3.3 10h4.4M10 13l2-5 2 5M10.7 11.5h2.6" />
+  </svg>
+);

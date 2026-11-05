@@ -466,6 +466,113 @@ describe('ChatController', () => {
     });
   });
 
+  describe('会话改动栏与 Diff 加速', () => {
+    /** 改动汇总卡片里第一个文件的 seq。 */
+    const turnSeqOf = (controller: ChatController): number => {
+      const card = controller.snapshot().items.find((item) => item.kind === 'changes');
+      const ref = card?.kind === 'changes' ? card.files[0]?.ref : undefined;
+      if (ref?.kind !== 'turn') throw new Error('没有本轮汇总');
+      return ref.seq;
+    };
+
+    /** 一次 edit（a → b c）加上 dsh 的本轮汇总（+2 −1，与片段一致）。 */
+    async function withEditTurn(files: Record<string, string>, summary?: (seq: number) => unknown) {
+      const diffs: DiffRequest[] = [];
+      const workbench: Workbench = { ...noWorkbench, openDiff: async (request) => void diffs.push(request), readFile: async (path) => files[path] };
+      const ctx = setup(workbench);
+      let diffCalls = 0;
+      Object.assign(ctx.fake.client, {
+        changesDiff: async () => {
+          diffCalls++;
+          return { kind: 'text', path: 'a.ts', before: true, after: true, hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, lines: ['-a', '+b', '+c'] }] };
+        },
+        ...(summary ? { changesSummary: async (_id: string, seq: number) => summary(seq) } : {}),
+      });
+      ctx.controller.setClient(ctx.fake.client);
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '改一下' } });
+      await flush();
+      const { fake } = ctx;
+      fake.emit('s1', 'turn/start', { turn: 1 });
+      fake.emit('s1', 'tool/call', { callId: 'c1', name: 'edit', arguments: JSON.stringify({ file_path: 'a.ts', old_string: 'a', new_string: 'b\nc' }) });
+      fake.emit('s1', 'tool/result', { message: { toolCallId: 'c1', content: [], isError: false }, meta: { path: '/w/a.ts', diffs: [{ oldText: 'a\n', newText: 'b\nc\n' }] } });
+      fake.emit('s1', 'workspace/changes', { turn: 1 });
+      fake.emit('s1', 'turn/end', { reason: { kind: 'completed' } });
+      await flush();
+      await flush();
+      return { ...ctx, diffs, diffCalls: () => diffCalls };
+    }
+
+    it('本轮汇总里的文件：工具片段能解释汇总时在本地还原，不请求 dsh', async () => {
+      const { controller, diffs, diffCalls, posted } = await withEditTurn({ '/w/a.ts': 'b\nc\n' });
+      const card = controller.snapshot().items.find((item) => item.kind === 'changes');
+      const ref = card?.kind === 'changes' ? card.files[0]!.ref : undefined;
+      await controller.handle({ type: 'openDiff', payload: { ref: ref!, token: 7 } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', created: false, scope: 'turn' });
+      expect(diffCalls()).toBe(0);
+      expect(posted).toContainEqual({ type: 'diffOpened', payload: { token: 7 } });
+    });
+
+    it('片段与汇总对不上（还有命令造成的改动）时读取 dsh 的 hunk，结果缓存', async () => {
+      const { controller, diffs, diffCalls } = await withEditTurn({ '/w/a.ts': 'b\nc\n' }, () => ({
+        turn: 1,
+        files: [{ path: 'a.ts', display: 'a.ts', added: 5, deleted: 1 }],
+        total: 1,
+      }));
+      const ref = { kind: 'turn' as const, seq: turnSeqOf(controller), index: 0 };
+      await controller.handle({ type: 'openDiff', payload: { ref } });
+      await controller.handle({ type: 'openDiff', payload: { ref } });
+      expect(diffs.at(-1)).toMatchObject({ kind: 'contents', before: 'a\n', scope: 'turn' });
+      expect(diffCalls()).toBe(1);
+    });
+
+    it('会话改动栏：列出改过的文件，点击打开本会话修改前 ↔ 当前', async () => {
+      const { controller, diffs, fake } = await withEditTurn({ '/w/a.ts': 'b\nd\n' });
+      // 第二轮又改了一次（dsh 汇总不可用时按工具汇总）
+      Object.assign(fake.client, { changesSummary: () => Promise.reject(new ChangesUnavailableError()) });
+      fake.emit('s1', 'turn/start', { turn: 2 });
+      fake.emit('s1', 'tool/call', { callId: 'c2', name: 'edit', arguments: JSON.stringify({ file_path: 'a.ts', old_string: 'c', new_string: 'd' }) });
+      fake.emit('s1', 'tool/result', { message: { toolCallId: 'c2', content: [], isError: false }, meta: { path: '/w/a.ts', diffs: [{ oldText: 'c\n', newText: 'd\n' }] } });
+      await flush();
+      const changes = controller.snapshot().session.changes;
+      expect(changes).toEqual({
+        files: [{ path: 'a.ts', ref: { kind: 'session', path: '/w/a.ts' }, additions: 3, deletions: 2 }],
+        additions: 3,
+        deletions: 2,
+      });
+      await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'session', path: '/w/a.ts' } } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', created: false, scope: 'session' });
+
+      // 打开第一轮的 Diff：右侧是第一轮结束时的内容，不是当前文件
+      await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'turn', seq: turnSeqOf(controller), index: 0 } } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', after: 'b\nc\n', created: false, scope: 'turn' });
+    });
+
+    it('打开长会话时改动汇总限流读取，新的轮次先读', async () => {
+      const { controller, fake } = setup();
+      const started: number[] = [];
+      const resolvers: (() => void)[] = [];
+      Object.assign(fake.client, {
+        changesSummary: (_id: string, seq: number) =>
+          new Promise((resolve) => {
+            started.push(seq);
+            resolvers.push(() => resolve({ turn: seq, files: [], total: 0 }));
+          }),
+      });
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      for (let turn = 1; turn <= 5; turn++) fake.emit('s1', 'workspace/changes', { turn });
+      await flush();
+      expect(started).toHaveLength(2);
+      expect(started[0]!).toBeGreaterThan(started[1]!);
+      resolvers.shift()!();
+      await flush();
+      expect(started).toHaveLength(3);
+    });
+  });
+
   describe('M3：上下文、斜杠命令、@ 引用', () => {
     const editor = {
       path: '/w/src/a.ts',

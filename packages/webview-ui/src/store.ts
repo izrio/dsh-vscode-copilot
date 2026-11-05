@@ -4,7 +4,9 @@
  */
 import { useSyncExternalStore } from 'react';
 import type {
+  AppearanceState,
   CommandView,
+  DiffRef,
   ConnectionState,
   ContextState,
   FileCandidate,
@@ -49,6 +51,9 @@ export interface ViewState {
   readonly prefill: { readonly text: string; readonly n: number };
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
+  readonly appearance: AppearanceState;
+  /** 正在打开的 Diff：`key` 是 DiffRef 的 JSON，对应的行显示加载中。 */
+  readonly openingDiff?: { readonly token: number; readonly key: string };
 }
 
 const initialState: ViewState = {
@@ -70,6 +75,7 @@ const initialState: ViewState = {
   toasts: [],
   prefill: { text: '', n: 0 },
   focusRequests: 0,
+  appearance: {},
 };
 
 let state: ViewState = initialState;
@@ -93,6 +99,24 @@ export function useView<T>(selector: (state: ViewState) => T): T {
     },
     () => selector(state),
   );
+}
+
+let diffToken = 0;
+/** 超过这个时间 Host 还没回复，就不再显示加载中（Host 那边仍会打开）。 */
+const DIFF_SPINNER_LIMIT_MS = 20_000;
+
+/** 打开 Diff：对应的行显示加载中，直到 Host 打开（或放弃）。 */
+export function openDiff(ref: DiffRef, post: (token: number) => void): void {
+  const token = ++diffToken;
+  set({ openingDiff: { token, key: diffKey(ref) } });
+  post(token);
+  setTimeout(() => {
+    if (state.openingDiff?.token === token) set({ openingDiff: undefined });
+  }, DIFF_SPINNER_LIMIT_MS);
+}
+
+export function diffKey(ref: DiffRef): string {
+  return JSON.stringify(ref);
 }
 
 export function requestPrefill(text: string): void {
@@ -123,6 +147,7 @@ export function applyHostMessage(message: HostToWebview): void {
         context: p.context,
         locale: p.locale,
         commands: p.commands,
+        appearance: p.appearance ?? {},
       });
       return;
     }
@@ -155,6 +180,12 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'locale':
       set({ locale: message.payload });
+      return;
+    case 'appearance':
+      set({ appearance: message.payload });
+      return;
+    case 'diffOpened':
+      if (state.openingDiff?.token === message.payload.token) set({ openingDiff: undefined });
       return;
     case 'commands':
       set({ commands: message.payload });

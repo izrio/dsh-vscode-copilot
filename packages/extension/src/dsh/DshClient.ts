@@ -304,15 +304,16 @@ export class DshClient {
 
   /** 一轮里第 `index` 个文件的改动。 */
   async changesDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
-    return parse(changesDiffSchema, await this.getJson('/api/changes.diff', { sessionId, seq: String(seq), index: String(index) }), 'changes.diff');
+    // 用户点击后在等：比汇总的超时短，超时后提示，而不是长时间没有反应
+    return parse(changesDiffSchema, await this.getJson('/api/changes.diff', { sessionId, seq: String(seq), index: String(index) }, 15_000), 'changes.diff');
   }
 
-  private async getJson(path: string, query: Record<string, string>): Promise<unknown> {
+  private async getJson(path: string, query: Record<string, string>, timeoutMs = 30_000): Promise<unknown> {
     const url = new URL(path, this.credential.origin);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
     let response: Response;
     try {
-      response = await this.fetchImpl(url.toString(), { method: 'GET', headers: { cookie: this.credential.cookie }, signal: AbortSignal.timeout(30_000) });
+      response = await this.fetchImpl(url.toString(), { method: 'GET', headers: { cookie: this.credential.cookie }, signal: AbortSignal.timeout(timeoutMs) });
     } catch (cause) {
       throw new TransportError(`${path} 请求失败`, { cause });
     }

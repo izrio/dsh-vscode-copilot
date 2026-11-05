@@ -16,6 +16,7 @@ import {
   RefreshIcon,
   SearchIcon,
   SpinnerIcon,
+  TextSizeIcon,
 } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
 import { useT, type Translate } from '../i18n.ts';
@@ -116,6 +117,9 @@ export function Header() {
             </MenuItem>
             <MenuItem icon={<LogIcon />} onSelect={() => (close(), postToHost({ type: 'showLogs', payload: {} }))}>
               {t('header.logs')}
+            </MenuItem>
+            <MenuItem icon={<TextSizeIcon />} onSelect={() => (close(), postToHost({ type: 'openSettings', payload: {} }))}>
+              {t('header.appearance')}
             </MenuItem>
           </div>
         </Popover>

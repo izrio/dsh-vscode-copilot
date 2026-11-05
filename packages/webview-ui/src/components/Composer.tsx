@@ -4,8 +4,10 @@
  *
  * 补全：消息开头输入 `/` 列出斜杠命令；任意位置输入 `@` 列出文件和目录（候选由 Host 提供）。
  * 列表打开时 ↑↓ 选择，Enter / Tab 确认，Esc 关闭。
+ *
+ * 输入框顶边可以上下拖动调整高度（也可以聚焦后用 ↑↓），双击恢复随内容自动增高。高度保存在 Webview 状态里。
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useView } from '../store.ts';
 import { activeAtToken, formatFileMention, type ActiveAtToken } from '../mentions.ts';
 import { loadState, postToHost, saveState } from '../vscode.ts';
@@ -15,10 +17,18 @@ import { ContextRing } from './ContextRing.tsx';
 import { ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
+import { SessionChanges } from './SessionChanges.tsx';
 import { StatusStrip } from './StatusStrip.tsx';
 import { useT } from '../i18n.ts';
 
+/** 自动增高的上限；拖动设定的高度可以更高。 */
 const MAX_HEIGHT = 200;
+const MIN_HEIGHT = 40;
+const RESIZE_STEP = 16;
+
+/** 拖动高度的上限：留出对话流的空间。 */
+const resizeLimit = () => Math.max(120, Math.round(window.innerHeight * 0.7));
+const clampHeight = (height: number) => Math.round(Math.min(Math.max(height, MIN_HEIGHT), resizeLimit()));
 const SEARCH_DELAY_MS = 60;
 
 type Trigger = { readonly kind: 'command'; readonly query: string } | { readonly kind: 'file'; readonly token: ActiveAtToken; readonly start: number };
@@ -54,14 +64,61 @@ export function Composer() {
   /** 被点过的当前编辑器标签：与默认附带状态相反。换了文件或选区自动恢复默认。 */
   const [toggledKey, setToggledKey] = useState<string | undefined>();
   const ref = useRef<HTMLTextAreaElement>(null);
+  /** 拖动设定的高度：作为最小高度，内容更多时继续增高到它和 MAX_HEIGHT 中较大的那个。 */
+  const [inputHeight, setInputHeight] = useState<number | undefined>(() => loadState().inputHeight);
 
   useEffect(() => {
     saveState({ draft: text });
+  }, [text]);
+
+  useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const max = Math.max(MAX_HEIGHT, inputHeight ?? 0);
+    el.style.maxHeight = `${max}px`;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
-  }, [text]);
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, inputHeight ?? 0), max)}px`;
+  }, [text, inputHeight]);
+
+  const commitHeight = (height: number | undefined) => {
+    setInputHeight(height);
+    saveState({ inputHeight: height });
+  };
+
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!el || event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    const startY = event.clientY;
+    const startHeight = el.getBoundingClientRect().height;
+    let latest = startHeight;
+    let moved = false;
+    handle.setPointerCapture(event.pointerId);
+    document.body.classList.add('resizing');
+    const move = (e: globalThis.PointerEvent) => {
+      latest = clampHeight(startHeight + (startY - e.clientY));
+      moved = true;
+      setInputHeight(latest);
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      document.body.classList.remove('resizing');
+      if (moved) saveState({ inputHeight: latest });
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
+
+  const resizeByKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const current = inputHeight ?? ref.current?.getBoundingClientRect().height ?? MIN_HEIGHT;
+    commitHeight(clampHeight(current + (event.key === 'ArrowUp' ? RESIZE_STEP : -RESIZE_STEP)));
+  };
 
   useEffect(() => {
     ref.current?.focus();
@@ -200,6 +257,7 @@ export function Composer() {
           </button>
         </div>
       ) : null}
+      <SessionChanges />
       {menuOpen && trigger ? (
         <Completion
           items={items}
@@ -212,6 +270,18 @@ export function Composer() {
         />
       ) : null}
       <div className="composer">
+        <div
+          className="composer__resize"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t('composer.resize')}
+          title={t('composer.resize')}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onDoubleClick={() => commitHeight(undefined)}
+          onKeyDown={resizeByKey}
+          data-testid="composer-resize"
+        />
         <ContextChips active={active} included={includeActive} onToggle={() => active && setToggledKey(toggledKey === active.key ? undefined : active.key)} pinned={context.pinned} />
         <textarea
           ref={ref}

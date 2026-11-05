@@ -18,7 +18,7 @@ import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { setLocale } from '../src/i18n.ts';
 import { ChatController } from '../src/vm/ChatController.ts';
-import { reverseHunks, reverseToolDiffs } from '../src/vm/diffs.ts';
+import { reverseToolDiffs } from '../src/vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';
 import { loadPlaywright, type Page } from './playwright-lite.ts';
@@ -169,6 +169,7 @@ let withoutKey = false;
 const inputAnswers: (string | undefined)[] = [];
 const workbench: Workbench = {
   openDiff: async (request) => void diffRequests.push(request),
+  readFile: (path) => readFile(path, 'utf8').catch(() => undefined),
   openFile: async () => undefined,
   activeEditor: () => editorSnapshot,
   findFiles: async () => [],
@@ -370,10 +371,40 @@ try {
   await page.waitForTimeout(500);
   const turnDiff = diffRequests.at(-1);
   check(
-    '点击汇总里的文件：用本轮 hunk 还原出修改前的 README',
-    turnDiff?.kind === 'turn' && turnDiff.path === join(env.workspace, 'README.md') && reverseHunks(readmeNow, turnDiff.hunks) === '# demo\n\n一个演示项目。\n',
+    '点击汇总里的文件：在本地用工具片段还原出修改前的 README（不请求 dsh）',
+    turnDiff?.kind === 'contents' && turnDiff.scope === 'turn' && turnDiff.path === join(env.workspace, 'README.md') && turnDiff.before === '# demo\n\n一个演示项目。\n' && turnDiff.after === undefined,
     JSON.stringify(turnDiff),
   );
+  const changesBar = page.getByTestId('session-changes');
+  check('输入框上方显示本会话改动栏', (await changesBar.innerText()).includes('2 个文件'), await changesBar.innerText().catch(() => ''));
+  await changesBar.locator('.session-changes__toggle').click();
+  await changesBar.locator('.session-changes__file', { hasText: 'README.md' }).click();
+  await page.waitForTimeout(300);
+  const sessionDiff = diffRequests.at(-1);
+  check(
+    '点击改动栏里的文件：打开本会话的累计 Diff',
+    sessionDiff?.kind === 'contents' && sessionDiff.scope === 'session' && sessionDiff.before === '# demo\n\n一个演示项目。\n',
+    JSON.stringify(sessionDiff),
+  );
+  await shot('13b-session-changes');
+  await changesBar.locator('.session-changes__toggle').click();
+
+  // 拖动输入框顶边调整高度，双击恢复
+  const inputBox = async () => (await composer.boundingBox())?.height ?? 0;
+  const autoHeight = await inputBox();
+  const handle = await page.getByTestId('composer-resize').boundingBox();
+  if (handle) {
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 6 });
+    await page.mouse.up();
+  }
+  const dragged = await inputBox();
+  check('拖动输入框顶边可以调高输入框', dragged >= autoHeight + 100, `${autoHeight} → ${dragged}`);
+  await shot('13c-composer-resized');
+  await page.getByTestId('composer-resize').evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  await page.waitForTimeout(100);
+  check('双击拖动条恢复自动高度', Math.abs((await inputBox()) - autoHeight) < 2, `${autoHeight} vs ${await inputBox()}`);
 
   // 2c. 审批：允许
   await send('E2E_APPROVE 装一下依赖');

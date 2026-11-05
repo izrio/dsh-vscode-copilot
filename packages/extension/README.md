@@ -23,7 +23,9 @@ Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型�
 - **`@` 引用文件**：输入 `@` 选择文件或目录。
 - **`/` 命令**：`/explain`、`/fix`（附带错误和警告）、`/test`、`/new`，以及 dsh 自己的命令（`/compact`、`/plan`、`/goal` 等）。
 - **编辑器右键「DSH」**：解释、修复、写测试、添加到对话。
-- **改动**：修改文件的那一行显示增删行数，点击在 Diff 编辑器里查看；每轮结束有改动汇总。
+- **改动**：修改文件的那一行显示增删行数，点击在 Diff 编辑器里查看；每轮结束有改动汇总。输入框上方的改动栏列出本会话改过的所有文件（可以展开、收起、隐藏），点击文件查看本会话修改前 ↔ 当前的累计 Diff。
+- **输入框高度**：拖动输入框顶边调整高度，双击恢复随内容自动增高。
+- **字体与字号**：右上角「…」→「字体与字号」，或设置 `dsh.ui.fontSize`、`dsh.ui.fontFamily`、`dsh.ui.codeFontFamily`。
 - **审批**：dsh 要越过工作区沙箱时会请你确认；要修改的文件在编辑器里有未保存内容时，需要先保存。
 - **权限**：输入框工具条可以切换只读 / 工作区可写 / 完全访问（完全访问前会再确认一次）。
 - **计划模式**：`/plan` 后 dsh 先出计划，审阅卡片里可以批准或继续完善。
@@ -36,6 +38,9 @@ Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型�
 | `dsh.runtime.profile` | `web` | 启动 dsh 用的 profile，默认与你自己运行的 `dsh web` 共用设置 |
 | `dsh.context.includeActiveEditor` | `true` | 发送时默认附带当前编辑器 |
 | `dsh.ui.language` | `auto` | 界面语言：跟随 VS Code（中文时用中文，其他用英文），或固定 `zh` / `en` |
+| `dsh.ui.fontSize` | `0` | 对话面板字号（px）；`0` 表示比 VS Code 工作台字号大 1px |
+| `dsh.ui.fontFamily` | 空 | 对话面板字体；为空时跟随 VS Code 工作台 |
+| `dsh.ui.codeFontFamily` | 空 | 代码、文件路径和命令输出的字体；为空时跟随 `editor.fontFamily` |
 
 ## 常见问题
 
@@ -60,4 +65,4 @@ A VS Code front end for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/
 2. Set your DeepSeek API key when the chat asks for it (or run "DSH: Set API Key"). The key goes into dsh's credential store through VS Code's password input and is never written to the workspace.
 3. Trust the workspace: dsh does not start in untrusted workspaces.
 
-**Using it**: open the DSH view from the secondary side bar or run "DSH: Open Chat". The active editor's selection (or file path) is attached by default and can be left out per message. Type `@` to reference files and `/` for commands (`/explain`, `/fix`, `/test`, `/new`, plus dsh's own `/compact`, `/plan`, `/goal`, …). Right-click in the editor for "DSH → Explain / Fix / Write Tests / Add to Chat". Click an edited file to open its diff. The UI language follows VS Code; set `dsh.ui.language` to override it.
+**Using it**: open the DSH view from the secondary side bar or run "DSH: Open Chat". The active editor's selection (or file path) is attached by default and can be left out per message. Type `@` to reference files and `/` for commands (`/explain`, `/fix`, `/test`, `/new`, plus dsh's own `/compact`, `/plan`, `/goal`, …). Right-click in the editor for "DSH → Explain / Fix / Write Tests / Add to Chat". Click an edited file to open its diff; the bar above the input box lists every file changed in this session and opens its cumulative diff. Drag the top edge of the input box to resize it (double-click to reset). The UI language follows VS Code; set `dsh.ui.language` to override it. `dsh.ui.fontSize`, `dsh.ui.fontFamily` and `dsh.ui.codeFontFamily` set the panel's font (default: VS Code's font, 1px larger).

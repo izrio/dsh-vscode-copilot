@@ -22,6 +22,7 @@ export interface Locator {
   evaluateAll<R>(fn: (elements: HTMLElement[]) => R): Promise<R>;
   evaluate<R>(fn: (element: HTMLElement) => R): Promise<R>;
   isDisabled(): Promise<boolean>;
+  boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
   getAttribute(name: string): Promise<string | null>;
   locator(selector: string, options?: LocatorOptions): Locator;
   getByRole(role: string, options?: { name?: string | RegExp }): Locator;
@@ -52,6 +53,7 @@ export interface Page extends Frame {
   waitForTimeout(ms: number): Promise<void>;
   frames(): Frame[];
   keyboard: { press(key: string): Promise<void>; type(text: string): Promise<void> };
+  mouse: { move(x: number, y: number, options?: { steps?: number }): Promise<void>; down(): Promise<void>; up(): Promise<void> };
 }
 
 export interface BrowserContext {

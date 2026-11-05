@@ -154,6 +154,23 @@
             "%config.ui.language.zh%",
             "%config.ui.language.en%"
           ]
+        },
+        "dsh.ui.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32,
+          "markdownDescription": "%config.ui.fontSize%"
+        },
+        "dsh.ui.fontFamily": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.ui.fontFamily%"
+        },
+        "dsh.ui.codeFontFamily": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.ui.codeFontFamily%"
         }
       }
     },

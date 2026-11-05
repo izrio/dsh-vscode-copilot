@@ -507,6 +507,15 @@ M4 中确定的几条规则：
 3. 某个片段在当前内容中找不到或出现多次时，**不猜测**，放弃还原（参考项目的原则："错的 Diff 比没有 Diff 更糟"）
 4. 还原失败时，在编辑器里打开只读的统一 diff 文档（`dsh-diff:` + `diff` 语言），显示这次的改动片段
 
+**按文件的改动历史还原**（会话改动栏、本轮汇总卡片）：投影时为每个文件记下按时间排列的"步"——有汇总的轮次是 `{ seq, index, 本轮修改它的工具调用, 汇总的增删行数 }`，没有汇总的轮次（汇总不可用、进行中的一轮）只有工具调用。打开某一步的 Diff 时从当前文件开始逐步往回撤：
+
+1. 每一步先用会话日志里的工具片段在本地撤回；撤回前后的增删行数与 dsh 汇总一致时采用（说明这一轮对该文件的改动全部来自文件工具），**不请求 dsh**
+2. 对不上（有命令造成的改动）时才读 `/api/changes.diff` 的 hunk 撤回；结果按 `会话:seq:index` 缓存，超时 15 秒
+3. 本轮 Diff 的右侧是这一轮结束时的内容（之后没再改过时直接用磁盘文件）；会话 Diff 的右侧是当前文件
+4. 任何一步撤不回时退回原来的方式（最后一次修改的 Diff / 统一 diff 片段）
+
+改动汇总同时最多读 2 个（新的轮次先读），避免打开长会话时几十个请求把 dsh 堵住、点开 Diff 要排队。会话改动栏的增删行数是各轮之和（同一处改了几次会重复计算），只统计已加载的历史。
+
 **审批前预览**：对 `edit`/`write` 的审批，用工具调用参数和当前文件内容生成"将要写入"的 Diff，审批卡片上提供"预览修改"按钮；`old_string` 找不到或不唯一（且没有 `replace_all`）时不预览。
 
 CRLF 文件先统一成 LF 计算，结果再转回 CRLF。增删行数用 jsdiff 的 `diffLines`，比较前给两边补齐结尾换行，避免把没有换行的最后一行算成修改。
@@ -711,6 +720,8 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile |
 | `dsh.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
 | `dsh.ui.language` | `auto` / `zh` / `en`，默认 `auto` | 界面语言；`auto` 跟随 VS Code 的显示语言 |
+| `dsh.ui.fontSize` | number / `0` | 对话面板字号（px）；`0` 跟随 VS Code，比工作台字号大 1px |
+| `dsh.ui.fontFamily` / `dsh.ui.codeFontFamily` | string / `""` | 对话面板字体 / 代码与路径的字体；为空时跟随 VS Code。通过 `appearance` 消息下发，Webview 设置成 CSS 变量 |
 
 计划中：`dsh.runtime.env`（追加环境变量）、`dsh.ui.showReasoning`、`dsh.log.level`。
 
