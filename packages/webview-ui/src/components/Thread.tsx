@@ -6,6 +6,7 @@ import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { InteractionCard } from './Interactions.tsx';
 import { ItemView } from './Items.tsx';
+import { RunStatus } from './RunStatus.tsx';
 import { ArrowUpIcon, SpinnerIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
@@ -40,10 +41,6 @@ export function Thread() {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  // 排队的消息排在末尾，不算"最后一项"
-  const lastShown = [...items].reverse().find((item) => !(item.kind === 'user' && item.pending === 'queued'));
-  const streaming = items.some((item) => item.kind === 'assistant' && item.streaming);
-  const showThinking = session.running && interactions.length === 0 && !streaming && lastShown?.kind !== 'activity' && lastShown?.kind !== 'explore';
 
   return (
     <div className="thread" ref={scroller} role="log" aria-live="polite" aria-busy={session.running}>
@@ -67,12 +64,7 @@ export function Thread() {
       {interactions.map((interaction) => (
         <InteractionCard key={interaction.id} interaction={interaction} />
       ))}
-      {showThinking ? (
-        <div className="thinking" aria-label={t('thread.busy')}>
-          <SpinnerIcon />
-          <span className="shimmer">{t('thread.thinking')}</span>
-        </div>
-      ) : null}
+      <RunStatus />
     </div>
   );
 }

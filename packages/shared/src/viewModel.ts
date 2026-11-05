@@ -141,6 +141,14 @@ export type Item =
       readonly total: number;
     }
   | {
+      /** 一轮结束：显示这一轮用了多久（来自 dsh 的 turn/start、turn/end 时间）。 */
+      readonly kind: 'turnDone';
+      readonly id: string;
+      readonly durationMs: number;
+      /** 正常完成；被停止或出错时这一轮另有提示，这里只显示用时。 */
+      readonly completed: boolean;
+    }
+  | {
       readonly kind: 'notice';
       readonly id: string;
       readonly level: 'info' | 'warning' | 'error';
@@ -246,6 +254,8 @@ export interface SessionHeader {
   };
   /** 多根工作区时当前对应的文件夹名。 */
   readonly folder?: string;
+  /** 当前这一轮开始的时间（毫秒时间戳，dsh 所在机器的时钟）；运行中才有。 */
+  readonly runningSince?: number;
   /** 本会话（已加载的历史里）改过的文件；没有改动时为 undefined。 */
   readonly changes?: SessionChangesView;
 }

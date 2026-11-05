@@ -123,7 +123,12 @@ export interface EventsProjection {
   readonly missingCredentialRef?: string;
   readonly fileHistory: ReadonlyMap<string, readonly FileStep[]>;
   readonly sessionChanges?: SessionChangesView;
+  /** 进行中这一轮的开始时间。 */
+  readonly turnStartedAt?: number;
 }
+
+/** 短于这个时长的轮次不显示用时。 */
+const MIN_DURATION_MS = 1_000;
 
 /** 投影持久事件。结果只取决于 events、workspacePath 和 changes 的返回值。 */
 export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspacePath' | 'changes'>): EventsProjection {
@@ -135,6 +140,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
   const changeSeqs: number[] = [];
   let turnEdits: TurnEdit[] = [];
   let turnOpen = false;
+  let turnStartedAt: number | undefined;
   let missingCredentialRef: string | undefined;
   /** /permission 命令的预设显示名，命令结束时用。 */
   const permissionArgs = new Map<string, string>();
@@ -162,6 +168,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     switch (event.type) {
       case 'turn/start':
         turnOpen = true;
+        turnStartedAt = event.time;
         // 上一轮没有 workspace/changes（中断、旧版 dsh）：工具修改单独记一步
         flushEdits(turnEdits);
         turnEdits = [];
@@ -340,6 +347,11 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         turnOpen = false;
         const notice = turnEndNotice(event.seq, data.reason);
         if (notice) items.push(notice);
+        if (turnStartedAt !== undefined && event.time - turnStartedAt >= MIN_DURATION_MS) {
+          const kind = (data.reason as { kind?: string } | undefined)?.kind;
+          items.push({ kind: 'turnDone', id: `d:${event.seq}`, durationMs: event.time - turnStartedAt, completed: notice === undefined && kind !== 'aborted' });
+        }
+        turnStartedAt = undefined;
         const reason = data.reason as { error?: { code?: string; message?: string } } | undefined;
         if (reason?.error?.code === 'MISSING_CREDENTIAL') missingCredentialRef = /\bstore ([A-Z_][A-Z0-9_]*)\b/u.exec(reason.error.message ?? '')?.[1] ?? missingCredentialRef;
         else if (notice === undefined) missingCredentialRef = undefined; // 之后有成功的轮次：已经配置好了
@@ -362,6 +374,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     fileHistory,
     ...(sessionChanges ? { sessionChanges } : {}),
     ...(missingCredentialRef ? { missingCredentialRef } : {}),
+    ...(turnOpen && turnStartedAt !== undefined ? { turnStartedAt } : {}),
   };
 }
 

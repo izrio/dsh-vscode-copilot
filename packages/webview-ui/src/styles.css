@@ -653,12 +653,59 @@ button {
   transform: rotate(90deg);
 }
 
-.thinking {
+/* 运行状态：对话流末尾，在做什么 + 已用时间 */
+.run-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--vscode-foreground);
+  font-size: 0.9em;
+}
+
+.run-status__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.run-status__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.run-status__time {
+  flex: none;
   color: var(--muted);
-  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-status--waiting {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 50%, var(--border));
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 8%, transparent);
+}
+
+/* 一轮结束的用时：一行淡色小字 */
+.turn-done {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.turn-done svg {
+  width: 13px;
+  height: 13px;
+  color: var(--vscode-charts-green, #3fb950);
 }
 
 .shimmer {

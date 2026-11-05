@@ -42,6 +42,8 @@ const summary = (items: ReturnType<typeof project>['items']) =>
         return `changes:${item.source}:${item.files.map((f) => `${f.path}+${f.additions}-${f.deletions}`).join(',')}`;
       case 'notice':
         return `notice:${item.level}:${item.text}`;
+      case 'turnDone':
+        return `done:${item.completed ? 'ok' : 'stopped'}`;
     }
   });
 
@@ -165,6 +167,21 @@ describe('project：按工具类型渲染（M2）', () => {
       additions: 8,
       deletions: 2,
     });
+  });
+
+  it('一轮超过 1 秒时结束后显示用时；进行中的一轮带开始时间', () => {
+    const at = (seq: number, time: number, type: string, data: unknown) => ({ type, seq, time, data });
+    const events = [
+      at(1, 1_000, 'turn/start', {}),
+      at(2, 84_000, 'turn/end', { reason: { kind: 'completed' } }),
+      at(3, 90_000, 'turn/start', {}),
+      at(4, 90_500, 'turn/end', { reason: { kind: 'completed' } }),
+      at(5, 95_000, 'turn/start', {}),
+    ];
+    const projection = projectEvents({ events });
+    expect(projection.items).toEqual([{ kind: 'turnDone', id: 'd:2', durationMs: 83_000, completed: true }]);
+    expect(projection.turnStartedAt).toBe(95_000);
+    expect(projectEvents({ events: events.slice(0, 4) }).turnStartedAt).toBeUndefined();
   });
 
   it('write 新建文件：标记新建，新增行数取内容行数', () => {

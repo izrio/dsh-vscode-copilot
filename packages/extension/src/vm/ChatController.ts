@@ -1105,6 +1105,7 @@ export class ChatController {
       ...goalOf(projections),
       ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
       ...(projection.sessionChanges ? { changes: projection.sessionChanges } : {}),
+      ...(running && this.eventsMemo.value.turnStartedAt !== undefined ? { runningSince: this.eventsMemo.value.turnStartedAt } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();

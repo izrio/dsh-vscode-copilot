@@ -412,7 +412,7 @@ try {
   await approval.waitFor({ timeout: 30_000 });
   check('审批卡片显示要运行的命令', (await approval.locator('.interaction__command').innerText()).includes('echo installed'));
   check('审批卡片显示原因', (await approval.locator('.interaction__reason').innerText()).includes('需要访问网络下载依赖'));
-  check('等待审批时不显示「思考中」', (await page.locator('.thinking').count()) === 0);
+  check('等待审批时运行状态显示「等待你处理」', ((await page.getByTestId('run-status').innerText().catch(() => '')) ?? '').includes('等待你处理'));
   await shot('14-approval');
   await approval.getByRole('button', { name: '允许本次' }).click();
   await page.locator('.assistant', { hasText: '依赖装好了' }).waitFor({ timeout: 30_000 });
@@ -662,6 +662,11 @@ try {
   await page.locator('.assistant', { hasText: '正在仔细分析' }).waitFor({ timeout: 20_000 });
   const stop = page.getByRole('button', { name: '停止生成' });
   check('运行中显示停止按钮', await stop.isVisible());
+  const runStatus = page.getByTestId('run-status');
+  const firstTick = await runStatus.innerText().catch(() => '');
+  await page.waitForTimeout(2_200);
+  const secondTick = await runStatus.innerText().catch(() => '');
+  check('运行中显示运行状态和已用时间，每秒刷新', /秒/u.test(firstTick) && firstTick !== secondTick, `${firstTick} → ${secondTick}`);
   await shot('07-running');
   await stop.click();
   await page.locator('.notice', { hasText: '已停止生成' }).waitFor({ timeout: 20_000 });

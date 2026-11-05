@@ -6,6 +6,7 @@ import { diffKey, openDiff as trackDiff, requestPrefill, useView } from '../stor
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
+import { TurnDone } from './RunStatus.tsx';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -50,6 +51,8 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
       return <ChangesCard item={item} />;
     case 'notice':
       return <Notice item={item} />;
+    case 'turnDone':
+      return <TurnDone item={item} />;
   }
 });
 
