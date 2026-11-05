@@ -13,6 +13,7 @@ import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
 import { resolveLocale, setLocale, t } from './i18n.ts';
 import { redactSecrets } from './util/redact.ts';
+import { webUIUrl } from './util/webUrl.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
 const OPEN_TABS_KEY = 'dsh.openTabs';
@@ -57,7 +58,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openExternal = (url: string): void => {
     const uri = vscode.Uri.parse(url);
-    if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
+    // 传原字符串：Uri.toString() 会把查询里的 = 等字符编码掉，链接带参数时打开的地址就不对了
+    if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(url as unknown as vscode.Uri);
   };
 
   /**
@@ -71,19 +73,15 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showWarningMessage(t('ext.notStarted'));
       return;
     }
-    const local = vscode.Uri.parse(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
-    let target = local;
-    try {
-      target = await vscode.env.asExternalUri(local);
-    } catch (error) {
-      log(`转发 dsh 端口失败，直接打开本机地址：${error instanceof Error ? error.message : String(error)}`);
-    }
-    log(`在浏览器中打开 dsh：${target.with({ query: '' }).toString(true)}${target.authority === local.authority ? '' : `（转发自 ${endpoint.origin}）`}`);
-    const opened = await vscode.env.openExternal(target);
+    const url = await webUIUrl(endpoint.origin, endpoint.token, externalOrigin, (line) => log(line));
+    log(`在浏览器中打开 dsh：${url.replace(/token=[^&]*/u, 'token=***')}`);
+    // 传字符串而不是 Uri：Uri.toString() 会把查询里的 = 编码成 %3D，dsh 就认不出 token（认证失败）。
+    // 扩展 API 的 openExternal 接受字符串并原样交给浏览器（VS Code 为这个问题专门保留的写法）。
+    const opened = await vscode.env.openExternal(url as unknown as vscode.Uri);
     const copy = t('ext.copyLink');
     const message = !opened ? t('ext.webUIFailed') : sessionTitle ? t('ext.webUIOpenedSession', sessionTitle) : t('ext.webUIOpened');
     const choice = await (opened ? vscode.window.showInformationMessage(message, copy) : vscode.window.showWarningMessage(message, copy));
-    if (choice === copy) await vscode.env.clipboard.writeText(target.toString(true));
+    if (choice === copy) await vscode.env.clipboard.writeText(url);
   };
 
   let provider: ChatViewProvider | undefined;
@@ -254,6 +252,12 @@ function readAppearance(): AppearanceState {
     ...(family ? { fontFamily: family } : {}),
     ...(code ? { codeFontFamily: code } : {}),
   };
+}
+
+/** 让 VS Code 为 dsh 的地址转发端口（本地时原样返回），只返回 origin 部分。 */
+async function externalOrigin(base: string): Promise<string> {
+  const external = await vscode.env.asExternalUri(vscode.Uri.parse(base));
+  return external.with({ path: '', query: '', fragment: '' }).toString(true);
 }
 
 function readRuntimeConfig(workspacePath: string): RuntimeConfig {
