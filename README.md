@@ -4,7 +4,7 @@
 
 Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
 
-> 当前版本：**v0.1.0**（M0–M5 完成）。使用说明见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。功能：基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区；中英文界面。
+> 当前版本：**v0.1.0**（M0–M5 完成）。安装包在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases) 下载（`dsh-copilot-<版本>.vsix`，VS Code 扩展视图「⋯ → 从 VSIX 安装…」）。使用说明见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。功能：基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区；中英文界面。
 
 ![点击修改记录，在 VS Code 的 Diff 编辑器里查看改动](docs/images/m2-vscode-diff.png)
 

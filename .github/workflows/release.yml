@@ -1,0 +1,100 @@
+# 发布：打包 vsix，创建 GitHub Release 并附上安装包。
+# - 推送 v* 标签时自动运行（例如 git tag v0.1.0 && git push origin v0.1.0）；
+# - 也可以在 Actions 页面手动运行，填写标签（标签不存在时在当前提交上创建）。
+# 标签必须与 packages/extension/package.json 的版本一致；发布说明取 CHANGELOG.md 里对应版本的一节。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签，例如 v0.1.0（必须与 package.json 的版本一致）'
+        required: true
+      prerelease:
+        description: '标记为预发布'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check tag matches package version
+        run: |
+          VERSION="$(node -p "require('./packages/extension/package.json').version")"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::标签 $TAG 与 package.json 的版本 $VERSION 不一致"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm package
+
+      - name: Prepare assets and notes
+        run: |
+          VSIX="packages/extension/dsh-copilot-${VERSION}.vsix"
+          test -f "$VSIX"
+          mkdir -p release
+          cp "$VSIX" release/
+          (cd release && sha256sum "dsh-copilot-${VERSION}.vsix" > "dsh-copilot-${VERSION}.vsix.sha256")
+          # CHANGELOG 里 "## <版本>" 到下一个 "## " 之间的内容
+          awk -v v="## ${VERSION}" '$0 == v {found=1; next} found && /^## / {exit} found {print}' packages/extension/CHANGELOG.md > release/changes.md
+          {
+            echo "## 安装 / Install"
+            echo
+            echo "1. 下载下面的 \`dsh-copilot-${VERSION}.vsix\`。"
+            echo "   Download \`dsh-copilot-${VERSION}.vsix\` below."
+            echo "2. VS Code 扩展视图右上角「⋯ → 从 VSIX 安装…」，或执行："
+            echo "   In the Extensions view choose \"… → Install from VSIX…\", or run:"
+            echo
+            echo '   ```bash'
+            echo "   code --install-extension dsh-copilot-${VERSION}.vsix"
+            echo '   ```'
+            echo
+            echo "3. 需要能在终端运行 \`dsh\`（0.2.1-rc.5 及以上）：安装 DeepSeek Desktop 并在菜单「管理 dsh 命令…」中安装，或 \`npm install -g @deepseek-ai/dsh\`（Node ≥ 24.9）。使用说明见 [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/packages/extension/README.md)。"
+            echo "   Requires \`dsh\` 0.2.1-rc.5 or later on your PATH (DeepSeek Desktop → \"Manage dsh command…\", or \`npm install -g @deepseek-ai/dsh\` with Node ≥ 24.9)."
+            echo
+            echo "SHA-256：\`$(cut -d' ' -f1 "release/dsh-copilot-${VERSION}.vsix.sha256")\`"
+            echo
+            echo "## 更新内容 / Changes"
+            cat release/changes.md
+          } > release/notes.md
+          cat release/notes.md
+
+      - name: Create or update release
+        run: |
+          FLAGS=()
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS+=(--prerelease); fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # 重新运行时更新已有的 Release，替换安装包
+            gh release edit "$TAG" --title "DSH Copilot ${TAG}" --notes-file release/notes.md "${FLAGS[@]}"
+            gh release upload "$TAG" release/*.vsix release/*.sha256 --clobber
+          else
+            gh release create "$TAG" release/*.vsix release/*.sha256 \
+              --title "DSH Copilot ${TAG}" \
+              --notes-file release/notes.md \
+              --target "$GITHUB_SHA" \
+              "${FLAGS[@]}"
+          fi
