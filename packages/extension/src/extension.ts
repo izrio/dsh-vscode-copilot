@@ -105,6 +105,7 @@ export function activate(context: vscode.ExtensionContext): void {
     showLogs: () => output.show(),
     openWebUI: (sessionTitle) => void openWebUI(sessionTitle),
     appearance: readAppearance,
+    showTurnChanges: () => vscode.workspace.getConfiguration('dsh.ui').get<boolean>('showTurnChanges', false),
     openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:izrio.dsh-copilot dsh.ui'),
     onModelChange: (label) => {
       modelLabel = label;
@@ -226,6 +227,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (event.affectsConfiguration('dsh.ui.fontSize') || event.affectsConfiguration('dsh.ui.fontFamily') || event.affectsConfiguration('dsh.ui.codeFontFamily')) {
         chat.appearanceChanged();
       }
+      if (event.affectsConfiguration('dsh.ui.showTurnChanges')) chat.workspaceChanged();
       if (event.affectsConfiguration('dsh.ui.language')) {
         applyLocale();
         chat.localeChanged();

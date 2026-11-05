@@ -594,6 +594,15 @@ describe('ChatController', () => {
       expect(diffCalls()).toBe(1);
     });
 
+    it('设置关掉每轮改动卡片时对话流里不显示，会话改动栏照常显示', async () => {
+      const { controller } = await withEditTurn({ '/w/a.ts': 'b\nc\n' });
+      expect(controller.snapshot().items.some((item) => item.kind === 'changes')).toBe(true);
+      Object.assign((controller as unknown as { options: object }).options, { showTurnChanges: () => false });
+      const snapshot = controller.snapshot();
+      expect(snapshot.items.some((item) => item.kind === 'changes')).toBe(false);
+      expect(snapshot.session.changes?.files).toHaveLength(1);
+    });
+
     it('会话改动栏：列出改过的文件，点击打开本会话修改前 ↔ 当前', async () => {
       const { controller, diffs, fake } = await withEditTurn({ '/w/a.ts': 'b\nd\n' });
       // 第二轮又改了一次（dsh 汇总不可用时按工具汇总）

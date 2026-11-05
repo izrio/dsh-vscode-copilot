@@ -24,6 +24,7 @@
   "config.ui.fontSize": "对话面板的字号（px）。`0` 表示跟随 VS Code：比工作台字号大 1px。",
   "config.ui.fontFamily": "对话面板的字体，例如 `\"Microsoft YaHei UI\", sans-serif`。留空时跟随 VS Code 工作台字体。",
   "config.ui.codeFontFamily": "对话面板里代码、文件路径和命令输出的字体。留空时跟随 `editor.fontFamily`。",
+  "config.ui.showTurnChanges": "每轮回复结束时在对话里显示改动文件卡片。默认关闭：输入框上方的会话改动栏已经列出了本会话改过的文件。",
   "submenu.editor": "DSH",
   "config.title": "DSH",
   "container.title": "DSH",

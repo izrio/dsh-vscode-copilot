@@ -24,6 +24,7 @@
   "config.ui.fontSize": "Font size (px) of the chat panel. `0` follows VS Code: the workbench font size plus 1px.",
   "config.ui.fontFamily": "Font family of the chat panel, e.g. `\"Microsoft YaHei UI\", sans-serif`. Empty follows the VS Code workbench font.",
   "config.ui.codeFontFamily": "Font family for code, file paths and command output in the chat panel. Empty follows `editor.fontFamily`.",
+  "config.ui.showTurnChanges": "Show a changed-files card at the end of each reply. Off by default: the bar above the input box already lists the files changed in this session.",
   "submenu.editor": "DSH",
   "config.title": "DSH",
   "container.title": "DSH",

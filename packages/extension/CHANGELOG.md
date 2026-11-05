@@ -2,6 +2,11 @@
 
 ## 未发布 / Unreleased
 
+- 回复结尾不再显示改动文件卡片（输入框上方的会话改动栏已经列出）；需要时用设置 `dsh.ui.showTurnChanges` 打开。
+  The changed-files card at the end of each reply is hidden by default (the session changes bar lists them); turn it back on with `dsh.ui.showTurnChanges`.
+- 代码块和行内代码跟随对话文字的字号（之前代码块用编辑器字号，显得偏大）。
+  Code blocks and inline code follow the chat font size instead of the editor's.
+
 - 「在浏览器中打开 dsh」：通过 VS Code 转发端口打开（远程开发时 dsh 的 127.0.0.1 在远端机器上，之前直接打开连不上）；打开后提示当前会话的标题，并可以复制链接。dsh 网页目前没有指向某个会话的地址，只能在它的会话列表里选。
   "Open dsh in browser" goes through VS Code's port forwarding (dsh's 127.0.0.1 is on the remote machine in remote development), then shows the current session's title and a "Copy link" button. dsh's web UI has no per-session URL yet.
 - 待办改成卡片：进度条和计数徽标，完成项绿色勾、进行中的项高亮并标「进行中」、待做项空心圈，状态标记连成时间线。

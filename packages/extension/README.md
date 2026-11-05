@@ -42,6 +42,7 @@ Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型�
 | `dsh.ui.fontSize` | `0` | 对话面板字号（px）；`0` 表示比 VS Code 工作台字号大 1px |
 | `dsh.ui.fontFamily` | 空 | 对话面板字体；为空时跟随 VS Code 工作台 |
 | `dsh.ui.codeFontFamily` | 空 | 代码、文件路径和命令输出的字体；为空时跟随 `editor.fontFamily` |
+| `dsh.ui.showTurnChanges` | `false` | 每轮回复结束时在对话里显示改动文件卡片（默认只在输入框上方的改动栏显示） |
 
 ## 常见问题
 

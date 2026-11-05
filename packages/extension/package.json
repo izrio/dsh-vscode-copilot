@@ -171,6 +171,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "%config.ui.codeFontFamily%"
+        },
+        "dsh.ui.showTurnChanges": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.ui.showTurnChanges%"
         }
       }
     },

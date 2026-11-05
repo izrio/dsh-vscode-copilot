@@ -89,6 +89,11 @@ export interface ChatControllerOptions {
   readonly appearance?: () => AppearanceState;
   /** 打开插件的界面设置。 */
   readonly openSettings?: () => void;
+  /**
+   * 每轮结束时在对话流里显示改动汇总卡片（设置 `dsh.ui.showTurnChanges`）。不传时显示。
+   * 关掉时改动只在输入框上方的会话改动栏里显示，汇总仍会读取，用于打开 Diff。
+   */
+  readonly showTurnChanges?: () => boolean;
 }
 
 /** 同时读取改动汇总的请求数：打开长会话时不一次发出几十个请求，把 dsh 堵住（点开 Diff 的请求要排在后面）。 */
@@ -1126,7 +1131,7 @@ export class ChatController {
       sessions,
       tabs: this.tabsState(service, session, attention),
       session,
-      items: projection.items,
+      items: this.options.showTurnChanges?.() === false ? projection.items.filter((item) => item.kind !== 'changes') : projection.items,
       models: buildModelState(projections, service?.models, this.draftModel),
       interactions,
       permissions,
