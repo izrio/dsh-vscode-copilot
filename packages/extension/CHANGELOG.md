@@ -1,6 +1,10 @@
 # 更新记录 / Changelog
 
-## 未发布 / Unreleased
+## 0.2.2
+
+粘贴图片、面板内调整字体与字号，修复从插件打开 dsh 网页时登录失败。支持 dsh `0.2.1-rc.5` 及以上。
+
+Paste images, adjust font and size inside the panel, and fix logging in when opening dsh in the browser. Requires dsh `0.2.1-rc.5` or later.
 
 - 「…」→「字体与字号」改为面板里直接调整：字号加减、界面字体、代码字体、恢复默认，立即生效并写入设置 `dsh.ui.*`（之前是跳到 VS Code 设置页，可能找不到对应设置）。
   "…" → "Font and size" now opens an in-panel editor (size stepper, UI and code fonts, reset) that applies immediately and writes `dsh.ui.*`, instead of jumping to the Settings page.
