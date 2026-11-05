@@ -1,6 +1,10 @@
 # 更新记录 / Changelog
 
-## 未发布 / Unreleased
+## 0.2.1
+
+运行状态与用时、逐题回答的提问卡片、级联的模型选择、更醒目的强调色、识别带前缀的工具，以及若干界面修正。支持 dsh `0.2.1-rc.5` 及以上。
+
+Run status with elapsed time, step-by-step questions, a cascading model picker, a reliable accent color, prefixed tool names, and UI fixes. Requires dsh `0.2.1-rc.5` or later.
 
 - 识别带前缀或别名的工具：`ops_grep`、`ops_read_files`、`mcp__fs__read_file`、`run_command`、`str_replace_editor` 等按对应的内置工具渲染——连续的读文件和搜索合并成一行「已浏览」，命令显示「已运行」，修改显示文件；一次读多个文件时显示第一个文件和其余数量。
   Prefixed or aliased tools (`ops_grep`, `ops_read_files`, `mcp__fs__read_file`, `run_command`, `str_replace_editor`, …) render like the built-in ones: reads and searches merge into one row, commands show "Ran", edits show the file; multi-file reads show the first file and a count.
