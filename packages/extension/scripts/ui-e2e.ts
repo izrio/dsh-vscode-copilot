@@ -433,6 +433,20 @@ try {
   await page.locator('.assistant', { hasText: '图片收到了' }).waitFor({ timeout: 20_000 });
   await shot('14b-image');
 
+  // 2b3. 字体与字号：「…」菜单里直接调整
+  const bodySize = () => page!.evaluate(() => Number.parseFloat(getComputedStyle(document.body).fontSize));
+  const sizeBefore = await bodySize();
+  await page.getByRole('button', { name: '更多' }).click();
+  await page.getByRole('menuitem', { name: /字体与字号/u }).click();
+  await page.getByTestId('appearance-panel').waitFor({ timeout: 5_000 });
+  await page.getByRole('button', { name: '增大字号' }).click();
+  await page.getByRole('button', { name: '增大字号' }).click();
+  check('字体面板里加大字号立即生效', (await bodySize()) === sizeBefore + 2, `${sizeBefore} → ${await bodySize()}`);
+  await shot('14c-appearance');
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  check('恢复默认后回到原来的字号', (await bodySize()) === sizeBefore);
+  await page.keyboard.press('Escape');
+
   // 2c. 审批：允许
   await send('E2E_APPROVE 装一下依赖');
   const approval = page.getByTestId('approval-card');

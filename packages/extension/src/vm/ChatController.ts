@@ -89,6 +89,8 @@ export interface ChatControllerOptions {
   readonly appearance?: () => AppearanceState;
   /** 打开插件的界面设置。 */
   readonly openSettings?: () => void;
+  /** 写入字体设置（dsh.ui.*）；值为 null 时恢复默认。 */
+  readonly setAppearance?: (patch: { readonly fontSize?: number | null; readonly fontFamily?: string | null; readonly codeFontFamily?: string | null }) => Promise<void>;
   /**
    * 每轮结束时在对话流里显示改动汇总卡片（设置 `dsh.ui.showTurnChanges`）。不传时显示。
    * 关掉时改动只在输入框上方的会话改动栏里显示，汇总仍会读取，用于打开 Diff。
@@ -565,6 +567,14 @@ export class ChatController {
       }
       case 'openSettings':
         this.options.openSettings?.();
+        return;
+      case 'setAppearance':
+        try {
+          await this.options.setAppearance?.(message.payload);
+        } catch (error) {
+          this.toast('error', t('appearance.failed', describe(error)));
+          this.appearanceChanged();
+        }
         return;
       case 'openFile': {
         const { path, startLine, endLine } = message.payload;

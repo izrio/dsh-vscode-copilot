@@ -19,12 +19,13 @@ import {
   TextSizeIcon,
 } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
+import { AppearancePanel } from './AppearancePanel.tsx';
 import { useT, type Translate } from '../i18n.ts';
 
 export function Header() {
   const session = useView((s) => s.session);
   const sessions = useView((s) => s.sessions);
-  const [menu, setMenu] = useState<'sessions' | 'more' | undefined>();
+  const [menu, setMenu] = useState<'sessions' | 'more' | 'appearance' | undefined>();
   const [query, setQuery] = useState('');
   const close = useCallback(() => setMenu(undefined), []);
   const t = useT();
@@ -118,10 +119,13 @@ export function Header() {
             <MenuItem icon={<LogIcon />} onSelect={() => (close(), postToHost({ type: 'showLogs', payload: {} }))}>
               {t('header.logs')}
             </MenuItem>
-            <MenuItem icon={<TextSizeIcon />} onSelect={() => (close(), postToHost({ type: 'openSettings', payload: {} }))}>
+            <MenuItem icon={<TextSizeIcon />} onSelect={() => setMenu('appearance')}>
               {t('header.appearance')}
             </MenuItem>
           </div>
+        </Popover>
+        <Popover open={menu === 'appearance'} onClose={close} className="more-menu appearance-menu" label={t('header.appearance')}>
+          <AppearancePanel onClose={close} />
         </Popover>
       </div>
     </header>

@@ -104,7 +104,23 @@ export function activate(context: vscode.ExtensionContext): void {
     openWebUI: (sessionTitle) => void openWebUI(sessionTitle),
     appearance: readAppearance,
     showTurnChanges: () => vscode.workspace.getConfiguration('dsh.ui').get<boolean>('showTurnChanges', false),
-    openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:izrio.dsh-copilot dsh.ui'),
+    openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`),
+    setAppearance: async (patch) => {
+      const config = vscode.workspace.getConfiguration('dsh.ui');
+      for (const [key, value] of Object.entries(patch) as [string, number | string | null | undefined][]) {
+        if (value === undefined) continue;
+        // 写到已经设置过的那一级（工作区设置会盖过用户设置），都没设置过时写用户设置
+        const inspected = config.inspect(key);
+        const target =
+          inspected?.workspaceFolderValue !== undefined
+            ? vscode.ConfigurationTarget.WorkspaceFolder
+            : inspected?.workspaceValue !== undefined
+              ? vscode.ConfigurationTarget.Workspace
+              : vscode.ConfigurationTarget.Global;
+        const cleared = value === null || value === '' || (key === 'fontSize' && value === 0);
+        await config.update(key, cleared ? undefined : value, target);
+      }
+    },
     onModelChange: (label) => {
       modelLabel = label;
       renderStatusBar(status, currentStatus(), modelLabel);

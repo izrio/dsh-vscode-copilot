@@ -106,6 +106,15 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   /** `token` 由 Webview 生成，Host 打开（或放弃）后用 `diffOpened` 回传，Webview 据此结束加载状态。 */
   z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema, token: z.number().int().optional() }) }),
   z.object({ type: z.literal('openSettings'), payload: empty }),
+  /** 面板里的字体设置：写入 VS Code 设置 dsh.ui.*；null 表示恢复默认（跟随 VS Code）。 */
+  z.object({
+    type: z.literal('setAppearance'),
+    payload: z.object({
+      fontSize: z.number().int().min(8).max(32).nullable().optional(),
+      fontFamily: z.string().max(500).nullable().optional(),
+      codeFontFamily: z.string().max(500).nullable().optional(),
+    }),
+  }),
   z.object({
     type: z.literal('openFile'),
     payload: z.object({ path: z.string().min(1), startLine: z.number().int().positive().optional(), endLine: z.number().int().positive().optional() }),

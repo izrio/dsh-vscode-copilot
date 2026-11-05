@@ -2560,3 +2560,108 @@ body.resizing {
   top: 8px;
   right: 8px;
 }
+
+/* ---------- 字体与字号面板 ---------- */
+
+.appearance-menu {
+  width: min(280px, calc(100vw - 16px));
+}
+
+.appearance {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 8px 8px;
+}
+
+.appearance__title {
+  font-weight: 600;
+}
+
+.appearance__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.appearance__label {
+  flex: none;
+  min-width: 4.5em;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.appearance__default {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bubble);
+  color: var(--muted);
+  font-size: 0.82em;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.stepper__button {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 1.1em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper__button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.stepper__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stepper__value {
+  min-width: 48px;
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.appearance__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.appearance__input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground, inherit);
+  font: inherit;
+  font-size: 0.92em;
+}
+
+.appearance__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.appearance__actions {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+  font-size: 0.92em;
+}

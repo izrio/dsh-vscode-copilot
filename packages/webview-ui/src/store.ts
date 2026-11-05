@@ -108,6 +108,11 @@ export function useView<T>(selector: (state: ViewState) => T): T {
   );
 }
 
+/** 字体设置先在本地生效，Host 写完设置后会再推送一次。 */
+export function setAppearanceLocal(appearance: ViewState['appearance']): void {
+  set({ appearance });
+}
+
 /** 图片在缓存里的键。 */
 export function imageKey(image: { readonly attachmentId?: string; readonly localId?: string }): string | undefined {
   return image.attachmentId ?? (image.localId ? `local:${image.localId}` : undefined);

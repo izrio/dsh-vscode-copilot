@@ -19,6 +19,7 @@ const zh = {
   'diff.turnGone': '这一轮的改动记录已不可用（dsh 重启过），已改为显示文件工具的修改',
   'diff.readFailed': '无法读取改动：{0}',
   'diff.notConnected': '还没有连接到 dsh',
+  'appearance.failed': '保存字体设置失败：{0}',
   'danger.title': '允许 dsh 完全访问？',
   'danger.detail': 'danger-full-access 下 dsh 执行命令和修改文件不再受工作区沙箱限制，可以访问整台机器。只在你信任当前任务时使用。',
   'danger.allow': '允许完全访问',
@@ -128,6 +129,7 @@ const en: Record<HostMessageKey, string> = {
   'diff.turnGone': 'The change record for this turn is gone (dsh restarted); showing file-tool edits instead',
   'diff.readFailed': 'Could not read the changes: {0}',
   'diff.notConnected': 'Not connected to dsh yet',
+  'appearance.failed': 'Could not save the font settings: {0}',
   'danger.title': 'Give dsh full access?',
   'danger.detail':
     'With danger-full-access, dsh runs commands and edits files outside the workspace sandbox and can reach the whole machine. Use it only for tasks you trust.',
