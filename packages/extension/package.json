@@ -104,6 +104,21 @@
         "command": "dsh.addToChat",
         "title": "添加到对话",
         "category": "DSH"
+      },
+      {
+        "command": "dsh.configureApiKey",
+        "title": "配置 API Key",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.renameSession",
+        "title": "重命名会话",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.selectFolder",
+        "title": "选择对话对应的文件夹",
+        "category": "DSH"
       }
     ],
     "configuration": {
@@ -175,6 +190,10 @@
         {
           "command": "dsh.addToChat",
           "when": "editorIsOpen"
+        },
+        {
+          "command": "dsh.selectFolder",
+          "when": "workspaceFolderCount > 1"
         }
       ]
     }

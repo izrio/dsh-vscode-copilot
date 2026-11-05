@@ -37,9 +37,10 @@ export function Thread() {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  const last = items.at(-1);
-  const showThinking =
-    session.running && interactions.length === 0 && !(last?.kind === 'assistant' && last.streaming) && last?.kind !== 'activity' && last?.kind !== 'explore';
+  // 排队的消息排在末尾，不算"最后一项"
+  const lastShown = [...items].reverse().find((item) => !(item.kind === 'user' && item.pending === 'queued'));
+  const streaming = items.some((item) => item.kind === 'assistant' && item.streaming);
+  const showThinking = session.running && interactions.length === 0 && !streaming && lastShown?.kind !== 'activity' && lastShown?.kind !== 'explore';
 
   return (
     <div className="thread" ref={scroller} role="log" aria-live="polite" aria-busy={session.running}>

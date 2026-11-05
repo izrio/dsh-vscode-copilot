@@ -68,6 +68,8 @@ export type Item =
       readonly error?: string;
       /** 随消息附带的编辑器上下文（从消息末尾的上下文块解析出来，正文里不显示）。 */
       readonly attachments?: readonly AttachmentView[];
+      /** 在 dsh 队列里等待的消息：可以编辑、删除、插队。`next-step` 表示已插队，在当前回复的下一步送达。 */
+      readonly queue?: { readonly itemId: string; readonly target: 'next-turn' | 'next-step' };
     }
   | {
       readonly kind: 'assistant';
@@ -121,7 +123,7 @@ export type Item =
       readonly level: 'info' | 'warning' | 'error';
       readonly text: string;
       /** 可选的处理入口，例如缺少 API Key 时打开 dsh 设置。 */
-      readonly action?: { readonly kind: 'openWebUI'; readonly label: string };
+      readonly action?: { readonly kind: 'openWebUI' | 'configureApiKey'; readonly label: string };
     };
 
 export interface QuestionView {
@@ -131,6 +133,8 @@ export interface QuestionView {
   readonly detail?: string;
   readonly options: readonly { readonly label: string; readonly description?: string }[];
   readonly multiSelect: boolean;
+  /** 计划审阅（`exit_plan_mode`）：`detail` 是计划的 Markdown，批准选项的标签是 `approve`。 */
+  readonly intent?: { readonly kind: 'plan-review'; readonly approve: string; readonly keepPlanning?: string };
 }
 
 /** 等待用户处理的请求，显示在对话流末尾。 */
@@ -175,6 +179,8 @@ export interface ModelOption {
 }
 
 export interface ModelState {
+  /** 模型目录为空：还没有配置 API Key。 */
+  readonly needsApiKey?: boolean;
   readonly options: readonly ModelOption[];
   readonly current?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string };
 }
@@ -201,6 +207,18 @@ export interface SessionHeader {
   readonly contextUsage?: number;
   /** 计划模式（`/plan`）：dsh 只做计划，不改文件。 */
   readonly planMode?: boolean;
+  /** dsh 的待办列表（`todo_write`），没有时为 undefined。 */
+  readonly todos?: readonly { readonly content: string; readonly status: 'pending' | 'in_progress' | 'completed' }[];
+  /** 长任务目标（`/goal`）。 */
+  readonly goal?: {
+    readonly objective: string;
+    readonly phase: 'active' | 'paused' | 'blocked' | 'complete';
+    readonly round: number;
+    readonly maxRounds: number;
+    readonly blockedReason?: string;
+  };
+  /** 多根工作区时当前对应的文件夹名。 */
+  readonly folder?: string;
 }
 
 export interface WorkspaceState {

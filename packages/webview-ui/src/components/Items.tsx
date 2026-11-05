@@ -2,6 +2,7 @@
 import { memo, useState, type ReactNode } from 'react';
 import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
 import { splitMentions } from '../mentions.ts';
+import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -27,6 +28,8 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
 });
 
 function UserBubble({ item }: { item: Of<'user'> }) {
+  const [editing, setEditing] = useState(false);
+  if (editing && item.queue) return <QueueEditor item={item} onDone={() => setEditing(false)} />;
   return (
     <div className={`user ${item.pending ? `user--${item.pending}` : ''}`}>
       {item.text ? (
@@ -44,7 +47,7 @@ function UserBubble({ item }: { item: Of<'user'> }) {
           ))}
         </div>
       ) : null}
-      {item.pending === 'queued' ? <div className="user__meta">排队中，当前回复结束后发送</div> : null}
+      {item.pending === 'queued' ? <QueuedMeta item={item} onEdit={() => setEditing(true)} /> : null}
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
           <span>发送失败{item.error ? `：${item.error}` : ''}</span>
@@ -56,6 +59,85 @@ function UserBubble({ item }: { item: Of<'user'> }) {
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。 */
+function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) {
+  const running = useView((s) => s.session.running);
+  const queue = item.queue;
+  if (!queue) return <div className="user__meta">排队中，当前回复结束后发送</div>;
+  const act = (action: 'remove' | 'steer' | 'send') => postToHost({ type: 'queueAction', payload: { action, itemId: queue.itemId } });
+  if (!running) {
+    // 停止生成后 dsh 保留队列，但要等下一条消息才一起送达
+    return (
+      <div className="user__meta" data-testid="queued-meta">
+        <span>已停止，这条消息还没发出</span>
+        <button type="button" className="link-button" onClick={() => act('send')}>
+          现在发送
+        </button>
+        <button type="button" className="link-button" onClick={onEdit}>
+          编辑
+        </button>
+        <button type="button" className="link-button" onClick={() => act('remove')}>
+          删除
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="user__meta" data-testid="queued-meta">
+      <span>{queue.target === 'next-step' ? '已插队，在当前回复的下一步送达' : '排队中，当前回复结束后发送'}</span>
+      <button type="button" className="link-button" onClick={onEdit}>
+        编辑
+      </button>
+      {queue.target === 'next-turn' ? (
+        <button type="button" className="link-button" onClick={() => act('steer')} title="不等当前回复结束，在它的下一步就交给 dsh">
+          插队
+        </button>
+      ) : null}
+      <button type="button" className="link-button" onClick={() => act('remove')}>
+        删除
+      </button>
+    </div>
+  );
+}
+
+function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void }) {
+  const [text, setText] = useState(item.text);
+  const save = () => {
+    if (item.queue && text.trim() && text.trim() !== item.text) {
+      postToHost({ type: 'queueAction', payload: { action: 'edit', itemId: item.queue.itemId, text: text.trim() } });
+    }
+    onDone();
+  };
+  return (
+    <div className="user user--queued">
+      <textarea
+        className="queue-editor"
+        value={text}
+        autoFocus
+        rows={Math.min(8, Math.max(2, text.split('\n').length))}
+        aria-label="编辑排队的消息"
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            save();
+          } else if (event.key === 'Escape') {
+            onDone();
+          }
+        }}
+      />
+      <div className="user__meta">
+        <button type="button" className="link-button" onClick={save}>
+          保存
+        </button>
+        <button type="button" className="link-button" onClick={onDone}>
+          取消
+        </button>
+      </div>
     </div>
   );
 }
@@ -245,7 +327,7 @@ function Notice({ item }: { item: Of<'notice'> }) {
         {item.action ? (
           <>
             {' '}
-            <button type="button" className="link-button" onClick={() => postToHost({ type: 'openWebUI', payload: {} })}>
+            <button type="button" className="link-button" onClick={() => postToHost({ type: item.action?.kind ?? 'openWebUI', payload: {} })}>
               {item.action.label}
             </button>
           </>

@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.6（M3 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.7（M4 完成）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -35,7 +35,8 @@
 | v0.3 | M0 完成：协议客户端在 dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上跑通（[对接说明第 9 节](./DSH-INTEGRATION.md#9-m0-验证结果)）。按实测修正：审批只在请求越过沙箱时触发；权限预设有三个；diff 数据来自 `tool/result.meta`；支持范围定为 `0.2.1-rc.5` 起。确认首版只支持 API Key、不做参考项目的周边功能 |
 | v0.4 | M1 完成：基础对话界面、follow 完整结算语义、断线重连、会话切换、模型选择；在真实 VS Code 1.144（code-server）中验证（[对接说明 9.4](./DSH-INTEGRATION.md#94-m1-新发现)）。补充：运行状态以事件日志为准；断线期间保留旧内容；代码高亮不能用内联 style（CSP）；多窗口可并存，同一会话只能一处写 |
 | v0.5 | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
-| **v0.6** | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
+| v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
+| **v0.7** | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
 
 ---
 
@@ -396,8 +397,7 @@ sequenceDiagram
 
 | 模块 | 职责 | 里程碑 |
 | --- | --- | --- |
-| 计划审阅卡片 | 计划模式（`exit_plan_mode`）的批准 / 提反馈 | M4 |
-| `dsh/WorkspaceBinding` | 多根工作区时让用户选择对应的 dsh Workspace（目前固定用第一个文件夹） | M4 |
+| 中英文界面 | 界面文字按 VS Code 显示语言切换 | M5 |
 
 M1 中确定的几条规则：
 
@@ -423,6 +423,16 @@ M3 中确定的几条规则：
 - **命令在对话里的样子**：dsh 为命令持久化 `command/run` / `command/done`，渲染成一行"/compact  Compacted 3 history items"；`/permission`（多数来自权限菜单）渲染成"权限已切换为「只读」"的提示。
 - **右键菜单**：编辑器右键「DSH」子菜单：解释、修复、写测试（带上选区立即发送）、添加到对话（固定为标签，下一条消息附带，发送后清空）。命令先同步取下选区，再切换焦点到对话视图。
 
+M4 中确定的几条规则：
+
+- **排队消息以 dsh 的队列为准**：运行中发送的消息进入 dsh 的 `inbox`（`next-turn` 等当前回复结束，`next-step` 是插队后在下一步送达），从 `inbox` 投影显示，所以别的窗口发的也能看到。进入队列后撤掉本地回显，否则从队列删除的消息会以回显的形式冒出来。编辑只改正文，原消息末尾的上下文块原样保留。
+- **停止生成后的队列**：dsh 取消当前轮次但保留队列，也不会自己开始新的一轮，要等下一条消息一起送达。这时排队的消息显示"已停止，这条消息还没发出"，提供"现在发送"（从队列取出，作为新消息发送）。
+- **计划审阅**：`exit_plan_mode` 通过提问通道请求审阅，问题带 `intent: { kind: 'plan-review' }`，计划 Markdown 在 `detail` 里。卡片显示计划，"批准并开始执行"回答批准选项；"继续完善"回答另一个选项并附上反馈（`custom`）；"自己回复"取消提问，dsh 结束本轮。计划工具那一行显示审阅结果，"继续完善"不算失败。
+- **状态条**：`todos` 投影（`todo_write` 的最新列表）和 `goal` 投影显示在输入框上方；`todo_write` 不在对话流里出现。
+- **API Key**：模型目录为空（DeepSeek 官方服务没有 Key 时不列模型）时空状态显示配置引导；轮次以 `MISSING_CREDENTIAL` 结束时提示里有"配置 API Key"。Key 用 VS Code 的密码输入框输入，不经过 Webview，通过 `credentials/set` 存到 dsh 的凭据存储，立即生效。凭据名取 `MISSING_CREDENTIAL` 消息里 dsh 给出的名字（用户可能配置了别的 `apiKeyEnv`），默认 `DEEPSEEK_API_KEY`。
+- **多根工作区**：默认第一个文件夹；「DSH：选择对话对应的文件夹」切换后会话列表、新建会话、路径显示都换到那个文件夹，每个文件夹记住自己上次打开的会话。
+- **长会话性能**：持久事件的投影按 journal 的事件数组缓存，流式输出时只重算末尾（6400 个事件的会话：每次重算 13 ms，流式输出时 0.02 ms）；推送增量时同一个对象不再序列化比较；增删行数按片段对象缓存；Webview 里屏幕外的条目用 `content-visibility: auto` 跳过布局和绘制。
+
 ### 5.2 会话事件 → 界面条目
 
 事件说明见 [dsh 对接说明第 7 节](./DSH-INTEGRATION.md#7-会话事件模型)：
@@ -439,9 +449,10 @@ M3 中确定的几条规则：
 | `turn/start` / `turn/end` | 控制"发送/停止"按钮；`turn/end` 原因为中断或错误时显示一行提示 |
 | `approval/request` | 审批卡片，显示在对话流末尾 |
 | user-questions 事件 / 投影 | 问答卡片（单选/多选/自由输入，按 dsh 给出的选项） |
-| 计划模式事件 | 计划审阅卡片（批准 / 提反馈） |
+| 计划审阅（提问带 `intent: plan-review`） | 计划审阅卡片（批准 / 继续完善并反馈 / 自己回复） |
 | `workspace/changes` | 本轮改动汇总卡片，放在本轮末尾 |
-| `inbox` 投影 | 输入框上方的排队消息 |
+| `inbox` 投影 | 对话末尾的排队消息（可编辑、删除、插队） |
+| `todos` / `goal` 投影 | 输入框上方的状态条 |
 | `system/message`、`developer/message`、`request/*` | 不展示 |
 | 未知事件类型 | 不展示，写调试日志 |
 
@@ -455,11 +466,11 @@ M3 中确定的几条规则：
 | `edit` `write` `apply_patch` | "已编辑 utils.ts +3 −1" / "已新建 notes.md +4"，点击打开 Diff | 失败时显示错误 |
 | `bash` `pwsh` | "已运行 pnpm test utils"，失败时标红 | 输出（截断到 4000 字） |
 | `terminal_*` `job_*` | "终端：dev server · 运行中" | 状态和最近输出 |
-| `todo_write` | 不在对话流里重复出现，更新输入框上方的待办状态 | — |
+| `todo_write` | 不在对话流里出现，更新输入框上方的待办状态条 | — |
 | `subagent` | "子任务：分析依赖 · 运行中/完成" | 任务描述和结果摘要 |
 | `web_search` `web_fetch` | "搜索网页：xxx" / "读取网页：域名" | 结果列表 |
 | `ask_user_question` | 等待回答时由问答卡片接管；回答后是一行"提问 改动范围？" | "回答：只改测试" |
-| `exit_plan_mode` | 由计划审阅卡片接管 | — |
+| `exit_plan_mode` | 等待审阅时由计划审阅卡片接管；之后是一行"计划 重构计划 已批准 / 继续完善" | — |
 | `create_goal` `update_goal` `get_goal` | 更新输入框上方的目标状态 | — |
 | `present` | "交付文件：report.md"，点击打开 | — |
 | `skill` | "使用 skill：xxx" | — |
@@ -527,6 +538,8 @@ interface BridgeMessage<T extends string = string, P = unknown> {
 | `openDiff` / `openFile` | 打开改动的 Diff / 打开文件（可带行范围） |
 | `searchFiles` | `{ requestId, query }`：`@` 补全 |
 | `removeAttachment` | 移除固定的上下文标签 |
+| `queueAction` | `{ action: 'edit' \| 'remove' \| 'steer' \| 'send', itemId, text? }`：排队消息 |
+| `renameSession` / `configureApiKey` / `selectFolder` | 由 Host 弹出 VS Code 的原生输入框或选择框 |
 | `saveAll` / `openExternal` / `openWebUI` / `restartRuntime` / `showLogs` | 其他操作 |
 
 **Host → Webview**
@@ -679,13 +692,16 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | `dsh.fixSelection` | DSH：修复这段代码 | 命令面板、编辑器右键「DSH」 |
 | `dsh.testSelection` | DSH：为这段代码写测试 | 命令面板、编辑器右键「DSH」 |
 | `dsh.addToChat` | DSH：添加到对话 | 命令面板、编辑器右键「DSH」 |
+| `dsh.renameSession` | DSH：重命名会话 | 命令面板、更多菜单 |
+| `dsh.configureApiKey` | DSH：配置 API Key | 命令面板、更多菜单、空状态、缺少 Key 的提示 |
+| `dsh.selectFolder` | DSH：选择对话对应的文件夹 | 命令面板（多根工作区）、更多菜单 |
 | `dsh.interrupt` | DSH：停止生成 | 命令面板 |
 | `dsh.selectModel` | DSH：切换模型 | 命令面板 |
 | `dsh.openWebUI` | DSH：在浏览器中打开 dsh | 命令面板、更多菜单 |
 | `dsh.restartRuntime` | DSH：重启 dsh | 命令面板、状态提示 |
 | `dsh.showLogs` | DSH：查看日志 | 命令面板、更多菜单 |
 
-计划中：在编辑器中打开对话、配置 API Key。
+计划中：在编辑器中打开对话。
 
 ---
 
@@ -765,9 +781,9 @@ dsh-vscode-copilot/
 
 | 层级 | 范围 | 做法 | 命令 |
 | --- | --- | --- | --- |
-| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
+| 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、排队消息与队列操作、计划审阅、状态条、重命名、API Key 配置、切换文件夹、投影缓存与现算一致、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
-| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
 | 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
 | 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
 | 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
@@ -861,16 +877,28 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - 新对话的 `@` 补全只有文件、没有目录（VS Code 的文件搜索不返回目录）；会话创建后与 dsh 一致
 - 斜杠命令的参数补全（例如 `/permission` 后列出预设）
 
-### M4：完善（约 1.5 周）
+### M4：完善（已完成）
 
-- [ ] 排队消息、计划审阅、审批前预览 Diff
-- [ ] 输入框上方状态条：待办、子任务、目标
-- [ ] 会话搜索、重命名、加载更早的历史
-- [ ] 首次使用引导（检测未配置 API Key）
-- [ ] 长会话性能（虚拟列表、合并推送）、中英文界面
+- [x] 排队消息（编辑、删除、插队、停止后现在发送）、计划审阅；审批前预览 Diff 已在 M2 完成
+- [x] 输入框上方状态条：待办、目标
+- [x] 会话重命名；按标题搜索（M1 已有）；加载更早的历史（M1 已有）
+- [x] 首次使用引导：检测未配置 API Key，用原生密码输入框配置
+- [x] 多根工作区：选择对话对应的文件夹
+- [x] 长会话性能：持久事件投影缓存、增量按对象比较、`content-visibility`
+
+**验收结果**：界面端到端测试 87/87（dsh `0.2.1-rc.5` 和 `0.2.2-alpha.3`）、真实 VS Code 16/16、冒烟测试 33/33、单元测试 165 个。截图见 `docs/images/m4-*.png`。
+
+**没有做到或推迟的**：
+
+- 中英文界面（M5）：界面文字较多，放到发布前统一处理
+- 子 Agent 状态（P2）：`subagentCatalog` 投影已确认可用，界面没做
+- dsh 的会话全文搜索：默认部署关闭（`session-query` 的 `openAt` 为 `never`），`session/search` 返回错误；保留按标题过滤
+- 多根工作区切换文件夹只有单元测试，没有在真实 VS Code 里跑
+- 没有 API Key 时，空状态的引导写入默认的 `DEEPSEEK_API_KEY`；改过 `apiKeyEnv` 的用户要先发一条消息，从 `MISSING_CREDENTIAL` 的提示里配置（那里带着 dsh 要求的名字）
 
 ### M5：稳定性与发布（约 1 周）
 
+- [ ] 中英文界面（从 M4 移过来）
 - [ ] 集成测试 + fixture 回归测试 + 多版本兼容 CI
 - [ ] 安全自查（第 7 节逐条）、界面原则自查（3.1 逐条）
 - [ ] 三平台 + Remote-SSH 手工验收

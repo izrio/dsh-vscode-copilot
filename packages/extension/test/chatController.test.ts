@@ -14,6 +14,7 @@ function fakeClient() {
   const follows = new Map<string, AsyncQueue<FollowFrame>>();
   const prompts: { sessionId: string; text: string; requestId: string }[] = [];
   const commands: { sessionId: string; line: string }[] = [];
+  const calls: { method: string; args: unknown[] }[] = [];
   const waterfalls = new Map<string, WaterfallHandler>();
   let seq = 0;
   let eventId = 0;
@@ -40,6 +41,12 @@ function fakeClient() {
       { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]' } },
     ],
     fileReferences: async (_sessionId: string, query: string) => [{ path: `src/${query}.ts`, kind: 'file' }],
+    updateQueue: async (...args: unknown[]) => void calls.push({ method: 'updateQueue', args }),
+    rename: async (sessionId: string, title: string) => {
+      calls.push({ method: 'rename', args: [sessionId, title] });
+      return title.trim();
+    },
+    setCredential: async (...args: unknown[]) => void calls.push({ method: 'setCredential', args }),
     executeCommand: async (sessionId: string, line: string) => {
       commands.push({ sessionId, line });
       return { kind: 'success', text: line };
@@ -88,6 +95,7 @@ function fakeClient() {
     client: client as unknown as DshClient,
     prompts,
     commands,
+    calls,
     /** dsh 转发了一个需要回答的请求。 */
     waterfall(event: string, agentId: string, request: Record<string, unknown>) {
       const abort = new AbortController();
@@ -599,6 +607,137 @@ describe('ChatController', () => {
       const service = (controller as unknown as { service: { acceptSnapshotProjections: (id: string, b: unknown) => void } }).service;
       service.acceptSnapshotProjections('s1', { values: { plan: { active: true, pending: false } } });
       expect(controller.snapshot().session.planMode).toBe(true);
+    });
+  });
+
+  describe('M4：排队、计划审阅、状态条、重命名、API Key、多根工作区', () => {
+    async function opened(workbench: Workbench = noWorkbench) {
+      const ctx = setup(workbench);
+      ctx.controller.setClient(ctx.fake.client);
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      const service = (ctx.controller as unknown as { service: { acceptSnapshotProjections: (id: string, b: unknown) => void } }).service;
+      const setProjections = (values: Record<string, unknown>) => service.acceptSnapshotProjections('s1', { values });
+      return { ...ctx, setProjections };
+    }
+
+    const queued = (id: string, rpcId: string, text: string) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId } });
+
+    it('dsh 队列里的消息显示为排队中，带队列信息；替代同一条的本地回显', async () => {
+      const { controller, fake, setProjections } = await opened();
+      const { requestId } = fake.prompts[0]!;
+      setProjections({ inbox: { 'next-turn': [queued('m1', requestId, '你好'), queued('m2', 'r-other', '第二条\n\n<ide_context>\nx\n<active-file path="a.ts" />\n</ide_context>')], 'next-step': [] } });
+      await flush();
+      const users = controller.snapshot().items.filter((item) => item.kind === 'user');
+      expect(users).toEqual([
+        { kind: 'user', id: `p:${requestId}`, text: '你好', pending: 'queued', requestId, queue: { itemId: 'm1', target: 'next-turn' } },
+        { kind: 'user', id: 'p:r-other', text: '第二条', attachments: [{ kind: 'file', path: 'a.ts' }], pending: 'queued', requestId: 'r-other', queue: { itemId: 'm2', target: 'next-turn' } },
+      ]);
+    });
+
+    it('编辑排队的消息时保留原来的上下文块；删除、插队直接转给 dsh', async () => {
+      const { controller, fake, setProjections } = await opened();
+      setProjections({ inbox: { 'next-turn': [queued('m2', 'r2', '第二条\n\n<ide_context>\nx\n<active-file path="a.ts" />\n</ide_context>')], 'next-step': [] } });
+      await controller.handle({ type: 'queueAction', payload: { action: 'edit', itemId: 'm2', text: '第二条（改）' } });
+      await controller.handle({ type: 'queueAction', payload: { action: 'steer', itemId: 'm2' } });
+      await controller.handle({ type: 'queueAction', payload: { action: 'remove', itemId: 'm2' } });
+      expect(fake.calls.filter((c) => c.method === 'updateQueue').map((c) => c.args)).toEqual([
+        ['s1', 'm2', { kind: 'edit', text: '第二条（改）\n\n<ide_context>\nx\n<active-file path="a.ts" />\n</ide_context>' }],
+        ['s1', 'm2', { kind: 'steer' }],
+        ['s1', 'm2', { kind: 'remove' }],
+      ]);
+    });
+
+    it('计划审阅：提问带上 intent，"继续完善"的选项标签也带上', async () => {
+      const { controller, fake } = await opened();
+      fake.waterfall('user-questions/request', 's1', {
+        questions: [
+          {
+            id: 'plan-review',
+            header: 'Plan review',
+            question: 'Approve this plan and leave plan mode?',
+            detail: '# 计划\n\n1. 拆分',
+            options: [{ label: 'Approve' }, { label: 'Keep planning' }],
+            intent: { kind: 'plan-review', approve: 'Approve', callId: 'c1' },
+          },
+        ],
+      });
+      await flush();
+      expect(controller.snapshot().interactions[0]).toMatchObject({
+        kind: 'question',
+        questions: [{ id: 'plan-review', detail: '# 计划\n\n1. 拆分', intent: { kind: 'plan-review', approve: 'Approve', keepPlanning: 'Keep planning' } }],
+      });
+    });
+
+    it('待办和目标显示在会话信息里', async () => {
+      const { controller, setProjections } = await opened();
+      setProjections({
+        todos: [{ content: '读代码', status: 'completed' }, { content: '改实现', status: 'in_progress' }, { content: 'bad' }],
+        goal: { goal: { id: 'g', revision: 2, objective: '把测试修绿', phase: 'active', maxGoalRounds: 10 }, roundsStarted: 2, createdAt: 0, updatedAt: 0 },
+      });
+      expect(controller.snapshot().session).toMatchObject({
+        todos: [{ content: '读代码', status: 'completed' }, { content: '改实现', status: 'in_progress' }],
+        goal: { objective: '把测试修绿', phase: 'active', round: 2, maxRounds: 10 },
+      });
+    });
+
+    it('重命名：用原生输入框，取消时不改', async () => {
+      const answers: (string | undefined)[] = [undefined, ' 新标题 '];
+      const { controller, fake } = await opened({ ...noWorkbench, input: async () => answers.shift() });
+      await controller.handle({ type: 'renameSession', payload: {} });
+      expect(fake.calls.filter((c) => c.method === 'rename')).toEqual([]);
+      await controller.handle({ type: 'renameSession', payload: {} });
+      expect(fake.calls.filter((c) => c.method === 'rename').map((c) => c.args)).toEqual([['s1', '新标题']]);
+      expect(controller.snapshot().session.title).toBe('新标题');
+    });
+
+    it('没有 API Key：模型目录为空时提示配置；保存到 dsh 要求的凭据名并重新读取目录', async () => {
+      const inputs: { password?: boolean }[] = [];
+      const workbench: Workbench = { ...noWorkbench, input: async (options) => (inputs.push(options), 'sk-test') };
+      const { controller, fake } = setup(workbench);
+      let catalogCalls = 0;
+      (fake.client as unknown as { modelCatalog: () => Promise<unknown> }).modelCatalog = async () =>
+        ++catalogCalls === 1
+          ? { default: { provider: 'deepseek-official', model: 'deepseek-flash' }, groups: [] }
+          : { groups: [{ id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash', name: 'Flash' }] }] };
+      controller.setClient(fake.client);
+      await flush();
+      expect(controller.snapshot().models.needsApiKey).toBe(true);
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      fake.emit('s1', 'turn/end', { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'no API key; store MY_KEY through the credentials service' } } });
+      await flush();
+      controller.snapshot();
+      await controller.handle({ type: 'configureApiKey', payload: {} });
+      expect(inputs[0]?.password).toBe(true);
+      expect(fake.calls.filter((c) => c.method === 'setCredential').map((c) => c.args)).toEqual([['MY_KEY', 'sk-test']]);
+      expect(controller.snapshot().models.needsApiKey).toBeUndefined();
+    });
+
+    it('多根工作区切换文件夹：重新读取会话列表，新对话在新文件夹里创建', async () => {
+      const { controller, fake } = setup();
+      const workspaces: string[] = [];
+      const client = fake.client as unknown as { ensureWorkspace: (path: string) => Promise<unknown>; listSessions: () => Promise<unknown[]> };
+      client.ensureWorkspace = async (path: string) => (workspaces.push(path), { workspaceId: `w:${path}`, created: false });
+      controller.setClient(fake.client);
+      await flush();
+      controller.setWorkspace('/other');
+      await flush();
+      expect(workspaces).toEqual(['/w', '/other']);
+      expect(controller.snapshot().session.id).toBeUndefined();
+    });
+
+    it('推送增量时，没变的条目不重复推送（持久事件投影有缓存）', async () => {
+      const { controller, fake, patches } = await opened();
+      fake.emit('s1', 'user/message', { content: [{ type: 'text', text: '你好' }], source: { kind: 'user', rpcId: fake.prompts[0]!.requestId } });
+      fake.emit('s1', 'assistant/message', { message: { content: [{ type: 'text', text: '在的' }] } });
+      await flush();
+      controller.render();
+      const before = patches().length;
+      controller.workspaceChanged();
+      await flush();
+      expect(patches().length).toBe(before);
     });
   });
 });

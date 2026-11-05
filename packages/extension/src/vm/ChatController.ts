@@ -30,6 +30,7 @@ import { RemoteError } from '../dsh/remote/errors.ts';
 import { SessionService } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
 import {
+  CONTEXT_OPEN,
   isTemplate,
   parseSlash,
   PLUGIN_COMMANDS,
@@ -39,7 +40,7 @@ import {
   type SelectionContext,
   type TemplateName,
 } from './context.ts';
-import { displayPath, project, toolVariant, type ToolCallInfo } from './projector.ts';
+import { displayPath, project, projectEvents, toolVariant, type EventsProjection, type ToolCallInfo } from './projector.ts';
 import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
 
 export interface ChatControllerOptions {
@@ -59,10 +60,15 @@ export interface ChatControllerOptions {
   readonly workbench?: Workbench;
   /** 设置 `dsh.context.includeActiveEditor`：默认附带当前编辑器。 */
   readonly includeActiveEditor?: () => boolean;
+  /** 多根工作区：让用户选择文件夹（选好后调用 setWorkspace）。 */
+  readonly selectFolder?: () => void;
+  /** 多根工作区时当前文件夹的显示名。 */
+  readonly folderLabel?: () => string | undefined;
   readonly renderDelayMs?: number;
 }
 
 const NEW_SESSION_TITLE = '新对话';
+const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
 /** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
 const HIDDEN_DSH_COMMANDS = new Set(['export']);
@@ -103,17 +109,39 @@ export class ChatController {
   private pinCounter = 0;
   /** dsh 的斜杠命令目录（各会话相同），打开会话时读取。 */
   private dshCommands: CommandView[] = [];
+  private client: DshClient | undefined;
+  private workspacePath: string;
+  /** dsh 在 MISSING_CREDENTIAL 里要求配置的凭据名。 */
+  private credentialRef: string | undefined;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private serviceGeneration = 0;
 
   // 上次推送给 Webview 的内容，用来计算增量
   private sentSessionKey: string | undefined;
   private sentItems = new Map<string, string>();
+  /** 上次推送的条目对象：对象没变时不用再序列化比较。 */
+  private sentObjects = new Map<string, Item>();
+  /** 持久事件投影的缓存（流式输出时持久事件不变）。 */
+  private eventsMemo: { readonly key: readonly unknown[]; readonly value: EventsProjection } | undefined;
+  /** 改动汇总每读到一份递增，作为缓存键的一部分。 */
+  private changesVersion = 0;
   private sentOrder: readonly string[] = [];
   private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '', context: '', commands: '' };
 
   constructor(private readonly options: ChatControllerOptions) {
+    this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
+  }
+
+  /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
+  setWorkspace(path: string): void {
+    if (path === this.workspacePath) return;
+    this.workspacePath = path;
+    this.pinned = [];
+    this.activeId = this.options.loadActiveSessionId();
+    this.staleService = undefined;
+    this.staleStream = undefined;
+    this.setClient(this.client);
   }
 
   private get workbench(): Workbench {
@@ -175,6 +203,7 @@ export class ChatController {
 
   /** 连接建立（或重连）时传入新 client；断开时传 undefined。 */
   setClient(client: DshClient | undefined): void {
+    this.client = client;
     const generation = ++this.serviceGeneration;
     if (this.stream) {
       this.stream.dispose();
@@ -196,11 +225,12 @@ export class ChatController {
     const origin = client.credential?.origin;
     if (origin !== this.changesOrigin) {
       this.changes.clear();
+      this.changesVersion++;
       this.changesOrigin = origin;
     }
     const service = new SessionService({
       client,
-      workspacePath: this.options.workspacePath,
+      workspacePath: this.workspacePath,
       onChange: () => this.scheduleRender(),
       log: this.options.log,
     });
@@ -235,6 +265,7 @@ export class ChatController {
     const view = this.compute();
     this.sentSessionKey = view.sessionKey;
     this.sentItems = new Map(view.items.map((item) => [item.id, JSON.stringify(item)]));
+    this.sentObjects = new Map(view.items.map((item) => [item.id, item]));
     this.sentOrder = view.items.map((item) => item.id);
     this.sentJson = {
       sessions: JSON.stringify(view.sessions),
@@ -270,6 +301,15 @@ export class ChatController {
         return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true });
       case 'searchFiles':
         return this.searchFiles(message.payload.requestId, message.payload.query);
+      case 'queueAction':
+        return this.queueAction(message.payload);
+      case 'renameSession':
+        return this.renameSession();
+      case 'configureApiKey':
+        return this.configureApiKey();
+      case 'selectFolder':
+        this.options.selectFolder?.();
+        return;
       case 'removeAttachment':
         this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
         this.scheduleRender();
@@ -377,6 +417,7 @@ export class ChatController {
       if (error instanceof ChangesUnavailableError) {
         // 汇总已经不在 Host 内存里：卡片改为按文件工具汇总，那里的 Diff 来自会话日志
         this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
+        this.changesVersion++;
         this.scheduleRender();
         this.toast('info', '这一轮的改动记录已不可用（dsh 重启过），已改为显示文件工具的修改');
       } else this.toast('error', `无法读取改动：${describe(error)}`);
@@ -405,7 +446,7 @@ export class ChatController {
   }
 
   private absolute(path: string): string {
-    return isAbsolute(path) ? path : resolve(this.options.workspacePath, path);
+    return isAbsolute(path) ? path : resolve(this.workspacePath, path);
   }
 
   /**
@@ -446,7 +487,7 @@ export class ChatController {
     }
     try {
       const sessionId = await this.ensureSession(service);
-      await service.prompt(sessionId, withContext(text, attachments, this.options.workspacePath));
+      await service.prompt(sessionId, withContext(text, attachments, this.workspacePath));
       if (this.pinned.length) {
         this.pinned = [];
         this.scheduleRender();
@@ -454,6 +495,80 @@ export class ChatController {
     } catch (error) {
       this.options.log(`发送失败：${describe(error)}`);
       this.toast('error', friendlyError(error));
+    }
+  }
+
+  private async queueAction(payload: Extract<WebviewToHost, { type: 'queueAction' }>['payload']): Promise<void> {
+    const sessionId = this.activeId;
+    const client = this.service?.client;
+    if (!sessionId || !client) return;
+    try {
+      if (payload.action === 'send') {
+        // dsh 停止生成后保留队列，但不会自己开始新的一轮：取出来重新发送（保留原文和上下文）
+        const original = queuedText(this.service?.projections(sessionId).inbox, payload.itemId);
+        if (original === undefined) return;
+        await client.updateQueue(sessionId, payload.itemId, { kind: 'remove' });
+        await this.service?.prompt(sessionId, original);
+      } else if (payload.action === 'edit') {
+        // 界面上只编辑正文；原消息末尾的上下文块原样保留
+        const original = queuedText(this.service?.projections(sessionId).inbox, payload.itemId);
+        const at = original?.lastIndexOf(`\n\n${CONTEXT_OPEN}\n`) ?? -1;
+        const text = at >= 0 && original ? `${payload.text}${original.slice(at)}` : payload.text;
+        await client.updateQueue(sessionId, payload.itemId, { kind: 'edit', text });
+      } else {
+        await client.updateQueue(sessionId, payload.itemId, { kind: payload.action });
+      }
+    } catch (error) {
+      // 消息可能刚好被送达，已经不在队列里
+      this.toast('info', error instanceof RemoteError ? '这条消息已经发出，不能再修改' : `操作失败：${describe(error)}`);
+      this.options.log(`修改排队消息失败：${describe(error)}`);
+    }
+  }
+
+  async renameSession(): Promise<void> {
+    const sessionId = this.activeId;
+    const service = this.service;
+    if (!sessionId || !service) {
+      this.toast('info', '新对话发送第一条消息后才能重命名');
+      return;
+    }
+    const current = titleOf(service.projections(sessionId), []);
+    const title = (await this.workbench.input({ title: '重命名会话', value: current === NEW_SESSION_TITLE ? '' : current }))?.trim();
+    if (!title || title === current) return;
+    try {
+      await service.rename(sessionId, title);
+    } catch (error) {
+      this.toast('error', `重命名失败：${describe(error)}`);
+    }
+  }
+
+  /**
+   * 配置 API Key：用 VS Code 的密码输入框（Key 不经过 Webview），保存到 dsh 的凭据存储，立即生效。
+   * 凭据名取 dsh 在 MISSING_CREDENTIAL 里给出的名字，默认 `DEEPSEEK_API_KEY`。
+   */
+  async configureApiKey(): Promise<void> {
+    const service = this.service;
+    if (!service) {
+      this.toast('error', 'dsh 尚未连接，请稍后再试');
+      return;
+    }
+    const ref = this.credentialRef ?? DEFAULT_CREDENTIAL_REF;
+    const value = (
+      await this.workbench.input({
+        title: '配置 DeepSeek API Key',
+        prompt: `保存到 dsh 的凭据存储（${ref}），与 dsh Web UI、桌面版共用`,
+        placeHolder: 'sk-…',
+        password: true,
+      })
+    )?.trim();
+    if (!value) return;
+    try {
+      await service.client.setCredential(ref, value);
+      await service.reloadModels().catch((error: unknown) => this.options.log(`重新读取模型目录失败：${describe(error)}`));
+      this.credentialRef = undefined;
+      this.toast('info', 'API Key 已保存');
+    } catch (error) {
+      this.toast('error', `保存 API Key 失败：${describe(error)}`);
     }
   }
 
@@ -652,11 +767,15 @@ export class ChatController {
     const order = items.map((item) => item.id);
     const upsert: Item[] = [];
     const next = new Map<string, string>();
+    const objects = new Map<string, Item>();
     for (const item of items) {
-      const json = JSON.stringify(item);
-      next.set(item.id, json);
+      objects.set(item.id, item);
+      // 同一个对象（来自缓存的持久事件投影）内容一定没变
+      const json = this.sentObjects.get(item.id) === item ? this.sentItems.get(item.id) : JSON.stringify(item);
+      next.set(item.id, json ?? JSON.stringify(item));
       if (reset || this.sentItems.get(item.id) !== json) upsert.push(item);
     }
+    this.sentObjects = objects;
     const orderChanged = reset || order.length !== this.sentOrder.length || order.some((id, i) => id !== this.sentOrder[i]);
     this.sentSessionKey = sessionKey;
     this.sentItems = next;
@@ -689,21 +808,30 @@ export class ChatController {
 
     const pending = sessionId && service ? service.pending(sessionId) : [];
     const streamLive = stream?.status.kind === 'live';
+    const events = stream?.journal.events ?? [];
+    const changes = (seq: number) => {
+      const value = sessionId ? this.changes.get(`${sessionId}:${seq}`) : undefined;
+      return value === 'loading' ? undefined : value;
+    };
+    const key = [events, events.length, events[0]?.seq, events.at(-1)?.seq, this.workspacePath, this.changesVersion];
+    if (!this.eventsMemo || this.eventsMemo.key.some((part, i) => part !== key[i])) {
+      this.eventsMemo = { key, value: projectEvents({ events, workspacePath: this.workspacePath, changes }) };
+    }
     const projection = project({
-      events: stream?.journal.events ?? [],
+      events,
       live: stream?.journal.live,
       pending,
       ...(streamLive ? {} : { fallbackRunning: summary?.running ?? false }),
-      workspacePath: this.options.workspacePath,
-      changes: (seq) => {
-        const value = sessionId ? this.changes.get(`${sessionId}:${seq}`) : undefined;
-        return value === 'loading' ? undefined : value;
-      },
-    });
+      workspacePath: this.workspacePath,
+      inbox: projections.inbox,
+      changes,
+    }, this.eventsMemo.value);
     this.toolCalls = projection.toolCalls;
+    if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
     if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
-    if (sessionId && service && projection.persistedRequestIds.size > 0) {
-      service.retirePending(sessionId, projection.persistedRequestIds);
+    // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
+    if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
+      service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
     }
 
     const streamStatus = stream?.status;
@@ -719,6 +847,9 @@ export class ChatController {
       ...(streamStatus?.kind === 'failed' ? { failure: streamStatus.message } : {}),
       ...contextUsageOf(projections),
       ...((projections.plan as { active?: boolean } | undefined)?.active ? { planMode: true } : {}),
+      ...todosOf(projections),
+      ...goalOf(projections),
+      ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();
@@ -757,7 +888,7 @@ export class ChatController {
   private contextState(): ContextState {
     const view = (a: ContextAttachment) => ({
       kind: a.kind,
-      path: displayPath(a.path, this.options.workspacePath),
+      path: displayPath(a.path, this.workspacePath),
       ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
     });
     const active = this.snapshotAttachment(this.workbench.activeEditor());
@@ -782,7 +913,10 @@ export class ChatController {
           if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
           this.changes.set(key, 'unavailable');
         },
-      ).finally(() => this.scheduleRender());
+      ).finally(() => {
+        this.changesVersion++;
+        this.scheduleRender();
+      });
     }
   }
 
@@ -798,6 +932,9 @@ export class ChatController {
         ...(q.detail ? { detail: q.detail } : {}),
         options: q.options ?? [],
         multiSelect: q.multiSelect ?? q.multi_select ?? false,
+        ...(q.intent?.kind === 'plan-review' && q.intent.approve
+          ? { intent: { kind: 'plan-review' as const, approve: q.intent.approve, ...(keepPlanningLabel(q) ? { keepPlanning: keepPlanningLabel(q) } : {}) } }
+          : {}),
       })),
     };
   }
@@ -814,8 +951,8 @@ export class ChatController {
     const path = call?.path;
     let subject: { subject: string; subjectKind: 'command' | 'file' } | undefined;
     if (typeof command === 'string' && command.trim()) subject = { subject: command.trim(), subjectKind: 'command' };
-    else if (path) subject = { subject: displayPath(path, this.options.workspacePath), subjectKind: 'file' };
-    const dirty = path && variant === 'edit' && this.workbench.dirtyFiles().includes(path) ? [displayPath(path, this.options.workspacePath)] : [];
+    else if (path) subject = { subject: displayPath(path, this.workspacePath), subjectKind: 'file' };
+    const dirty = path && variant === 'edit' && this.workbench.dirtyFiles().includes(path) ? [displayPath(path, this.workspacePath)] : [];
     return {
       kind: 'approval',
       id: pending.id,
@@ -851,7 +988,9 @@ export class ChatController {
     }
     const selection = (projections.modelSelection as { next?: ModelSelection } | undefined)?.next;
     const current = selection ?? this.draftModel ?? (catalog?.default?.provider && catalog.default.model ? (catalog.default as ModelSelection) : undefined);
-    return { options, ...(current ? { current: { provider: current.provider, model: current.model, ...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}) } } : {}) };
+    // 目录读到了但一个模型都没有：DeepSeek 官方服务在没有 API Key 时不列出模型
+    const needsApiKey = catalog !== undefined && options.length === 0;
+    return { ...(needsApiKey ? { needsApiKey } : {}), options, ...(current ? { current: { provider: current.provider, model: current.model, ...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}) } } : {}) };
   }
 
   private toast(level: 'info' | 'error', text: string): void {
@@ -882,6 +1021,50 @@ function contextUsageOf(projections: Readonly<Record<string, unknown>>): { conte
   const pressure = projections.contextPressure as { pressureTokens?: number; contextWindow?: number } | undefined;
   if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return {};
   return { contextUsage: Math.min(1, Math.max(0, pressure.pressureTokens / pressure.contextWindow)) };
+}
+
+/** 队列里某条消息的完整文本（含上下文块）。 */
+function queuedText(inbox: unknown, itemId: string): string | undefined {
+  if (!inbox || typeof inbox !== 'object') return undefined;
+  for (const list of Object.values(inbox as Record<string, unknown>)) {
+    if (!Array.isArray(list)) continue;
+    const item = list.find((entry: { id?: unknown }) => entry?.id === itemId) as { content?: { type?: string; text?: string }[] } | undefined;
+    if (item) return (item.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
+  }
+  return undefined;
+}
+
+/** 计划审阅里"继续完善"的选项标签：不是批准的那个。 */
+function keepPlanningLabel(q: { options?: { label: string }[]; intent?: { approve?: string } }): string | undefined {
+  return q.options?.find((o) => o.label !== q.intent?.approve)?.label;
+}
+
+function todosOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'todos'> {
+  const todos = projections.todos;
+  if (!Array.isArray(todos) || todos.length === 0) return {};
+  const valid = todos.filter(
+    (t): t is { content: string; status: 'pending' | 'in_progress' | 'completed' } =>
+      !!t && typeof t.content === 'string' && ['pending', 'in_progress', 'completed'].includes(t.status),
+  );
+  return valid.length ? { todos: valid.map((t) => ({ content: t.content, status: t.status })) } : {};
+}
+
+function goalOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'goal'> {
+  const value = projections.goal as
+    | { goal?: { objective?: string; phase?: string; maxGoalRounds?: number; blockedReason?: { message?: string } }; roundsStarted?: number }
+    | null
+    | undefined;
+  const goal = value?.goal;
+  if (!goal?.objective || !['active', 'paused', 'blocked', 'complete'].includes(goal.phase ?? '')) return {};
+  return {
+    goal: {
+      objective: goal.objective,
+      phase: goal.phase as 'active' | 'paused' | 'blocked' | 'complete',
+      round: value?.roundsStarted ?? 0,
+      maxRounds: goal.maxGoalRounds ?? 0,
+      ...(goal.blockedReason?.message ? { blockedReason: goal.blockedReason.message } : {}),
+    },
+  };
 }
 
 function withoutDiagnostics(selection: SelectionContext): SelectionContext {

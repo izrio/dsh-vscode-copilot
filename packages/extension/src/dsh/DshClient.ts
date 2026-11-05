@@ -327,6 +327,25 @@ export class DshClient {
     return response.json();
   }
 
+  /** 修改还在队列里的消息：编辑内容、删除，或插队（在当前回复的下一步送达）。 */
+  async updateQueue(sessionId: string, itemId: string, action: { kind: 'edit'; text: string } | { kind: 'remove' } | { kind: 'steer' }): Promise<void> {
+    const wire = action.kind === 'edit' ? { kind: 'edit', content: [{ type: 'text', text: action.text }] } : action;
+    parse(acceptedValue, await this.unary.call('session/updateQueue', { request: { sessionId, itemId, action: wire } }), 'session/updateQueue');
+  }
+
+  /** 重命名会话；返回 dsh 规范化后的标题。 */
+  async rename(sessionId: string, title: string): Promise<string> {
+    return parse(z.object({ title: z.string() }), await this.unary.call('session/rename', { request: { sessionId, title } }), 'session/rename').title;
+  }
+
+  /**
+   * 保存一个凭据（例如 `DEEPSEEK_API_KEY`）到 dsh 的凭据存储。值只往 dsh 方向传，dsh 不会返回它。
+   * 保存后立即生效，不需要重启。
+   */
+  async setCredential(ref: string, value: string): Promise<void> {
+    await this.unary.call('credentials/set', { ref, value });
+  }
+
   async cancel(sessionId: string): Promise<void> {
     parse(acceptedValue, await this.unary.call('session/cancel', { request: { sessionId } }), 'session/cancel');
   }

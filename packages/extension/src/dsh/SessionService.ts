@@ -67,6 +67,19 @@ export class SessionService {
     return this.summaries;
   }
 
+  /** 重新读取模型目录（例如刚配置了 API Key）。 */
+  async reloadModels(): Promise<void> {
+    this.catalog = await this.client.modelCatalog();
+    this.options.onChange();
+  }
+
+  /** 重命名并立即更新本地标题（dsh 也会通过 session/control 推送）。 */
+  async rename(sessionId: string, title: string): Promise<void> {
+    const accepted = await this.client.rename(sessionId, title);
+    this.projectionValues.set(sessionId, { ...this.projectionValues.get(sessionId), title: accepted });
+    this.options.onChange();
+  }
+
   async init(): Promise<void> {
     const { workspaceId } = await this.client.ensureWorkspace(this.options.workspacePath);
     this.workspaceId = workspaceId;

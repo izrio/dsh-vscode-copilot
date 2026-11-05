@@ -24,6 +24,7 @@ export interface Locator {
   getAttribute(name: string): Promise<string | null>;
   locator(selector: string, options?: LocatorOptions): Locator;
   getByRole(role: string, options?: { name?: string | RegExp }): Locator;
+  filter(options: LocatorOptions): Locator;
 }
 
 export interface LocatorOptions {

@@ -14,6 +14,7 @@ import { ContextChips } from './ContextChips.tsx';
 import { ArrowUpIcon, CloseIcon, PlanIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
+import { StatusStrip } from './StatusStrip.tsx';
 
 const MAX_HEIGHT = 200;
 const SEARCH_DELAY_MS = 60;
@@ -173,6 +174,7 @@ export function Composer() {
   const showStop = session.running && text.trim().length === 0;
   return (
     <div className="composer-wrap">
+      <StatusStrip />
       {dirtyFiles > 0 ? (
         <div className="dirty-strip" data-testid="dirty-strip">
           <span>{dirtyFiles} 个文件有未保存的修改，dsh 读取和修改的是磁盘上的版本</span>

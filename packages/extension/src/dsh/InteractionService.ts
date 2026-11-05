@@ -31,6 +31,7 @@ const questionSchema = z.object({
       options: z.array(z.object({ label: z.string(), description: z.string().optional() })).optional(),
       multiSelect: z.boolean().optional(),
       multi_select: z.boolean().optional(),
+      intent: z.object({ kind: z.string(), approve: z.string().optional(), callId: z.string().optional() }).loose().optional(),
     }),
   ),
 });

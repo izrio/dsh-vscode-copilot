@@ -103,6 +103,20 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
     await vscode.workspace.saveAll(false);
   }
 
+  input(options: { readonly title: string; readonly prompt?: string; readonly value?: string; readonly placeHolder?: string; readonly password?: boolean }): Promise<string | undefined> {
+    return Promise.resolve(
+      vscode.window.showInputBox({
+        title: options.title,
+        ...(options.prompt ? { prompt: options.prompt } : {}),
+        ...(options.value !== undefined ? { value: options.value } : {}),
+        ...(options.placeHolder ? { placeHolder: options.placeHolder } : {}),
+        password: options.password ?? false,
+        ignoreFocusOut: true,
+        validateInput: (value) => (value.trim() ? undefined : '不能为空'),
+      }),
+    );
+  }
+
   async confirm(message: string, detail: string, action: string): Promise<boolean> {
     return (await vscode.window.showWarningMessage(message, { modal: true, detail }, action)) === action;
   }

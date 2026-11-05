@@ -5,12 +5,16 @@
 import { useState } from 'react';
 import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
-import { EyeIcon, QuestionIcon, ShieldIcon } from './icons.tsx';
+import { Markdown } from './Markdown.tsx';
+import { EyeIcon, PlanIcon, QuestionIcon, ShieldIcon } from './icons.tsx';
 
 type Of<K extends PendingInteraction['kind']> = Extract<PendingInteraction, { kind: K }>;
 
 export function InteractionCard({ interaction }: { interaction: PendingInteraction }) {
-  return interaction.kind === 'approval' ? <ApprovalCard item={interaction} /> : <QuestionCard item={interaction} />;
+  if (interaction.kind === 'approval') return <ApprovalCard item={interaction} />;
+  const review = interaction.questions.length === 1 ? interaction.questions[0] : undefined;
+  if (review?.intent?.kind === 'plan-review') return <PlanReviewCard id={interaction.id} question={review} />;
+  return <QuestionCard item={interaction} />;
 }
 
 function ApprovalCard({ item }: { item: Of<'approval'> }) {
@@ -56,6 +60,76 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
             <span>预览修改</span>
           </button>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** 计划审阅：显示 dsh 提交的计划，批准后退出计划模式开始执行，或者写反馈让它继续完善。 */
+function PlanReviewCard({ id, question }: { id: string; question: QuestionView }) {
+  const [feedback, setFeedback] = useState<string | undefined>();
+  const [sent, setSent] = useState(false);
+  const intent = question.intent!;
+  const answer = (selected: string, custom?: string) => {
+    setSent(true);
+    postToHost({ type: 'answerQuestion', payload: { id, answers: [{ id: question.id, selected: [selected], ...(custom ? { custom } : {}) }] } });
+  };
+  const keep = intent.keepPlanning ?? question.options.find((o) => o.label !== intent.approve)?.label ?? 'Keep planning';
+  return (
+    <section className="interaction interaction--plan" aria-label="计划审阅" data-testid="plan-review-card">
+      <header className="interaction__header">
+        <PlanIcon />
+        <span>dsh 提交了计划，等你审阅</span>
+      </header>
+      {question.detail ? (
+        <div className="interaction__plan">
+          <Markdown text={question.detail} />
+        </div>
+      ) : null}
+      {feedback !== undefined ? (
+        <textarea
+          className="question__custom interaction__feedback"
+          rows={3}
+          autoFocus
+          value={feedback}
+          placeholder="哪里需要调整？（可以不写）"
+          aria-label="对计划的反馈"
+          disabled={sent}
+          onChange={(event) => setFeedback(event.target.value)}
+        />
+      ) : null}
+      <div className="interaction__actions">
+        {feedback === undefined ? (
+          <>
+            <button type="button" className="button" disabled={sent} onClick={() => answer(intent.approve)}>
+              批准并开始执行
+            </button>
+            <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback('')}>
+              继续完善
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="button" disabled={sent} onClick={() => answer(keep, feedback.trim() || undefined)}>
+              发送反馈
+            </button>
+            <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback(undefined)}>
+              返回
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className="link-button interaction__skip"
+          disabled={sent}
+          title="结束本轮，用输入框自己回复"
+          onClick={() => {
+            setSent(true);
+            postToHost({ type: 'answerQuestion', payload: { id, cancelled: true } });
+          }}
+        >
+          自己回复
+        </button>
       </div>
     </section>
   );

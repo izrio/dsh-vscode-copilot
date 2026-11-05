@@ -1,6 +1,6 @@
 # dsh 对接说明
 
-> 状态：v0.6（M3 已验证）｜ 日期：2026-11-04
+> 状态：v0.7（M4 已验证）｜ 日期：2026-11-04
 >
 > 本文记录调研到的 dsh 事实、参考项目的做法、插件与 dsh 的对接细节，以及 M0 的实测结果。设计决策见 [DESIGN.md](./DESIGN.md)。
 >
@@ -25,7 +25,8 @@
 9. [M0 验证结果](#9-m0-验证结果)
 10. [M2 验证结果](#10-m2-验证结果)
 11. [M3 验证结果](#11-m3-验证结果)
-12. [参考资料](#12-参考资料)
+12. [M4 验证结果](#12-m4-验证结果)
+13. [参考资料](#13-参考资料)
 
 ---
 
@@ -432,7 +433,38 @@ pnpm smoke -- --dsh "$(command -v dsh)" --report smoke-report.json
 
 ---
 
-## 12. 参考资料
+## 12. M4 验证结果
+
+在 `0.2.1-rc.5` 和 `0.2.2-alpha.3` 上用 `scripts/ui-e2e.ts`（87 项）验证，探针脚本记录了下面的线上格式。
+
+### 12.1 接口与投影
+
+| 用途 | 接口 | 格式 |
+| --- | --- | --- |
+| 排队消息 | 投影 `inbox` | `{ 'next-turn': [msg], 'next-step': [msg] }`，`msg = { id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId } }`；`rpcId` 就是 `session/prompt` 的 `requestId` |
+| 修改队列 | `session/updateQueue` | `{ request: { sessionId, itemId, action } }`，`action` 为 `{ kind: 'edit', content: [TextBlock] }` / `{ kind: 'remove' }` / `{ kind: 'steer' }`；返回 `{ accepted: true }`。每次修改持久化一个 `agent/inbox/spliced` 事件 |
+| 计划审阅 | `$events` waterfall `user-questions/request` | 问题 `{ id: 'plan-review', header: 'Plan review', question, detail: <计划 Markdown>, options: [{ label: 'Approve' }, { label: 'Keep planning' }], intent: { kind: 'plan-review', approve: 'Approve', callId } }`。批准：`{ answers: [{ id: 'plan-review', selected: ['Approve'] }] }`；继续完善：选另一个选项，反馈放在 `custom`（带了 `custom` 就不算批准）；取消：dsh 结束本轮 |
+| 计划模式 | 投影 `plan` | `{ active, pending }`；`/plan` 和批准计划都会产生 `plan/mode { active }` |
+| 待办 | 投影 `todos` | `[{ content, status: 'pending' \| 'in_progress' \| 'completed' }]` 或 `null`；来自 `todo_write` 的 `todo/write` 事件，整表替换 |
+| 目标 | 投影 `goal` | `{ goal: { id, revision, objective, phase: 'active' \| 'paused' \| 'blocked' \| 'complete', blockedReason?, maxGoalRounds }, roundsStarted, createdAt, updatedAt }` 或 `null` |
+| 重命名 | `session/rename` | `{ request: { sessionId, title } }` → `{ title, seq }`（标题由 dsh 规范化） |
+| 搜索 | `session/search` | `{ request: { query } }`；默认部署返回 `gateway/internal: session search is disabled`（`session-query` 的 `openAt` 为 `never`） |
+| 凭据 | `credentials/describe` / `set` / `unset` | `describe { refs }` → `{ [ref]: { configured, source?, writable } }`；`set { ref, value }`；值只往 dsh 方向传 |
+
+### 12.2 发现
+
+| 主题 | 发现 | 插件的处理 |
+| --- | --- | --- |
+| 停止生成与队列 | `session/cancel` 保留队列，但不会自己开始新的一轮；插队（`next-step`）的消息也留在队列里，等下一条消息发送时一起送达 | 停止后排队的消息显示"还没发出"，提供"现在发送"（取出后作为新消息发送） |
+| 本地回显与队列 | 消息进入队列后，如果被删除，就不会出现在历史里 | 进入队列后立即撤掉本地回显，避免删除后又冒出来 |
+| 没有 API Key | 模型目录的 `groups` 为空；轮次以 `MISSING_CREDENTIAL` 结束，消息里写明要配置的凭据名（"store DSH_TEST_API_KEY through the credentials service"） | 目录为空时显示配置引导；凭据名从错误消息里取，默认 `DEEPSEEK_API_KEY` |
+| 凭据名 | `settings/describe` 里 `llm-deepseek` 的 `apiKeyEnv` 显示的是默认值，不反映 `settings.yaml` 里改过的值 | 不用它判断凭据名 |
+| 保存凭据 | `credentials/set` 后立即生效：重新读模型目录就有模型，下一轮对话正常，不需要重启 dsh | 保存后重新读取模型目录 |
+| `exit_plan_mode` 的结果 | 批准：内容 "Plan approved …"；继续完善：工具以错误返回 "The user chose to keep planning …"；不在计划模式时调用也是错误 | 按内容区分，只有"继续完善"不算失败 |
+
+---
+
+## 13. 参考资料
 
 **dsh 仓库**：
 

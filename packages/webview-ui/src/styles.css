@@ -349,6 +349,15 @@ button {
   flex-shrink: 0;
 }
 
+/* 长会话：屏幕外的条目跳过布局和绘制（浏览器原生的"虚拟列表"），滚动位置不受影响 */
+.thread > .user,
+.thread > .assistant,
+.thread > .activity,
+.thread > .changes {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
 .thread__older {
   text-align: center;
   font-size: 0.9em;
@@ -1165,6 +1174,139 @@ button.chip:hover {
 .plan-badge {
   gap: 4px;
   color: var(--vscode-textLink-foreground);
+}
+
+/* ---------- 状态条：目标、待办 ---------- */
+
+.status-strip {
+  margin: 0 10px 4px;
+  font-size: 0.88em;
+}
+
+.status-strip__goal,
+.status-strip__todos {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.status-strip__todos {
+  cursor: pointer;
+}
+
+.status-strip__todos:hover {
+  background: var(--hover);
+}
+
+.status-strip svg {
+  flex: none;
+}
+
+.status-strip__label {
+  flex: none;
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.status-strip__text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.status-strip__meta {
+  flex: none;
+  margin-left: auto;
+}
+
+.status-strip__goal--blocked .status-strip__meta {
+  color: var(--vscode-errorForeground);
+}
+
+.todo-list {
+  margin: 2px 0 4px;
+  padding: 0 4px 0 24px;
+  list-style: none;
+}
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.6;
+}
+
+.todo__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 1.6em;
+  color: var(--muted);
+}
+
+.todo__dot {
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.todo--completed {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.todo--in_progress {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+/* 排队消息的编辑框 */
+.queue-editor {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--radius-lg);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground, inherit);
+  font: inherit;
+  resize: vertical;
+}
+
+/* 计划审阅 */
+.interaction__plan {
+  max-height: 320px;
+  overflow: auto;
+  padding: 2px 10px;
+  border-left: 2px solid var(--border);
+}
+
+.interaction__feedback {
+  resize: vertical;
+}
+
+.interaction__skip {
+  margin-left: auto;
+  font-size: 0.9em;
+}
+
+.empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* 未保存文件提示，贴在输入框上方 */

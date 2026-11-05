@@ -67,6 +67,13 @@ export function Header() {
         </button>
         <Popover open={menu === 'more'} onClose={close} className="more-menu" label="更多操作">
           <div role="menu">
+            {session.id ? <MenuItem onSelect={() => (close(), postToHost({ type: 'renameSession', payload: {} }))}>重命名会话</MenuItem> : null}
+            {session.folder ? (
+              <MenuItem hint={session.folder} onSelect={() => (close(), postToHost({ type: 'selectFolder', payload: {} }))}>
+                切换文件夹
+              </MenuItem>
+            ) : null}
+            <MenuItem onSelect={() => (close(), postToHost({ type: 'configureApiKey', payload: {} }))}>配置 API Key</MenuItem>
             <MenuItem onSelect={() => (close(), postToHost({ type: 'openWebUI', payload: {} }))}>在浏览器中打开 dsh</MenuItem>
             <MenuItem onSelect={() => (close(), postToHost({ type: 'restartRuntime', payload: {} }))}>重启 dsh</MenuItem>
             <MenuItem onSelect={() => (close(), postToHost({ type: 'showLogs', payload: {} }))}>查看日志</MenuItem>

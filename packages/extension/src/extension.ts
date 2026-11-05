@@ -13,6 +13,7 @@ import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
+const FOLDER_KEY = 'dsh.folder';
 
 let runtime: RuntimeManager | undefined;
 let connection: DshConnection | undefined;
@@ -23,7 +24,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
-  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? homedir();
+  // 多根工作区：用上次选择的文件夹，默认第一个；dsh 的会话按文件夹（dsh Workspace）分开
+  const folders = (): readonly vscode.WorkspaceFolder[] => (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file');
+  const savedFolder = context.workspaceState.get<string>(FOLDER_KEY);
+  let workspacePath = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath ?? homedir();
+  const sessionKey = () => (folders().length > 1 ? `${ACTIVE_SESSION_KEY}:${workspacePath}` : ACTIVE_SESSION_KEY);
 
   const manager = new RuntimeManager({
     getConfig: () => readRuntimeConfig(workspacePath),
@@ -54,8 +59,10 @@ export function activate(context: vscode.ExtensionContext): void {
     workspacePath,
     post: (message) => provider?.post(message),
     log: (line) => output.info(line),
-    loadActiveSessionId: () => context.workspaceState.get<string>(ACTIVE_SESSION_KEY),
-    saveActiveSessionId: (sessionId) => void context.workspaceState.update(ACTIVE_SESSION_KEY, sessionId),
+    loadActiveSessionId: () => context.workspaceState.get<string>(sessionKey()),
+    saveActiveSessionId: (sessionId) => void context.workspaceState.update(sessionKey(), sessionId),
+    folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
+    selectFolder: () => void vscode.commands.executeCommand('dsh.selectFolder'),
     openExternal,
     restartRuntime: () => void manager.restart(),
     showLogs: () => output.show(),
@@ -160,6 +167,23 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('dsh.addToChat', async () => {
       chat.pinActiveEditor();
       await focusView();
+    }),
+    vscode.commands.registerCommand('dsh.configureApiKey', () => chat.configureApiKey()),
+    vscode.commands.registerCommand('dsh.renameSession', () => chat.renameSession()),
+    vscode.commands.registerCommand('dsh.selectFolder', async () => {
+      const list = folders();
+      if (list.length < 2) {
+        void vscode.window.showInformationMessage('当前工作区只有一个文件夹');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        list.map((f) => ({ label: f.name, description: f.uri.fsPath, picked: f.uri.fsPath === workspacePath, folder: f })),
+        { placeHolder: 'DSH 对话对应的文件夹（每个文件夹有自己的会话列表）' },
+      );
+      if (!picked || picked.folder.uri.fsPath === workspacePath) return;
+      workspacePath = picked.folder.uri.fsPath;
+      await context.workspaceState.update(FOLDER_KEY, workspacePath);
+      chat.setWorkspace(workspacePath);
     }),
     vscode.commands.registerCommand('dsh.restartRuntime', () => manager.restart()),
     vscode.commands.registerCommand('dsh.openWebUI', () => chat.handle({ type: 'openWebUI', payload: {} })),

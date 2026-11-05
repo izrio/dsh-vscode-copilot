@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { followFrameSchema, type FollowFrame } from '../src/dsh/remote/follow.ts';
 import { SessionJournal } from '../src/dsh/session/journal.ts';
-import { activityLabel, displayPath, project } from '../src/vm/projector.ts';
+import { activityLabel, displayPath, project, projectEvents } from '../src/vm/projector.ts';
 import { plainTitle } from '../src/vm/ChatController.ts';
 
 /** 用 M0 录制的真实帧回放出 journal，再投影成界面条目。 */
@@ -237,13 +237,22 @@ describe('plainTitle', () => {
 });
 
 describe('project：缺少 API Key', () => {
-  it('MISSING_CREDENTIAL 显示中文提示和打开设置的入口', () => {
-    const items = project({
-      events: [{ type: 'turn/end', seq: 3, time: 3, data: { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message: 'llm-deepseek: no API key' } } } }],
+  it('MISSING_CREDENTIAL 显示中文提示和配置入口，并给出 dsh 要求的凭据名', () => {
+    const message =
+      'llm-deepseek: no API key for provider route "deepseek-official"; store DSH_TEST_API_KEY through the credentials service (the web Models page writes it), or export DSH_TEST_API_KEY in the launching environment';
+    const result = project({ events: [{ type: 'turn/end', seq: 3, time: 3, data: { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message } } } }], pending: [] });
+    expect(result.items[0]).toMatchObject({ kind: 'notice', level: 'error', action: { kind: 'configureApiKey' } });
+    expect(result.items[0]?.kind === 'notice' && result.items[0].text).toContain('API Key');
+    expect(result.missingCredentialRef).toBe('DSH_TEST_API_KEY');
+    // 之后成功完成了一轮：已经配置好了
+    const later = project({
+      events: [
+        { type: 'turn/end', seq: 3, time: 3, data: { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message } } } },
+        { type: 'turn/end', seq: 5, time: 5, data: { reason: { kind: 'completed' } } },
+      ],
       pending: [],
-    }).items;
-    expect(items[0]).toMatchObject({ kind: 'notice', level: 'error', action: { kind: 'openWebUI' } });
-    expect(items[0]?.kind === 'notice' && items[0].text).toContain('API Key');
+    });
+    expect(later.missingCredentialRef).toBeUndefined();
   });
 });
 
@@ -300,5 +309,50 @@ describe('project：M3', () => {
       { kind: 'user', id: 'u:1', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }] },
       { kind: 'user', id: 'p:r2', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }], pending: 'sending', requestId: 'r2' },
     ]);
+  });
+});
+
+describe('project：M4', () => {
+  const event = (seq: number, type: string, data: unknown, extra: Record<string, unknown> = {}) => ({ type, seq, time: seq, data, ...extra });
+  const queued = (id: string, rpcId: string, text: string) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId } });
+
+  it('队列：插队的排在前面；已经出现在历史里的不再显示；dsh 注入的不显示', () => {
+    const items = project({
+      events: [event(1, 'user/message', { content: [{ type: 'text', text: '已送达' }], source: { kind: 'user', rpcId: 'r0' } }, { surfaceOp: 'append' })],
+      inbox: {
+        'next-turn': [queued('m0', 'r0', '已送达'), queued('m1', 'r1', '等下一轮'), { id: 'x', content: [{ type: 'text', text: 'system' }], source: { kind: 'plan-mode' } }],
+        'next-step': [queued('m2', 'r2', '插队的')],
+      },
+      pending: [],
+    }).items;
+    expect(items.map((item) => (item.kind === 'user' ? `${item.text}:${item.queue?.target ?? '-'}` : item.kind))).toEqual(['已送达:-', '插队的:next-step', '等下一轮:next-turn']);
+  });
+
+  it('todo_write 不在对话流里出现；计划工具显示计划标题和审阅结果', () => {
+    const plan = '# 重构计划\n\n1. 拆分';
+    const items = project({
+      events: [
+        event(1, 'tool/call', { callId: 't1', name: 'todo_write', arguments: JSON.stringify({ todos: [] }) }),
+        event(2, 'tool/result', { message: { toolCallId: 't1', content: [], isError: false } }),
+        event(3, 'tool/call', { callId: 'p1', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
+        event(4, 'tool/result', { message: { toolCallId: 'p1', content: [{ type: 'text', text: 'The user chose to keep planning; their feedback: 先补测试' }], isError: true } }),
+        event(5, 'tool/call', { callId: 'p2', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
+        event(6, 'tool/result', { message: { toolCallId: 'p2', content: [{ type: 'text', text: 'Plan approved — plan mode exited' }], isError: false } }),
+        event(7, 'tool/call', { callId: 'p3', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
+        event(8, 'tool/result', { message: { toolCallId: 'p3', content: [{ type: 'text', text: 'exit_plan_mode is only available in plan mode' }], isError: true } }),
+      ],
+      pending: [],
+    }).items;
+    expect(items.map((item) => item.kind === 'activity' && `${item.label}:${item.status}`)).toEqual([
+      '计划  重构计划  继续完善:ok',
+      '计划  重构计划  已批准:ok',
+      '计划  重构计划:error',
+    ]);
+  });
+
+  it('缓存的持久事件投影与现算的一致', () => {
+    const journal = journalOf('edit');
+    const input = { events: journal.events, pending: [], workspacePath: WORKSPACE, changes: () => 'unavailable' as const };
+    expect(project(input, projectEvents(input))).toEqual(project(input));
   });
 });

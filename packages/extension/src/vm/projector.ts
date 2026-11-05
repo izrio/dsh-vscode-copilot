@@ -31,6 +31,8 @@ export interface ProjectionInput {
   /** 用于把工具参数里的绝对路径显示成相对路径。 */
   readonly workspacePath?: string;
   readonly changes?: ChangesLookup;
+  /** `inbox` 投影：在 dsh 队列里等待的消息。 */
+  readonly inbox?: unknown;
 }
 
 /** 一次工具调用的原始信息，用于打开 Diff 和显示审批详情。 */
@@ -55,6 +57,10 @@ export interface Projection {
   readonly toolCalls: ReadonlyMap<string, ToolCallInfo>;
   /** 出现过的 `workspace/changes` 事件序号，调用方据此读取改动汇总。 */
   readonly changeSeqs: readonly number[];
+  /** 最近一次 MISSING_CREDENTIAL 里 dsh 要求配置的凭据名（例如 `DEEPSEEK_API_KEY`）。 */
+  readonly missingCredentialRef?: string;
+  /** 已经进入 dsh 队列的 requestId：本地回显可以撤掉（之后由队列或持久历史显示）。 */
+  readonly queuedRequestIds: ReadonlySet<string>;
 }
 
 const OUTPUT_LIMIT = 4_000;
@@ -85,7 +91,18 @@ interface TurnEdit {
   readonly created?: boolean;
 }
 
-export function project(input: ProjectionInput): Projection {
+/** 只由持久事件决定的那部分投影。流式输出时持久事件不变，调用方可以缓存它，只重算末尾的流式内容和排队消息。 */
+export interface EventsProjection {
+  readonly items: readonly Item[];
+  readonly persistedRequestIds: ReadonlySet<string>;
+  readonly turnOpen: boolean;
+  readonly toolCalls: ReadonlyMap<string, ToolCallInfo>;
+  readonly changeSeqs: readonly number[];
+  readonly missingCredentialRef?: string;
+}
+
+/** 投影持久事件。结果只取决于 events、workspacePath 和 changes 的返回值。 */
+export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspacePath' | 'changes'>): EventsProjection {
   const items: Item[] = [];
   const persistedRequestIds = new Set<string>();
   const toolCalls = new Map<string, ToolCallInfo>();
@@ -94,6 +111,7 @@ export function project(input: ProjectionInput): Projection {
   const changeSeqs: number[] = [];
   let turnEdits: TurnEdit[] = [];
   let turnOpen = false;
+  let missingCredentialRef: string | undefined;
 
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
@@ -172,6 +190,8 @@ export function project(input: ProjectionInput): Projection {
         const file = stringArg(args, 'file_path', 'notebook_path', 'path');
         const path = file && input.workspacePath ? resolve(input.workspacePath, file) : file;
         toolCalls.set(callId, { callId, tool, args, ...(path ? { path } : {}), status: 'running' });
+        // 待办由输入框上方的状态条显示，不在对话流里重复
+        if (tool === 'todo_write') break;
         const variant = toolVariant(tool);
         const label = activityLabel(tool, args, input.workspacePath);
         if (variant === 'explore') {
@@ -216,13 +236,22 @@ export function project(input: ProjectionInput): Projection {
           break;
         }
         if (previous?.kind !== 'activity') break;
+        if (call.tool === 'exit_plan_mode') {
+          // 继续完善计划时工具以错误返回，但这不是失败；其他错误（例如不在计划模式）照常显示
+          const result = textOf(message?.content);
+          const outcome = status === 'ok' && /approved/iu.test(result) ? '已批准' : /keep planning/iu.test(result) ? '继续完善' : /dismissed/iu.test(result) ? '用户自己回复' : undefined;
+          items[at.index] = outcome
+            ? { ...previous, status: 'ok', label: `${previous.label}  ${outcome}` }
+            : { ...previous, status, ...(result ? { output: truncate(result) } : {}) };
+          break;
+        }
         const output = truncate(call.tool === 'ask_user_question' ? answersText(textOf(message?.content)) : textOf(message?.content));
         let next: Activity = { ...previous, status, ...(output ? { output } : {}) };
         if (previous.variant === 'edit' && status === 'ok' && (diffs !== undefined || created)) {
           const content = typeof call.args.content === 'string' ? call.args.content : undefined;
           const stats = created
             ? { additions: content !== undefined ? countLines(content) : 0, deletions: 0 }
-            : sumStats((diffs ?? []).map((d) => lineStats(d.oldText, d.newText)));
+            : sumStats((diffs ?? []).map(cachedLineStats));
           next = { ...next, stats, ...(created ? { created } : {}), diff: { kind: 'tool', callId } };
           // 文件修改成功时输出只是「已修改」之类的确认，不需要展开
           const { output: _omit, ...rest } = next;
@@ -242,12 +271,26 @@ export function project(input: ProjectionInput): Projection {
         turnOpen = false;
         const notice = turnEndNotice(event.seq, data.reason);
         if (notice) items.push(notice);
+        const reason = data.reason as { error?: { code?: string; message?: string } } | undefined;
+        if (reason?.error?.code === 'MISSING_CREDENTIAL') missingCredentialRef = /\bstore ([A-Z_][A-Z0-9_]*)\b/u.exec(reason.error.message ?? '')?.[1] ?? missingCredentialRef;
+        else if (notice === undefined) missingCredentialRef = undefined; // 之后有成功的轮次：已经配置好了
         break;
       }
       default:
         break;
     }
   }
+
+  return { items, persistedRequestIds, turnOpen, toolCalls, changeSeqs, ...(missingCredentialRef ? { missingCredentialRef } : {}) };
+}
+
+/**
+ * 完整投影：持久事件 + 正在流式输出的回复 + 队列里的消息 + 本地回显。
+ * @param base - 缓存的持久事件投影；不传时现算。
+ */
+export function project(input: ProjectionInput, base: EventsProjection = projectEvents(input)): Projection {
+  const items: Item[] = [...base.items];
+  const { persistedRequestIds, turnOpen } = base;
 
   // 正在流式输出的回复
   if (input.live) {
@@ -264,10 +307,27 @@ export function project(input: ProjectionInput): Projection {
     }
   }
 
-  // 还没出现在持久历史里的本地回显
+  // dsh 队列里的消息（插队的先送达，排在前面）
+  const inboxRpcIds = new Set<string>();
+  for (const queued of inboxItems(input.inbox)) {
+    if (queued.rpcId) inboxRpcIds.add(queued.rpcId);
+    if (queued.rpcId && persistedRequestIds.has(queued.rpcId)) continue;
+    const { text, attachments } = splitContext(queued.text);
+    items.push({
+      kind: 'user',
+      id: queued.rpcId ? `p:${queued.rpcId}` : `q:${queued.id}`,
+      text,
+      ...(attachments.length ? { attachments } : {}),
+      pending: 'queued',
+      ...(queued.rpcId ? { requestId: queued.rpcId } : {}),
+      queue: { itemId: queued.id, target: queued.target },
+    });
+  }
+
+  // 还没出现在持久历史或队列里的本地回显
   const running = turnOpen || (input.fallbackRunning ?? false);
   for (const pending of input.pending) {
-    if (persistedRequestIds.has(pending.requestId)) continue;
+    if (persistedRequestIds.has(pending.requestId) || inboxRpcIds.has(pending.requestId)) continue;
     const state = pending.state === 'failed' ? 'failed' : pending.state === 'accepted' && running ? 'queued' : 'sending';
     const { text, attachments } = splitContext(pending.text);
     items.push({
@@ -281,7 +341,38 @@ export function project(input: ProjectionInput): Projection {
     });
   }
 
-  return { items, persistedRequestIds, turnOpen, toolCalls, changeSeqs };
+  return {
+    items,
+    persistedRequestIds,
+    queuedRequestIds: inboxRpcIds,
+    turnOpen,
+    toolCalls: base.toolCalls,
+    changeSeqs: base.changeSeqs,
+    ...(base.missingCredentialRef ? { missingCredentialRef: base.missingCredentialRef } : {}),
+  };
+}
+
+interface InboxItem {
+  readonly id: string;
+  readonly rpcId?: string;
+  readonly text: string;
+  readonly target: 'next-turn' | 'next-step';
+}
+
+/** `inbox` 投影：`{ 'next-turn': [...], 'next-step': [...] }`，每项是一条待送达的用户消息。只取用户自己发的。 */
+function inboxItems(inbox: unknown): InboxItem[] {
+  if (!inbox || typeof inbox !== 'object') return [];
+  const result: InboxItem[] = [];
+  for (const target of ['next-step', 'next-turn'] as const) {
+    const list = (inbox as Record<string, unknown>)[target];
+    if (!Array.isArray(list)) continue;
+    for (const raw of list) {
+      const item = raw as { id?: unknown; content?: unknown; source?: { kind?: unknown; rpcId?: unknown } };
+      if (typeof item.id !== 'string' || item.source?.kind !== 'user') continue;
+      result.push({ id: item.id, text: textOf(item.content), target, ...(typeof item.source.rpcId === 'string' ? { rpcId: item.source.rpcId } : {}) });
+    }
+  }
+  return result;
 }
 
 /** 合并行的摘要：「读取 2 个文件，搜索 1 次」。 */
@@ -357,6 +448,14 @@ function answersText(text: string): string {
   }
 }
 
+/** 片段对象来自会话日志，同一个对象的统计结果不变；长会话里每次重新投影都重算 diff 太慢。 */
+const statsCache = new WeakMap<ToolDiff, LineStats>();
+function cachedLineStats(diff: ToolDiff): LineStats {
+  let stats = statsCache.get(diff);
+  if (!stats) statsCache.set(diff, (stats = lineStats(diff.oldText, diff.newText)));
+  return stats;
+}
+
 function isToolDiff(value: unknown): value is ToolDiff {
   if (!value || typeof value !== 'object') return false;
   const d = value as { oldText?: unknown; newText?: unknown };
@@ -402,6 +501,11 @@ export function activityLabel(tool: string, rawArguments: unknown, workspacePath
   const args = parseArguments(rawArguments);
   const pick = (...keys: string[]): string | undefined => stringArg(args, ...keys);
   // 优先级：命令 > 目标文件 > 搜索词 / URL > 目录 > 描述
+  if (tool === 'exit_plan_mode') {
+    const plan = typeof args.plan === 'string' ? args.plan : '';
+    const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
+    return `计划  ${heading ?? '提交计划'}`;
+  }
   if (tool === 'ask_user_question') {
     const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
     return typeof first === 'string' ? `提问  ${firstLine(first)}` : '提问';
@@ -443,8 +547,8 @@ function turnEndNotice(seq: number, reason: unknown): Item | undefined {
           kind: 'notice',
           id,
           level: 'error',
-          text: '还没有配置模型的 API Key。在 dsh 设置的「模型」页面填写后重新发送。',
-          action: { kind: 'openWebUI', label: '打开 dsh 设置' },
+          text: '还没有配置模型的 API Key。配置后重新发送这条消息。',
+          action: { kind: 'configureApiKey', label: '配置 API Key' },
         };
       }
       return { kind: 'notice', id, level: 'error', text: `出错了：${r.error?.message ?? '模型请求失败'}` };

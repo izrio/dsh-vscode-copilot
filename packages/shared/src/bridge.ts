@@ -38,6 +38,19 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('searchFiles'), payload: z.object({ requestId: z.number().int(), query: z.string().max(1_000) }) }),
   z.object({ type: z.literal('removeAttachment'), payload: z.object({ id: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('queueAction'),
+    payload: z.discriminatedUnion('action', [
+      z.object({ action: z.literal('edit'), itemId: z.string().min(1), text: z.string().min(1).max(200_000) }),
+      z.object({ action: z.literal('remove'), itemId: z.string().min(1) }),
+      z.object({ action: z.literal('steer'), itemId: z.string().min(1) }),
+      /** 停止生成后留在队列里的消息：从队列取出，作为新消息立即发送。 */
+      z.object({ action: z.literal('send'), itemId: z.string().min(1) }),
+    ]),
+  }),
+  z.object({ type: z.literal('renameSession'), payload: empty }),
+  z.object({ type: z.literal('configureApiKey'), payload: empty }),
+  z.object({ type: z.literal('selectFolder'), payload: empty }),
   z.object({ type: z.literal('interrupt'), payload: empty }),
   z.object({ type: z.literal('newSession'), payload: empty }),
   z.object({ type: z.literal('switchSession'), payload: z.object({ sessionId: z.string().min(1) }) }),
