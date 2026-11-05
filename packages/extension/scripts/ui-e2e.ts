@@ -437,6 +437,21 @@ try {
   await page.locator('.assistant', { hasText: '按你的选择来' }).waitFor({ timeout: 30_000 });
   check('提交后卡片消失，dsh 收到选择', (await question.count()) === 0);
 
+  // 2e2. 模型选择：当前项带勾；有多个思考等级的模型是级联菜单
+  await page.getByTestId('model-picker').click();
+  await page.locator('.model-menu').waitFor({ timeout: 5_000 });
+  check('模型菜单里当前模型带勾和强调色', (await page.locator('.model-menu .menu-item--active .model-item__check svg').count()) === 1);
+  const cascade = page.locator('.model-menu .model-item:has(.model-item__arrow)').first();
+  if ((await cascade.count()) > 0) {
+    await cascade.click();
+    await page.getByTestId('effort-menu').waitFor({ timeout: 5_000 });
+    check('点有多个思考等级的模型进入第二级选思考等级', (await page.locator('[data-testid="effort-menu"] .model-item').count()) > 1);
+    await shot('15b-model-efforts');
+    await page.locator('.model-menu__back').click();
+  }
+  await shot('15c-model-menu');
+  await page.keyboard.press('Escape');
+
   // 2f. 权限预设
   const permission = page.getByTestId('permission-picker');
   // 侧边栏较窄时权限只显示图标，名称在悬停提示里
@@ -600,9 +615,9 @@ try {
   await send('E2E_TODO 列一下待办');
   await page.locator('.assistant', { hasText: '待办列好了' }).waitFor({ timeout: 30_000 });
   const strip = page.getByTestId('status-strip');
-  check('待办显示在输入框上方（1/3，正在做的事）', (await strip.innerText()).includes('待办 1/3') && (await strip.innerText()).includes('修改启动逻辑'));
+  check('待办显示在输入框上方（1/3，正在做的事）', (await strip.innerText()).includes('待办') && (await strip.innerText()).includes('1/3') && (await strip.innerText()).includes('修改启动逻辑'));
   check('待办不在对话流里重复出现', (await page.locator('.activity', { hasText: 'todo_write' }).count()) === 0);
-  await strip.locator('.status-strip__todos').click();
+  await strip.locator('.todo-card__header').click();
   check('点开待办看到全部条目', (await strip.locator('.todo').count()) === 3);
   await shot('23-todos');
 

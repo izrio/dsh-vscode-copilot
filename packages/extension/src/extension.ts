@@ -60,6 +60,32 @@ export function activate(context: vscode.ExtensionContext): void {
     if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
   };
 
+  /**
+   * 在浏览器中打开 dsh 网页。dsh 只监听 dsh 所在机器的 127.0.0.1：远程开发（Remote-SSH、WSL、容器、code-server）时
+   * 浏览器在另一台机器上，直接打开连不上，要经过 asExternalUri 让 VS Code 转发端口（本地时原样返回）。
+   * 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持登录。dsh 网页没有指向某个会话的地址，只能提示会话标题。
+   */
+  const openWebUI = async (sessionTitle?: string): Promise<void> => {
+    const endpoint = manager.endpoint;
+    if (!endpoint) {
+      void vscode.window.showWarningMessage(t('ext.notStarted'));
+      return;
+    }
+    const local = vscode.Uri.parse(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
+    let target = local;
+    try {
+      target = await vscode.env.asExternalUri(local);
+    } catch (error) {
+      log(`转发 dsh 端口失败，直接打开本机地址：${error instanceof Error ? error.message : String(error)}`);
+    }
+    log(`在浏览器中打开 dsh：${target.with({ query: '' }).toString(true)}${target.authority === local.authority ? '' : `（转发自 ${endpoint.origin}）`}`);
+    const opened = await vscode.env.openExternal(target);
+    const copy = t('ext.copyLink');
+    const message = !opened ? t('ext.webUIFailed') : sessionTitle ? t('ext.webUIOpenedSession', sessionTitle) : t('ext.webUIOpened');
+    const choice = await (opened ? vscode.window.showInformationMessage(message, copy) : vscode.window.showWarningMessage(message, copy));
+    if (choice === copy) await vscode.env.clipboard.writeText(target.toString(true));
+  };
+
   let provider: ChatViewProvider | undefined;
   const workbench = new VscodeWorkbench(log);
   const chat = new ChatController({
@@ -77,15 +103,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openExternal,
     restartRuntime: () => void manager.restart(),
     showLogs: () => output.show(),
-    openWebUI: () => {
-      const endpoint = manager.endpoint;
-      if (!endpoint) {
-        void vscode.window.showWarningMessage(t('ext.notStarted'));
-        return;
-      }
-      // 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持会话
-      openExternal(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
-    },
+    openWebUI: (sessionTitle) => void openWebUI(sessionTitle),
     appearance: readAppearance,
     openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:izrio.dsh-copilot dsh.ui'),
     onModelChange: (label) => {

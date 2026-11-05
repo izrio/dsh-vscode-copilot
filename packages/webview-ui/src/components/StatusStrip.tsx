@@ -7,7 +7,6 @@ import { useView } from '../store.ts';
 import { CheckIcon, ChecklistIcon, ChevronRightIcon, SpinnerIcon, TargetIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
-
 export function StatusStrip() {
   const todos = useView((s) => s.session.todos);
   const goal = useView((s) => s.session.goal);
@@ -31,26 +30,42 @@ export function StatusStrip() {
         </div>
       ) : null}
       {todos?.length ? (
-        <>
-          <button type="button" className="status-strip__todos" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <div className={`todo-card ${open ? 'todo-card--open' : ''}`}>
+          <button type="button" className="todo-card__header" aria-expanded={open} onClick={() => setOpen(!open)}>
             <ChevronRightIcon className={`chevron ${open ? 'chevron--open' : ''}`} />
-            <ChecklistIcon />
-            <span className="status-strip__label">{t('todo.label', done, todos.length)}</span>
-            {!open && current ? <span className="status-strip__text">{current.content}</span> : null}
+            <ChecklistIcon className="todo-card__icon" />
+            <span className="status-strip__label">{t('todo.title')}</span>
+            {!open && current ? <span className="status-strip__text">{current.content}</span> : <span className="todo-card__spacer" />}
+            <span className={`todo-card__count ${done === todos.length ? 'todo-card__count--done' : ''}`}>
+              {done}/{todos.length}
+            </span>
           </button>
+          <div className="todo-progress" role="progressbar" aria-valuemin={0} aria-valuemax={todos.length} aria-valuenow={done} aria-label={t('todo.label', done, todos.length)}>
+            <span className="todo-progress__bar" style={{ width: `${(done / todos.length) * 100}%` }} />
+          </div>
           {open ? (
-            <ul className="todo-list">
+            <ol className="todo-list">
               {todos.map((todo, index) => (
                 <li key={index} className={`todo todo--${todo.status}`}>
-                  <span className="todo__mark" aria-label={todo.status === 'completed' ? t('todo.completed') : todo.status === 'in_progress' ? t('todo.inProgress') : t('todo.pending')}>
-                    {todo.status === 'completed' ? <CheckIcon /> : todo.status === 'in_progress' && running ? <SpinnerIcon /> : <span className="todo__dot" />}
+                  <span
+                    className="todo__mark"
+                    aria-label={todo.status === 'completed' ? t('todo.completed') : todo.status === 'in_progress' ? t('todo.inProgress') : t('todo.pending')}
+                  >
+                    {todo.status === 'completed' ? (
+                      <CheckIcon />
+                    ) : todo.status === 'in_progress' && running ? (
+                      <SpinnerIcon />
+                    ) : (
+                      <span className="todo__dot" />
+                    )}
                   </span>
-                  <span>{todo.content}</span>
+                  <span className="todo__text">{todo.content}</span>
+                  {todo.status === 'in_progress' ? <span className="todo__badge">{t('todo.inProgress')}</span> : null}
                 </li>
               ))}
-            </ul>
+            </ol>
           ) : null}
-        </>
+        </div>
       ) : null}
     </div>
   );

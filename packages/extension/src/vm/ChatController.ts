@@ -72,7 +72,8 @@ export interface ChatControllerOptions {
   readonly openExternal: (url: string) => void;
   readonly restartRuntime: () => void;
   readonly showLogs: () => void;
-  readonly openWebUI: () => void;
+  /** 在浏览器中打开 dsh；`sessionTitle` 是当前会话的标题（dsh 网页不支持直接定位到会话，提示用户在列表里选）。 */
+  readonly openWebUI: (sessionTitle?: string) => void;
   /** 当前模型的显示名变化时调用（状态栏用）。 */
   readonly onModelChange?: (label: string | undefined) => void;
   /** 打开 Diff、未保存文件、确认框、当前编辑器。 */
@@ -527,7 +528,7 @@ export class ChatController {
         this.options.showLogs();
         return;
       case 'openWebUI':
-        this.options.openWebUI();
+        this.options.openWebUI(this.activeId ? this.compute().session.title : undefined);
         return;
       case 'respondApproval':
         return this.respondApproval(message.payload.id, message.payload.decision === 'allow');
