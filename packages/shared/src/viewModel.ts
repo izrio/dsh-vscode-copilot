@@ -205,6 +205,10 @@ export interface SessionHeader {
   readonly failure?: string;
   /** 上下文窗口占用比例，0–1。 */
   readonly contextUsage?: number;
+  /** 上下文已用和窗口大小（token），用于提示。 */
+  readonly contextTokens?: { readonly used: number; readonly window: number };
+  /** 会话列表还在读取。 */
+  readonly listLoading?: boolean;
   /** 计划模式（`/plan`）：dsh 只做计划，不改文件。 */
   readonly planMode?: boolean;
   /** dsh 的待办列表（`todo_write`），没有时为 undefined。 */

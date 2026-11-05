@@ -1,6 +1,6 @@
 /** 输入框上方的补全列表：`/` 命令和 `@` 文件。键盘操作由输入框处理，这里只负责显示和鼠标选择。 */
 import { useEffect, useRef } from 'react';
-import { FileIcon, FolderIcon, SlashIcon } from './icons.tsx';
+import { FileIcon, FolderIcon, SlashIcon, SpinnerIcon } from './icons.tsx';
 
 export interface CompletionItem {
   readonly key: string;
@@ -16,6 +16,7 @@ export function Completion({
   onSelect,
   onHover,
   empty,
+  loading,
   label,
 }: {
   items: readonly CompletionItem[];
@@ -23,6 +24,8 @@ export function Completion({
   onSelect: (index: number) => void;
   onHover: (index: number) => void;
   empty?: string;
+  /** 正在等结果：显示在列表顶部。 */
+  loading?: string;
   label: string;
 }) {
   const list = useRef<HTMLDivElement>(null);
@@ -31,7 +34,13 @@ export function Completion({
   }, [selected]);
   return (
     <div className="completion" ref={list} role="listbox" aria-label={label} id="composer-completion" data-testid="completion">
-      {items.length === 0 && empty ? <div className="completion__empty">{empty}</div> : null}
+      {loading ? (
+        <div className="completion__empty completion__loading">
+          <SpinnerIcon />
+          {loading}
+        </div>
+      ) : null}
+      {items.length === 0 && empty && !loading ? <div className="completion__empty">{empty}</div> : null}
       {items.map((item, index) => (
         <div
           key={item.key}

@@ -292,6 +292,13 @@ try {
   await runtime.start();
   await page.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 60_000 });
   check('dsh 就绪后状态提示消失，显示空状态', await page.locator('.empty').isVisible());
+  check('空状态有示例任务', (await page.getByTestId('suggestions').locator('.suggestion').count()) === 4);
+  await page.getByTestId('suggestions').locator('.suggestion').first().click();
+  await page.waitForFunction(() => (document.querySelector('textarea')?.value.length ?? 0) > 10, undefined, { timeout: 5_000 }).then(
+    () => check('点击示例任务放进输入框', true),
+    () => check('点击示例任务放进输入框', false),
+  );
+  await composer.fill('');
   await shot('02-empty');
 
   // 1. Markdown 流式输出
@@ -315,6 +322,11 @@ try {
   }));
   check('代码高亮颜色生效（不被 CSP 拦截）', colors.token !== colors.body, JSON.stringify(colors));
   check('表格渲染', (await page.locator('.markdown table').count()) === 1);
+  const ring = page.getByTestId('context-ring');
+  await ring.waitFor({ timeout: 10_000 }).then(
+    async () => check('上下文用量显示为环形进度，提示里有 token 数', /tokens/u.test((await ring.getAttribute('title')) ?? ''), (await ring.getAttribute('title')) ?? ''),
+    () => check('上下文用量显示为环形进度，提示里有 token 数', false),
+  );
   check('只有一条助手回复（没有重复）', (await page.locator('.assistant').count()) === 1);
   check('用户消息没有重复', (await page.locator('.user').count()) === 1);
   await shot('04-markdown');
@@ -396,7 +408,8 @@ try {
 
   // 2f. 权限预设
   const permission = page.getByTestId('permission-picker');
-  check('输入框工具条显示当前权限', (await permission.innerText()).includes('工作区可写'));
+  // 侧边栏较窄时权限只显示图标，名称在悬停提示里
+  check('输入框工具条显示当前权限', ((await permission.getAttribute('title')) ?? '').includes('工作区可写'));
   await permission.click();
   await page.getByRole('menuitem', { name: /只读/u }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('只读'), undefined, { timeout: 10_000 });

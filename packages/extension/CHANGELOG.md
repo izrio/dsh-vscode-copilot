@@ -31,6 +31,17 @@ First usable release. Requires dsh `0.2.1-rc.5` or later (tested up to `0.2.2-al
 - 多根工作区选择文件夹。
   Folder selection for multi-root workspaces.
 
+### 界面细节 / UI details
+
+- 按钮、菜单项、链接配上图标；点击后要等 dsh 回应的按钮显示加载中。
+  Icons on buttons, menu items and links; buttons that wait for dsh show a spinner after you click.
+- 上下文用量改成环形进度，随用量变色，悬停显示 token 数。
+  Context usage as a ring that changes color with usage; hover for token counts.
+- 加载状态：启动、打开会话（骨架屏）、会话列表、模型列表、`@` 搜索、发送中、加载更早的消息、断线重连。
+  Loading states for startup, opening a session (skeleton), the session list, models, `@` search, sending, earlier history and reconnecting.
+- 空状态加上示例任务；用户消息悬停可以复制、编辑后重发。
+  Suggested tasks on the empty state; copy and edit-and-resend on sent messages.
+
 ### 运行时 / Runtime
 
 - 自动查找、启动和监控 dsh，意外退出后自动重启并恢复对话；首次使用时引导配置 API Key。

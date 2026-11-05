@@ -122,6 +122,10 @@ button {
   flex: none;
 }
 
+.dot--attention {
+  background: var(--vscode-editorWarning-foreground, #cca700);
+}
+
 .dot--running {
   background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
   animation: pulse 1.4s ease-in-out infinite;
@@ -254,8 +258,19 @@ button {
 }
 
 .banner__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-weight: 600;
+}
+
+.banner__title svg {
+  flex: none;
+}
+
+.banner--warn .banner__title svg {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
 }
 
 .banner__detail {
@@ -270,6 +285,9 @@ button {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 10px;
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: 4px;
@@ -292,6 +310,9 @@ button {
 }
 
 .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -447,6 +468,9 @@ button {
 }
 
 .thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 0.92em;
 }
@@ -1454,6 +1478,9 @@ button.chip:hover {
 }
 
 .toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1521,9 +1548,231 @@ button.chip:hover {
   text-overflow: ellipsis;
 }
 
-/* 侧边栏很窄时权限只显示图标（悬停提示里有完整名称），把位置留给模型名 */
-@media (max-width: 340px) {
+/* 侧边栏较窄时权限只显示图标（锁 / 笔 / 开锁，悬停提示里有完整名称），把位置留给模型名 */
+@media (max-width: 400px) {
   .permission-picker__text {
     display: none;
+  }
+}
+
+/* ---------- 按钮里的图标 ---------- */
+.button svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.link-button svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 菜单项前的图标 */
+.menu-item__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.menu-item--active .menu-item__icon,
+.menu-item:hover .menu-item__icon {
+  color: inherit;
+}
+
+/* ---------- 空状态：图标和示例任务 ---------- */
+.empty__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
+  color: var(--vscode-focusBorder);
+}
+
+.empty__logo svg {
+  width: 24px;
+  height: 24px;
+}
+
+.suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+  margin: 18px auto 0;
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.suggestion:hover {
+  border-color: var(--vscode-focusBorder);
+  background: var(--hover);
+}
+
+.suggestion__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--vscode-focusBorder);
+}
+
+.suggestion__title {
+  font-size: 0.92em;
+}
+
+/* ---------- 加载中 ---------- */
+.session-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.session-loading__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.skeleton {
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--bubble) 25%, color-mix(in srgb, var(--vscode-foreground) 16%, transparent) 50%, var(--bubble) 75%);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+.skeleton--bubble {
+  align-self: flex-end;
+  width: 55%;
+  height: 32px;
+  border-radius: var(--radius-lg);
+}
+
+.skeleton--line {
+  width: 90%;
+  height: 12px;
+}
+
+.skeleton--short {
+  width: 60%;
+}
+
+@keyframes skeleton {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.header__spinner {
+  flex: none;
+  color: var(--muted);
+}
+
+.menu-empty--loading,
+.completion__loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.thread__sync {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.thread__older .link-button {
+  margin: 0 auto;
+}
+
+.user__meta svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.user__meta {
+  align-items: center;
+}
+
+/* ---------- 上下文用量环 ---------- */
+.context-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-ring__track {
+  stroke: color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+}
+
+.context-ring__value {
+  stroke: var(--vscode-focusBorder);
+  transition: stroke-dasharray 0.3s ease;
+}
+
+.context-ring--medium .context-ring__value {
+  stroke: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.context-ring--high .context-ring__value {
+  stroke: var(--vscode-errorForeground, #f14c4c);
+}
+
+.context-ring--high {
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.changes__header svg,
+.status-strip__goal svg,
+.status-strip__todos svg {
+  color: var(--muted);
+}
+
+.toolbar-button svg {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .spin,
+  .shimmer,
+  .dot--running {
+    animation: none;
   }
 }

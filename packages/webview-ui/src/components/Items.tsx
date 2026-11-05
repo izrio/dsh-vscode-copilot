@@ -6,7 +6,32 @@ import { requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
-import { ChevronRightIcon, ErrorIcon, FileEditIcon, FileIcon, InfoIcon, SearchIcon, SelectionIcon, SpinnerIcon, TerminalIcon, ToolIcon } from './icons.tsx';
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  CopyIcon,
+  DiffIcon,
+  ErrorIcon,
+  FastForwardIcon,
+  FileEditIcon,
+  FileIcon,
+  GlobeIcon,
+  InfoIcon,
+  KeyIcon,
+  PencilIcon,
+  PlanIcon,
+  QuestionIcon,
+  RefreshIcon,
+  SearchIcon,
+  SelectionIcon,
+  SendIcon,
+  SlashIcon,
+  SpinnerIcon,
+  TerminalIcon,
+  ToolIcon,
+  TrashIcon,
+} from './icons.tsx';
 import { useT } from '../i18n.ts';
 
 type Of<K extends Item['kind']> = Extract<Item, { kind: K }>;
@@ -49,15 +74,23 @@ function UserBubble({ item }: { item: Of<'user'> }) {
           ))}
         </div>
       ) : null}
+      {item.pending === 'sending' ? (
+        <div className="user__meta">
+          <SpinnerIcon />
+          <span>{t('user.sending')}</span>
+        </div>
+      ) : null}
       {item.pending === 'queued' ? <QueuedMeta item={item} onEdit={() => setEditing(true)} /> : null}
       {!item.pending && item.text ? <UserActions text={item.text} /> : null}
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
           <span>{item.error ? t('user.failedWith', item.error) : t('user.failed')}</span>
           <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'retryPending', payload: { requestId: item.requestId } })}>
+            <RefreshIcon />
             {t('user.retry')}
           </button>
           <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'discardPending', payload: { requestId: item.requestId } })}>
+            <TrashIcon />
             {t('common.delete')}
           </button>
         </div>
@@ -82,9 +115,11 @@ function UserActions({ text }: { text: string }) {
           })
         }
       >
+        {copied ? <CheckIcon /> : <CopyIcon />}
         {copied ? t('user.copied') : t('user.copy')}
       </button>
       <button type="button" className="link-button" title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
+        <PencilIcon />
         {t('user.editResend')}
       </button>
     </div>
@@ -104,12 +139,15 @@ function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) 
       <div className="user__meta" data-testid="queued-meta">
         <span>{t('queue.stopped')}</span>
         <button type="button" className="link-button" onClick={() => act('send')}>
+          <SendIcon />
           {t('queue.sendNow')}
         </button>
         <button type="button" className="link-button" onClick={onEdit}>
+          <PencilIcon />
           {t('common.edit')}
         </button>
         <button type="button" className="link-button" onClick={() => act('remove')}>
+          <TrashIcon />
           {t('common.delete')}
         </button>
       </div>
@@ -119,14 +157,17 @@ function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) 
     <div className="user__meta" data-testid="queued-meta">
       <span>{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
       <button type="button" className="link-button" onClick={onEdit}>
+        <PencilIcon />
         {t('common.edit')}
       </button>
       {queue.target === 'next-turn' ? (
         <button type="button" className="link-button" onClick={() => act('steer')} title={t('queue.steerTitle')}>
+          <FastForwardIcon />
           {t('queue.steer')}
         </button>
       ) : null}
       <button type="button" className="link-button" onClick={() => act('remove')}>
+        <TrashIcon />
         {t('common.delete')}
       </button>
     </div>
@@ -162,9 +203,11 @@ function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void })
       />
       <div className="user__meta">
         <button type="button" className="link-button" onClick={save}>
+          <CheckIcon />
           {t('common.save')}
         </button>
         <button type="button" className="link-button" onClick={onDone}>
+          <CloseIcon />
           {t('common.cancel')}
         </button>
       </div>
@@ -239,7 +282,7 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
         onClick={() => setOpen(!open)}
         title={item.label}
       >
-        <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <ToolIcon />} />
+        <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <GenericToolIcon tool={item.tool} />} />
         {command ? (
           <span className="activity__name">{item.status === 'running' ? t('command.running') : t('command.done')}</span>
         ) : (
@@ -250,6 +293,15 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
       {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
     </div>
   );
+}
+
+/** 通用工具的图标：斜杠命令、提问、计划、网页类工具各有自己的图标。 */
+function GenericToolIcon({ tool }: { tool: string }) {
+  if (tool === 'slash') return <SlashIcon />;
+  if (tool === 'ask_user_question') return <QuestionIcon />;
+  if (tool === 'exit_plan_mode') return <PlanIcon />;
+  if (tool.startsWith('web_')) return <GlobeIcon />;
+  return <ToolIcon />;
 }
 
 /** 文件修改：「已编辑 src/a.ts +3 −1」，点击打开 Diff。 */
@@ -332,6 +384,7 @@ function ChangesCard({ item }: { item: Of<'changes'> }) {
   return (
     <section className="changes" aria-label={t('changes.label')}>
       <header className="changes__header">
+        <DiffIcon />
         <span>{t('changes.title', item.total)}</span>
         <Stats stats={total} />
       </header>
@@ -364,6 +417,7 @@ function Notice({ item }: { item: Of<'notice'> }) {
           <>
             {' '}
             <button type="button" className="link-button" onClick={() => postToHost({ type: item.action?.kind ?? 'openWebUI', payload: {} })}>
+              {item.action.kind === 'configureApiKey' ? <KeyIcon /> : <GlobeIcon />}
               {item.action.label}
             </button>
           </>

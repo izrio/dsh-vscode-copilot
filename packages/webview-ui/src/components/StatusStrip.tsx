@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { useView } from '../store.ts';
-import { CheckIcon, ChevronRightIcon, SpinnerIcon } from './icons.tsx';
+import { CheckIcon, ChecklistIcon, ChevronRightIcon, SpinnerIcon, TargetIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
 
@@ -21,6 +21,7 @@ export function StatusStrip() {
     <div className="status-strip" data-testid="status-strip">
       {goal ? (
         <div className={`status-strip__goal status-strip__goal--${goal.phase}`} title={goal.blockedReason ?? goal.objective}>
+          <TargetIcon />
           <span className="status-strip__label">{t('goal.label')}</span>
           <span className="status-strip__text">{goal.objective}</span>
           <span className="status-strip__meta">
@@ -33,6 +34,7 @@ export function StatusStrip() {
         <>
           <button type="button" className="status-strip__todos" aria-expanded={open} onClick={() => setOpen(!open)}>
             <ChevronRightIcon className={`chevron ${open ? 'chevron--open' : ''}`} />
+            <ChecklistIcon />
             <span className="status-strip__label">{t('todo.label', done, todos.length)}</span>
             {!open && current ? <span className="status-strip__text">{current.content}</span> : null}
           </button>

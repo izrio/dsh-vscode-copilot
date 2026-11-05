@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import type { HostToWebview } from '@dsh-copilot/shared';
-import { applyHostMessage, useView } from './store.ts';
+import { applyHostMessage, requestPrefill, useView } from './store.ts';
 import { postToHost } from './vscode.ts';
 import { Composer } from './components/Composer.tsx';
 import { Header } from './components/Header.tsx';
 import { RuntimeBanner } from './components/RuntimeBanner.tsx';
 import { Thread } from './components/Thread.tsx';
 import { Toasts } from './components/Toasts.tsx';
+import { BeakerIcon, BookIcon, BugIcon, DiffIcon, GlobeIcon, KeyIcon, SparkleIcon, SpinnerIcon } from './components/icons.tsx';
+import type { MessageKey } from './i18n.ts';
 import { useT } from './i18n.ts';
 
 export function App() {
@@ -21,6 +23,8 @@ export function App() {
   const connection = useView((s) => s.connection);
   const empty = useView((s) => s.items.length === 0 && s.interactions.length === 0 && !s.session.running && !s.session.hasOlder);
   const failure = useView((s) => (s.session.sync === 'failed' ? s.session.failure : undefined));
+  // 打开已有会话、follow 还没拿到快照：显示加载中，而不是"新对话"的空状态
+  const opening = useView((s) => s.session.id !== undefined && s.items.length === 0 && s.session.sync === 'opening');
   const t = useT();
 
   return (
@@ -28,7 +32,7 @@ export function App() {
       <Header />
       <RuntimeBanner status={runtime} connection={connection} />
       {failure ? <div className="banner banner--warn banner--inline">{t('session.failed', failure)}</div> : null}
-      {empty ? <EmptyState /> : <Thread />}
+      {opening ? <SessionLoading /> : empty ? <EmptyState /> : <Thread />}
       <Toasts />
       <Composer />
     </div>
@@ -41,13 +45,18 @@ function EmptyState() {
   if (needsApiKey) {
     return (
       <div className="empty" data-testid="api-key-setup">
+        <div className="empty__logo empty__logo--key">
+          <KeyIcon />
+        </div>
         <p className="empty__title">{t('apiKey.title')}</p>
         <p className="empty__hint">{t('apiKey.hint')}</p>
         <div className="empty__actions">
           <button type="button" className="button" onClick={() => postToHost({ type: 'configureApiKey', payload: {} })}>
+            <KeyIcon />
             {t('apiKey.configure')}
           </button>
           <button type="button" className="button button--secondary" onClick={() => postToHost({ type: 'openExternal', payload: { url: 'https://platform.deepseek.com/api_keys' } })}>
+            <GlobeIcon />
             {t('apiKey.get')}
           </button>
         </div>
@@ -56,8 +65,45 @@ function EmptyState() {
   }
   return (
     <div className="empty">
+      <div className="empty__logo">
+        <SparkleIcon />
+      </div>
       <p className="empty__title">{t('empty.title')}</p>
       <p className="empty__hint">{t('empty.hint')}</p>
+      <div className="suggestions" data-testid="suggestions">
+        {SUGGESTIONS.map(({ key, icon }) => (
+          <button key={key} type="button" className="suggestion" onClick={() => requestPrefill(t(`empty.suggest.${key}Prompt` as MessageKey))}>
+            <span className="suggestion__icon">{icon}</span>
+            <span className="suggestion__title">{t(`empty.suggest.${key}` as MessageKey)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 空状态的示例任务：点击后放进输入框，可以修改后发送。 */
+const SUGGESTIONS = [
+  { key: 'project', icon: <BookIcon /> },
+  { key: 'bugs', icon: <BugIcon /> },
+  { key: 'tests', icon: <BeakerIcon /> },
+  { key: 'commit', icon: <DiffIcon /> },
+] as const;
+
+/** 打开会话时的骨架屏。 */
+function SessionLoading() {
+  const t = useT();
+  return (
+    <div className="session-loading" role="status" aria-label={t('thread.opening')} data-testid="session-loading">
+      <div className="session-loading__label">
+        <SpinnerIcon />
+        <span>{t('thread.opening')}</span>
+      </div>
+      <div className="skeleton skeleton--bubble" />
+      <div className="skeleton skeleton--line" />
+      <div className="skeleton skeleton--line skeleton--short" />
+      <div className="skeleton skeleton--bubble" />
+      <div className="skeleton skeleton--line" />
     </div>
   );
 }

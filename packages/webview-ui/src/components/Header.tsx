@@ -2,7 +2,21 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
-import { ChevronDownIcon, MoreIcon, PlusIcon, SearchIcon } from './icons.tsx';
+import {
+  ChatIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  FolderIcon,
+  GlobeIcon,
+  KeyIcon,
+  LogIcon,
+  MoreIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshIcon,
+  SearchIcon,
+  SpinnerIcon,
+} from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
 import { useT, type Translate } from '../i18n.ts';
 
@@ -33,7 +47,11 @@ export function Header() {
           }}
           title={session.title}
         >
-          {session.running ? <span className="dot dot--running" aria-label={t('header.running')} /> : null}
+          {session.sync === 'opening' && session.id ? (
+            <SpinnerIcon className="header__spinner" />
+          ) : session.running ? (
+            <span className="dot dot--running" aria-label={t('header.running')} />
+          ) : null}
           <span className="header__title-text">{session.title}</span>
           <ChevronDownIcon />
         </button>
@@ -43,12 +61,20 @@ export function Header() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('header.search')} aria-label={t('header.search')} />
           </div>
           <div role="menu" className="sessions-menu__list">
-            {filtered.length === 0 ? <div className="menu-empty">{sessions.length === 0 ? t('header.noSessions') : t('header.noMatch')}</div> : null}
+            {session.listLoading && sessions.length === 0 ? (
+              <div className="menu-empty menu-empty--loading">
+                <SpinnerIcon />
+                {t('header.loadingSessions')}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="menu-empty">{sessions.length === 0 ? t('header.noSessions') : t('header.noMatch')}</div>
+            ) : null}
             {filtered.map((s) => (
               <MenuItem
                 key={s.id}
                 active={s.id === session.id}
-                hint={s.running ? <span className="dot dot--running" /> : relativeTime(s.updatedAt, t)}
+                icon={s.running ? <SpinnerIcon /> : s.id === session.id ? <CheckIcon /> : <ChatIcon />}
+                hint={s.needsAttention ? <span className="dot dot--attention" title={t('approval.label')} /> : relativeTime(s.updatedAt, t)}
                 onSelect={() => {
                   close();
                   postToHost({ type: 'switchSession', payload: { sessionId: s.id } });
@@ -69,16 +95,28 @@ export function Header() {
         </button>
         <Popover open={menu === 'more'} onClose={close} className="more-menu" label={t('header.moreActions')}>
           <div role="menu">
-            {session.id ? <MenuItem onSelect={() => (close(), postToHost({ type: 'renameSession', payload: {} }))}>{t('header.rename')}</MenuItem> : null}
+            {session.id ? (
+              <MenuItem icon={<PencilIcon />} onSelect={() => (close(), postToHost({ type: 'renameSession', payload: {} }))}>
+                {t('header.rename')}
+              </MenuItem>
+            ) : null}
             {session.folder ? (
-              <MenuItem hint={session.folder} onSelect={() => (close(), postToHost({ type: 'selectFolder', payload: {} }))}>
+              <MenuItem icon={<FolderIcon />} hint={session.folder} onSelect={() => (close(), postToHost({ type: 'selectFolder', payload: {} }))}>
                 {t('header.folder')}
               </MenuItem>
             ) : null}
-            <MenuItem onSelect={() => (close(), postToHost({ type: 'configureApiKey', payload: {} }))}>{t('apiKey.configure')}</MenuItem>
-            <MenuItem onSelect={() => (close(), postToHost({ type: 'openWebUI', payload: {} }))}>{t('header.openWebUI')}</MenuItem>
-            <MenuItem onSelect={() => (close(), postToHost({ type: 'restartRuntime', payload: {} }))}>{t('header.restart')}</MenuItem>
-            <MenuItem onSelect={() => (close(), postToHost({ type: 'showLogs', payload: {} }))}>{t('header.logs')}</MenuItem>
+            <MenuItem icon={<KeyIcon />} onSelect={() => (close(), postToHost({ type: 'configureApiKey', payload: {} }))}>
+              {t('apiKey.configure')}
+            </MenuItem>
+            <MenuItem icon={<GlobeIcon />} onSelect={() => (close(), postToHost({ type: 'openWebUI', payload: {} }))}>
+              {t('header.openWebUI')}
+            </MenuItem>
+            <MenuItem icon={<RefreshIcon />} onSelect={() => (close(), postToHost({ type: 'restartRuntime', payload: {} }))}>
+              {t('header.restart')}
+            </MenuItem>
+            <MenuItem icon={<LogIcon />} onSelect={() => (close(), postToHost({ type: 'showLogs', payload: {} }))}>
+              {t('header.logs')}
+            </MenuItem>
           </div>
         </Popover>
       </div>

@@ -1,6 +1,7 @@
 /** dsh 运行时和连接状态提示。连接正常时不显示。 */
 import type { ConnectionState, RuntimeStatus } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
+import { ErrorIcon, LogIcon, RefreshIcon, SpinnerIcon } from './icons.tsx';
 import { useT, type Translate } from '../i18n.ts';
 
 export function RuntimeBanner({ status, connection }: { status: RuntimeStatus; connection: ConnectionState }) {
@@ -9,14 +10,19 @@ export function RuntimeBanner({ status, connection }: { status: RuntimeStatus; c
   if (!view) return null;
   return (
     <section className={`banner banner--${view.tone}`} role="status">
-      <p className="banner__title">{view.title}</p>
+      <p className="banner__title">
+        {view.tone === 'info' ? <SpinnerIcon /> : <ErrorIcon />}
+        <span>{view.title}</span>
+      </p>
       {view.detail ? <p className="banner__detail">{view.detail}</p> : null}
       {view.actions ? (
         <div className="banner__actions">
           <button type="button" className="button" onClick={() => postToHost({ type: 'restartRuntime', payload: {} })}>
+            <RefreshIcon />
             {t('runtime.retry')}
           </button>
           <button type="button" className="button button--secondary" onClick={() => postToHost({ type: 'showLogs', payload: {} })}>
+            <LogIcon />
             {t('runtime.logs')}
           </button>
         </div>

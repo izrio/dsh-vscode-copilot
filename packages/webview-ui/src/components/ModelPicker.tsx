@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import type { ModelOption } from '@dsh-copilot/shared';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
-import { ChevronDownIcon } from './icons.tsx';
+import { ChevronDownIcon, SparkleIcon, SpinnerIcon } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
 import { useT } from '../i18n.ts';
 
@@ -15,7 +15,14 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const current = models.current;
   const option = models.options.find((o) => o.provider === current?.provider && o.model === current?.model);
   const effort = option?.efforts.find((e) => e.id === current?.reasoningEffort);
-  const label = option ? `${option.name}${effort && option.efforts.length > 1 ? ` · ${effort.name}` : ''}` : current?.model ?? t('model.default');
+  const connected = useView((s) => s.connection === 'connected');
+  // 已连接但目录还没读到（也不是缺 API Key）：正在读取
+  const loading = (!connected || models.options.length === 0) && !models.needsApiKey;
+  const label = option
+    ? `${option.name}${effort && option.efforts.length > 1 ? ` · ${effort.name}` : ''}`
+    : loading
+      ? t('model.loading')
+      : (current?.model ?? t('model.default'));
 
   const select = (o: ModelOption, reasoningEffort?: string) => {
     close();
@@ -36,7 +43,9 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         title={t('model.switch')}
+        data-testid="model-picker"
       >
+        {loading && !option ? <SpinnerIcon /> : <SparkleIcon />}
         <span className="toolbar-button__text">{label}</span>
         <ChevronDownIcon />
       </button>

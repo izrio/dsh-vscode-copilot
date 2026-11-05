@@ -11,7 +11,8 @@ import { activeAtToken, formatFileMention, type ActiveAtToken } from '../mention
 import { loadState, postToHost, saveState } from '../vscode.ts';
 import { Completion, type CompletionItem } from './Completion.tsx';
 import { ContextChips } from './ContextChips.tsx';
-import { ArrowUpIcon, CloseIcon, PlanIcon, StopIcon } from './icons.tsx';
+import { ContextRing } from './ContextRing.tsx';
+import { ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
 import { StatusStrip } from './StatusStrip.tsx';
@@ -118,7 +119,8 @@ export function Composer() {
     trigger?.kind === 'file'
       ? candidates.items.some((c) => c.kind === 'file' && c.path === trigger.token.query)
       : trigger?.kind === 'command' && commands.some((c) => c.name === trigger.query);
-  const menuOpen = trigger !== undefined && !complete && (items.length > 0 || (trigger.kind === 'file' && requestId === candidates.requestId));
+  // 文件补全：结果还没回来时也打开，显示"正在搜索"
+  const menuOpen = trigger !== undefined && !complete && (items.length > 0 || trigger.kind === 'file');
 
   const replaceRange = (start: number, end: number, insertion: string) => {
     const next = text.slice(0, start) + insertion + text.slice(end);
@@ -193,6 +195,7 @@ export function Composer() {
         <div className="dirty-strip" data-testid="dirty-strip">
           <span>{t('dirty.strip', dirtyFiles)}</span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
+            <SaveIcon />
             {t('dirty.saveAll')}
           </button>
         </div>
@@ -205,6 +208,7 @@ export function Composer() {
           onHover={setSelected}
           label={trigger.kind === 'command' ? t('completion.commands') : t('completion.files')}
           {...(trigger.kind === 'file' ? { empty: t('completion.noFiles') } : {})}
+          {...(trigger.kind === 'file' && requestId !== candidates.requestId ? { loading: t('completion.searching') } : {})}
         />
       ) : null}
       <div className="composer">
@@ -245,11 +249,7 @@ export function Composer() {
               <CloseIcon />
             </button>
           ) : null}
-          {session.contextUsage !== undefined ? (
-            <span className="context-usage" title={t('composer.context', Math.round(session.contextUsage * 100))}>
-              {Math.max(1, Math.round(session.contextUsage * 100))}%
-            </span>
-          ) : null}
+          {session.contextUsage !== undefined ? <ContextRing usage={session.contextUsage} {...(session.contextTokens ? { tokens: session.contextTokens } : {})} /> : null}
           <span className="composer__spacer" />
           {showStop ? (
             <button type="button" className="send-button send-button--stop" onClick={() => postToHost({ type: 'interrupt', payload: {} })} aria-label={t('composer.stop')} title={t('composer.stop')}>

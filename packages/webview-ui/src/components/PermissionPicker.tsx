@@ -2,7 +2,7 @@
 import { useCallback, useState } from 'react';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
-import { ChevronDownIcon, ShieldIcon } from './icons.tsx';
+import { ChevronDownIcon, LockIcon, PencilIcon, ShieldIcon, UnlockIcon } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
 import { useT, type Translate } from '../i18n.ts';
 
@@ -13,6 +13,14 @@ const isKnown = (preset: string): preset is Known => (KNOWN as readonly string[]
 /** 内置预设显示翻译后的名字；用户自定义的预设显示原名。 */
 export const permissionName = (preset: string, t: Translate): string => (isKnown(preset) ? t(`permission.${preset}`) : preset);
 const permissionHint = (preset: string, t: Translate): string | undefined => (isKnown(preset) ? t(`permission.${preset}.hint`) : undefined);
+
+/** 只读：锁；工作区可写：笔；完全访问：开锁；自定义预设：盾牌。 */
+function PresetIcon({ preset }: { preset: string | undefined }) {
+  if (preset === 'read-only') return <LockIcon />;
+  if (preset === 'workspace-write') return <PencilIcon />;
+  if (preset === 'danger-full-access') return <UnlockIcon />;
+  return <ShieldIcon />;
+}
 
 export function PermissionPicker({ disabled }: { disabled: boolean }) {
   const permissions = useView((s) => s.permissions);
@@ -34,7 +42,7 @@ export function PermissionPicker({ disabled }: { disabled: boolean }) {
         title={current ? t('permission.title', permissionName(current, t)) : t('permission.label')}
         data-testid="permission-picker"
       >
-        <ShieldIcon />
+        <PresetIcon preset={current} />
         <span className="toolbar-button__text permission-picker__text">{current ? permissionName(current, t) : t('permission.label')}</span>
         <ChevronDownIcon />
       </button>
@@ -44,6 +52,7 @@ export function PermissionPicker({ disabled }: { disabled: boolean }) {
             <MenuItem
               key={preset}
               active={preset === current}
+              icon={<PresetIcon preset={preset} />}
               hint={permissionHint(preset, t)}
               onSelect={() => {
                 close();

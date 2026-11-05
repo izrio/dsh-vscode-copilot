@@ -6,7 +6,21 @@ import { useState } from 'react';
 import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';
-import { EyeIcon, PlanIcon, QuestionIcon, ShieldIcon } from './icons.tsx';
+import {
+  ChatIcon,
+  CheckIcon,
+  CloseIcon,
+  EyeIcon,
+  FastForwardIcon,
+  PencilIcon,
+  PlanIcon,
+  QuestionIcon,
+  ReplyIcon,
+  SaveIcon,
+  SendIcon,
+  ShieldIcon,
+  SpinnerIcon,
+} from './icons.tsx';
 import { useT } from '../i18n.ts';
 
 type Of<K extends PendingInteraction['kind']> = Extract<PendingInteraction, { kind: K }>;
@@ -19,11 +33,11 @@ export function InteractionCard({ interaction }: { interaction: PendingInteracti
 }
 
 function ApprovalCard({ item }: { item: Of<'approval'> }) {
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<'allow' | 'reject' | undefined>();
   const t = useT();
   const blocked = item.dirtyFiles.length > 0;
   const respond = (decision: 'allow' | 'reject') => {
-    setSent(true);
+    setSent(decision);
     postToHost({ type: 'respondApproval', payload: { id: item.id, decision } });
   };
   const title = item.subjectKind === 'command' ? t('approval.command') : item.subjectKind === 'file' ? t('approval.file') : t('approval.tool', item.toolName);
@@ -45,15 +59,18 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
         <div className="interaction__warning" role="alert">
           <span>{t('approval.dirty', item.dirtyFiles.join(', '))}</span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
+            <SaveIcon />
             {t('dirty.saveAll')}
           </button>
         </div>
       ) : null}
       <div className="interaction__actions">
-        <button type="button" className="button" disabled={sent || blocked} onClick={() => respond('allow')}>
+        <button type="button" className="button" disabled={sent !== undefined || blocked} onClick={() => respond('allow')}>
+          {sent === 'allow' ? <SpinnerIcon /> : <CheckIcon />}
           {t('approval.allow')}
         </button>
-        <button type="button" className="button button--secondary" disabled={sent} onClick={() => respond('reject')}>
+        <button type="button" className="button button--secondary" disabled={sent !== undefined} onClick={() => respond('reject')}>
+          {sent === 'reject' ? <SpinnerIcon /> : <CloseIcon />}
           {t('approval.reject')}
         </button>
         {item.previewable ? (
@@ -71,10 +88,10 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
 function PlanReviewCard({ id, question }: { id: string; question: QuestionView }) {
   const t = useT();
   const [feedback, setFeedback] = useState<string | undefined>();
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<'approve' | 'keep' | 'reply' | undefined>();
   const intent = question.intent!;
   const answer = (selected: string, custom?: string) => {
-    setSent(true);
+    setSent(selected === intent.approve ? 'approve' : 'keep');
     postToHost({ type: 'answerQuestion', payload: { id, answers: [{ id: question.id, selected: [selected], ...(custom ? { custom } : {}) }] } });
   };
   const keep = intent.keepPlanning ?? question.options.find((o) => o.label !== intent.approve)?.label ?? 'Keep planning';
@@ -97,26 +114,30 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
           value={feedback}
           placeholder={t('plan.feedbackPlaceholder')}
           aria-label={t('plan.feedbackLabel')}
-          disabled={sent}
+          disabled={sent !== undefined}
           onChange={(event) => setFeedback(event.target.value)}
         />
       ) : null}
       <div className="interaction__actions">
         {feedback === undefined ? (
           <>
-            <button type="button" className="button" disabled={sent} onClick={() => answer(intent.approve)}>
+            <button type="button" className="button" disabled={sent !== undefined} onClick={() => answer(intent.approve)}>
+              {sent === 'approve' ? <SpinnerIcon /> : <CheckIcon />}
               {t('plan.approve')}
             </button>
-            <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback('')}>
+            <button type="button" className="button button--secondary" disabled={sent !== undefined} onClick={() => setFeedback('')}>
+              <PencilIcon />
               {t('plan.keep')}
             </button>
           </>
         ) : (
           <>
-            <button type="button" className="button" disabled={sent} onClick={() => answer(keep, feedback.trim() || undefined)}>
+            <button type="button" className="button" disabled={sent !== undefined} onClick={() => answer(keep, feedback.trim() || undefined)}>
+              {sent === 'keep' ? <SpinnerIcon /> : <SendIcon />}
               {t('plan.sendFeedback')}
             </button>
-            <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback(undefined)}>
+            <button type="button" className="button button--secondary" disabled={sent !== undefined} onClick={() => setFeedback(undefined)}>
+              <ReplyIcon />
               {t('plan.back')}
             </button>
           </>
@@ -124,13 +145,14 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
         <button
           type="button"
           className="link-button interaction__skip"
-          disabled={sent}
+          disabled={sent !== undefined}
           title={t('plan.replyTitle')}
           onClick={() => {
-            setSent(true);
+            setSent('reply');
             postToHost({ type: 'answerQuestion', payload: { id, cancelled: true } });
           }}
         >
+          {sent === 'reply' ? <SpinnerIcon /> : <ChatIcon />}
           {t('plan.reply')}
         </button>
       </div>
@@ -146,7 +168,7 @@ interface Draft {
 function QuestionCard({ item }: { item: Of<'question'> }) {
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<'submit' | 'skip' | undefined>();
   const draftOf = (q: QuestionView): Draft => drafts[q.id] ?? { selected: [], custom: '' };
   const update = (q: QuestionView, next: Draft) => setDrafts({ ...drafts, [q.id]: next });
   const answered = (q: QuestionView) => draftOf(q).selected.length > 0 || draftOf(q).custom.trim().length > 0;
@@ -154,7 +176,7 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
 
   const submit = () => {
     if (!complete || sent) return;
-    setSent(true);
+    setSent('submit');
     postToHost({
       type: 'answerQuestion',
       payload: {
@@ -168,7 +190,7 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
     });
   };
   const skip = () => {
-    setSent(true);
+    setSent('skip');
     postToHost({ type: 'answerQuestion', payload: { id: item.id, cancelled: true } });
   };
 
@@ -186,7 +208,7 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
           update(q, { ...draft, selected });
         };
         return (
-          <fieldset key={q.id} className="question" disabled={sent}>
+          <fieldset key={q.id} className="question" disabled={sent !== undefined}>
             <legend className="question__title">
               {q.header ? <span className="question__header">{q.header}</span> : null}
               {q.question}
@@ -226,10 +248,12 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
         );
       })}
       <div className="interaction__actions">
-        <button type="button" className="button" disabled={!complete || sent} onClick={submit}>
+        <button type="button" className="button" disabled={!complete || sent !== undefined} onClick={submit}>
+          {sent === 'submit' ? <SpinnerIcon /> : <SendIcon />}
           {t('question.submit')}
         </button>
-        <button type="button" className="button button--secondary" disabled={sent} onClick={skip}>
+        <button type="button" className="button button--secondary" disabled={sent !== undefined} onClick={skip}>
+          {sent === 'skip' ? <SpinnerIcon /> : <FastForwardIcon />}
           {t('question.skip')}
         </button>
         {item.questions.some((q) => q.multiSelect) ? <span className="interaction__hint">{t('question.multi')}</span> : null}

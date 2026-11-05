@@ -58,10 +58,13 @@ export function plainTitle(text: string): string {
     .trim();
 }
 
-export function contextUsageOf(projections: Readonly<Record<string, unknown>>): { contextUsage?: number } {
+export function contextUsageOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'contextUsage' | 'contextTokens'> {
   const pressure = projections.contextPressure as { pressureTokens?: number; contextWindow?: number } | undefined;
   if (!pressure?.contextWindow || typeof pressure.pressureTokens !== 'number') return {};
-  return { contextUsage: Math.min(1, Math.max(0, pressure.pressureTokens / pressure.contextWindow)) };
+  return {
+    contextUsage: Math.min(1, Math.max(0, pressure.pressureTokens / pressure.contextWindow)),
+    contextTokens: { used: pressure.pressureTokens, window: pressure.contextWindow },
+  };
 }
 
 /** 队列里某条消息的完整文本（含上下文块）。 */

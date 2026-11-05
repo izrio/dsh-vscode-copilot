@@ -42,9 +42,22 @@ export function Popover({
 }
 
 /** 菜单里的一项。 */
-export function MenuItem({ onSelect, children, active, hint }: { onSelect: () => void; children: ReactNode; active?: boolean; hint?: ReactNode }) {
+export function MenuItem({
+  onSelect,
+  children,
+  active,
+  hint,
+  icon,
+}: {
+  onSelect: () => void;
+  children: ReactNode;
+  active?: boolean;
+  hint?: ReactNode;
+  icon?: ReactNode;
+}) {
   return (
     <button type="button" role="menuitem" className={`menu-item ${active ? 'menu-item--active' : ''}`} onClick={onSelect}>
+      {icon ? <span className="menu-item__icon">{icon}</span> : null}
       <span className="menu-item__label">{children}</span>
       {hint ? <span className="menu-item__hint">{hint}</span> : null}
     </button>

@@ -769,6 +769,7 @@ export class ChatController {
       sync: !sessionId ? 'idle' : showingStale ? 'disconnected' : !streamStatus ? 'opening' : streamStatus.kind,
       ...(streamStatus?.kind === 'failed' ? { failure: streamStatus.message } : {}),
       ...contextUsageOf(projections),
+      ...(this.connection === 'connected' && !this.service?.initialized && !this.staleService ? { listLoading: true } : {}),
       ...((projections.plan as { active?: boolean } | undefined)?.active ? { planMode: true } : {}),
       ...todosOf(projections),
       ...goalOf(projections),

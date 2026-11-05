@@ -6,6 +6,7 @@ import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { InteractionCard } from './Interactions.tsx';
 import { ItemView } from './Items.tsx';
+import { ArrowUpIcon, SpinnerIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
 const STICK_THRESHOLD = 48;
@@ -46,9 +47,16 @@ export function Thread() {
 
   return (
     <div className="thread" ref={scroller} role="log" aria-live="polite" aria-busy={session.running}>
+      {session.sync === 'disconnected' ? (
+        <div className="thread__sync" role="status">
+          <SpinnerIcon />
+          <span>{t('thread.reconnecting')}</span>
+        </div>
+      ) : null}
       {session.hasOlder ? (
         <div className="thread__older">
           <button type="button" className="link-button" disabled={session.loadingOlder} onClick={() => postToHost({ type: 'loadOlder', payload: {} })}>
+            {session.loadingOlder ? <SpinnerIcon /> : <ArrowUpIcon />}
             {session.loadingOlder ? t('thread.loading') : t('thread.older')}
           </button>
         </div>
@@ -61,6 +69,7 @@ export function Thread() {
       ))}
       {showThinking ? (
         <div className="thinking" aria-label={t('thread.busy')}>
+          <SpinnerIcon />
           <span className="shimmer">{t('thread.thinking')}</span>
         </div>
       ) : null}
