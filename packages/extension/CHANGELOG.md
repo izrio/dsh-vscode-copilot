@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 识别带前缀或别名的工具：`ops_grep`、`ops_read_files`、`mcp__fs__read_file`、`run_command`、`str_replace_editor` 等按对应的内置工具渲染——连续的读文件和搜索合并成一行「已浏览」，命令显示「已运行」，修改显示文件；一次读多个文件时显示第一个文件和其余数量。
+  Prefixed or aliased tools (`ops_grep`, `ops_read_files`, `mcp__fs__read_file`, `run_command`, `str_replace_editor`, …) render like the built-in ones: reads and searches merge into one row, commands show "Ran", edits show the file; multi-file reads show the first file and a count.
+
 - 运行状态：dsh 处理时对话末尾显示正在做什么（思考 / 回复 / 运行命令 / 编辑某文件 / 调用某工具 / 等你处理）和已用时间，每秒刷新；一轮结束后显示「已完成 · 用时 …」（超过 1 秒的轮次）。用时取 dsh 记录的开始和结束时间。
   Run status: while dsh works, the end of the conversation shows what it is doing and the elapsed time, updated every second; finished turns longer than a second show "Done · took …", using dsh's own start and end times.
 

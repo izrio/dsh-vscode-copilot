@@ -184,6 +184,24 @@ describe('project：按工具类型渲染（M2）', () => {
     expect(projectEvents({ events: events.slice(0, 4) }).turnStartedAt).toBeUndefined();
   });
 
+  it('带前缀的工具（ops_grep、ops_read_files、ops_bash）和内置工具一样渲染', () => {
+    const events = [
+      call(1, 'c1', 'ops_grep', { pattern: 'outline' }),
+      result(2, 'c1'),
+      call(3, 'c2', 'ops_read_files', { paths: ['/w/a.ts', '/w/b.ts', '/w/c.ts'] }),
+      result(4, 'c2'),
+      call(5, 'c3', 'ops_grep', { pattern: 'tabs' }),
+      result(6, 'c3'),
+      call(7, 'c4', 'ops_bash', { command: 'git log --oneline -5' }),
+      result(8, 'c4'),
+    ];
+    const items = project({ events, pending: [], workspacePath: '/w' }).items;
+    expect(items).toMatchObject([
+      { kind: 'explore', summary: '读取 1 个文件，搜索 2 次', entries: [{ label: 'ops_grep  outline' }, { label: 'ops_read_files  a.ts +2' }, { label: 'ops_grep  tabs' }] },
+      { kind: 'activity', variant: 'command', label: 'ops_bash  git log --oneline -5' },
+    ]);
+  });
+
   it('write 新建文件：标记新建，新增行数取内容行数', () => {
     const items = project({
       events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],
