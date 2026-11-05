@@ -5,15 +5,17 @@ import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { ChevronDownIcon } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
+import { useT } from '../i18n.ts';
 
 export function ModelPicker({ disabled }: { disabled: boolean }) {
   const models = useView((s) => s.models);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
+  const t = useT();
   const current = models.current;
   const option = models.options.find((o) => o.provider === current?.provider && o.model === current?.model);
   const effort = option?.efforts.find((e) => e.id === current?.reasoningEffort);
-  const label = option ? `${option.name}${effort && option.efforts.length > 1 ? ` · ${effort.name}` : ''}` : current?.model ?? '模型';
+  const label = option ? `${option.name}${effort && option.efforts.length > 1 ? ` · ${effort.name}` : ''}` : current?.model ?? t('model.default');
 
   const select = (o: ModelOption, reasoningEffort?: string) => {
     close();
@@ -33,12 +35,12 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        title="切换模型"
+        title={t('model.switch')}
       >
         <span className="toolbar-button__text">{label}</span>
         <ChevronDownIcon />
       </button>
-      <Popover open={open} onClose={close} className="model-menu" label="选择模型">
+      <Popover open={open} onClose={close} className="model-menu" label={t('model.select')}>
         <div role="menu">
           {groups.map((group) => (
             <div key={group} className="model-menu__group">

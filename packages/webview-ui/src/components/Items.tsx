@@ -7,6 +7,7 @@ import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ChevronRightIcon, ErrorIcon, FileEditIcon, FileIcon, InfoIcon, SearchIcon, SelectionIcon, SpinnerIcon, TerminalIcon, ToolIcon } from './icons.tsx';
+import { useT } from '../i18n.ts';
 
 type Of<K extends Item['kind']> = Extract<Item, { kind: K }>;
 
@@ -28,6 +29,7 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
 });
 
 function UserBubble({ item }: { item: Of<'user'> }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   if (editing && item.queue) return <QueueEditor item={item} onDone={() => setEditing(false)} />;
   return (
@@ -40,7 +42,7 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.attachments?.length ? (
         <div className="user__attachments">
           {item.attachments.map((a) => (
-            <button key={attachmentLabel(a) + a.path} type="button" className="chip chip--small" onClick={() => openAttachment(a)} title={`打开 ${a.path}`}>
+            <button key={attachmentLabel(a) + a.path} type="button" className="chip chip--small" onClick={() => openAttachment(a)} title={t('common.open', a.path)}>
               {a.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
               <span className="chip__label">{attachmentLabel(a)}</span>
             </button>
@@ -50,12 +52,12 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.pending === 'queued' ? <QueuedMeta item={item} onEdit={() => setEditing(true)} /> : null}
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
-          <span>发送失败{item.error ? `：${item.error}` : ''}</span>
+          <span>{item.error ? t('user.failedWith', item.error) : t('user.failed')}</span>
           <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'retryPending', payload: { requestId: item.requestId } })}>
-            重试
+            {t('user.retry')}
           </button>
           <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'discardPending', payload: { requestId: item.requestId } })}>
-            删除
+            {t('common.delete')}
           </button>
         </div>
       ) : null}
@@ -65,46 +67,48 @@ function UserBubble({ item }: { item: Of<'user'> }) {
 
 /** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。 */
 function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) {
+  const t = useT();
   const running = useView((s) => s.session.running);
   const queue = item.queue;
-  if (!queue) return <div className="user__meta">排队中，当前回复结束后发送</div>;
+  if (!queue) return <div className="user__meta">{t('queue.waiting')}</div>;
   const act = (action: 'remove' | 'steer' | 'send') => postToHost({ type: 'queueAction', payload: { action, itemId: queue.itemId } });
   if (!running) {
     // 停止生成后 dsh 保留队列，但要等下一条消息才一起送达
     return (
       <div className="user__meta" data-testid="queued-meta">
-        <span>已停止，这条消息还没发出</span>
+        <span>{t('queue.stopped')}</span>
         <button type="button" className="link-button" onClick={() => act('send')}>
-          现在发送
+          {t('queue.sendNow')}
         </button>
         <button type="button" className="link-button" onClick={onEdit}>
-          编辑
+          {t('common.edit')}
         </button>
         <button type="button" className="link-button" onClick={() => act('remove')}>
-          删除
+          {t('common.delete')}
         </button>
       </div>
     );
   }
   return (
     <div className="user__meta" data-testid="queued-meta">
-      <span>{queue.target === 'next-step' ? '已插队，在当前回复的下一步送达' : '排队中，当前回复结束后发送'}</span>
+      <span>{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
       <button type="button" className="link-button" onClick={onEdit}>
-        编辑
+        {t('common.edit')}
       </button>
       {queue.target === 'next-turn' ? (
-        <button type="button" className="link-button" onClick={() => act('steer')} title="不等当前回复结束，在它的下一步就交给 dsh">
-          插队
+        <button type="button" className="link-button" onClick={() => act('steer')} title={t('queue.steerTitle')}>
+          {t('queue.steer')}
         </button>
       ) : null}
       <button type="button" className="link-button" onClick={() => act('remove')}>
-        删除
+        {t('common.delete')}
       </button>
     </div>
   );
 }
 
 function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void }) {
+  const t = useT();
   const [text, setText] = useState(item.text);
   const save = () => {
     if (item.queue && text.trim() && text.trim() !== item.text) {
@@ -119,7 +123,7 @@ function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void })
         value={text}
         autoFocus
         rows={Math.min(8, Math.max(2, text.split('\n').length))}
-        aria-label="编辑排队的消息"
+        aria-label={t('queue.editLabel')}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -132,10 +136,10 @@ function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void })
       />
       <div className="user__meta">
         <button type="button" className="link-button" onClick={save}>
-          保存
+          {t('common.save')}
         </button>
         <button type="button" className="link-button" onClick={onDone}>
-          取消
+          {t('common.cancel')}
         </button>
       </div>
     </div>
@@ -144,13 +148,14 @@ function QueueEditor({ item, onDone }: { item: Of<'user'>; onDone: () => void })
 
 /** 用户消息正文：`@路径` 显示成可点击的引用。 */
 function UserText({ text }: { text: string }) {
+  const t = useT();
   return (
     <>
       {splitMentions(text).map((part, index) =>
         part.kind === 'text' ? (
           part.text
         ) : (
-          <button key={index} type="button" className="mention" onClick={() => postToHost({ type: 'openFile', payload: { path: part.path } })} title={`打开 ${part.path}`}>
+          <button key={index} type="button" className="mention" onClick={() => postToHost({ type: 'openFile', payload: { path: part.path } })} title={t('common.open', part.path)}>
             {part.text}
           </button>
         ),
@@ -171,12 +176,13 @@ function AssistantMessage({ item }: { item: Of<'assistant'> }) {
 
 /** 推理过程：进行中只显示一行"思考中"，结束后折叠成一行，点开查看。 */
 function Reasoning({ text, active }: { text: string; active: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="reasoning">
       <button type="button" className="reasoning__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChevronRightIcon className={`chevron ${open ? 'chevron--open' : ''}`} />
-        <span className={active ? 'shimmer' : undefined}>{active ? '思考中…' : '思考过程'}</span>
+        <span className={active ? 'shimmer' : undefined}>{active ? t('reasoning.active') : t('reasoning.done')}</span>
       </button>
       {open ? <div className="reasoning__body">{text}</div> : null}
     </div>
@@ -191,6 +197,7 @@ function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon
 
 /** 命令和其他工具：一行摘要，点开看输出。 */
 function ActivityRow({ item }: { item: Of<'activity'> }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [name, ...rest] = item.label.split('  ');
   const detail = rest.join('  ');
@@ -208,7 +215,7 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
       >
         <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <ToolIcon />} />
         {command ? (
-          <span className="activity__name">{item.status === 'running' ? '正在运行' : '已运行'}</span>
+          <span className="activity__name">{item.status === 'running' ? t('command.running') : t('command.done')}</span>
         ) : (
           <span className="activity__name">{name}</span>
         )}
@@ -221,8 +228,9 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
 
 /** 文件修改：「已编辑 src/a.ts +3 −1」，点击打开 Diff。 */
 function EditRow({ item }: { item: Of<'activity'> }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
-  const verb = item.status === 'running' ? '正在编辑' : item.status === 'error' ? '编辑失败' : item.created ? '已新建' : '已编辑';
+  const verb = item.status === 'running' ? t('edit.running') : item.status === 'error' ? t('edit.failed') : item.created ? t('edit.created') : t('edit.done');
   const diff = item.diff;
   const onClick = () => (diff ? openDiff(diff) : item.output ? setOpen(!open) : undefined);
   return (
@@ -233,7 +241,7 @@ function EditRow({ item }: { item: Of<'activity'> }) {
         disabled={!diff && !item.output}
         aria-expanded={!diff && item.output ? open : undefined}
         onClick={onClick}
-        title={diff ? `查看 ${item.label} 的修改` : item.label}
+        title={diff ? t('edit.view', item.label) : item.label}
       >
         <StatusIcon status={item.status} icon={<FileEditIcon />} />
         <span className="activity__name">{verb}</span>
@@ -260,12 +268,13 @@ function Stats({ stats }: { stats: Partial<LineStats> }) {
 
 /** 连续的只读操作：「已浏览 读取 3 个文件，搜索 1 次」，点开看每一步。 */
 function ExploreRow({ item }: { item: Of<'explore'> }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className={`activity activity--${item.status}`}>
       <button type="button" className="activity__row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <StatusIcon status={item.status} icon={<SearchIcon />} />
-        <span className="activity__name">{item.status === 'running' ? '正在浏览' : '已浏览'}</span>
+        <span className="activity__name">{item.status === 'running' ? t('explore.running') : t('explore.done')}</span>
         <span className="activity__detail activity__detail--plain">{item.summary}</span>
         <ChevronRightIcon className={`chevron activity__chevron ${open ? 'chevron--open' : ''}`} />
       </button>
@@ -289,31 +298,32 @@ function ExploreRow({ item }: { item: Of<'explore'> }) {
 
 /** 一轮结束时的改动汇总卡片。 */
 function ChangesCard({ item }: { item: Of<'changes'> }) {
+  const t = useT();
   const total = item.files.reduce(
     (sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }),
     { additions: 0, deletions: 0 },
   );
   return (
-    <section className="changes" aria-label="本轮改动">
+    <section className="changes" aria-label={t('changes.label')}>
       <header className="changes__header">
-        <span>{item.total} 个文件已更改</span>
+        <span>{t('changes.title', item.total)}</span>
         <Stats stats={total} />
       </header>
       <ul className="changes__list">
         {item.files.map((file) => (
           <li key={`${file.path}:${JSON.stringify(file.ref)}`}>
-            <button type="button" className="changes__file" onClick={() => openDiff(file.ref)} title={`查看 ${file.path} 的修改`}>
+            <button type="button" className="changes__file" onClick={() => openDiff(file.ref)} title={t('edit.view', file.path)}>
               <span className="changes__path">{file.path}</span>
-              {file.created ? <span className="changes__flag">新建</span> : null}
-              {file.flags?.includes('binary') ? <span className="changes__flag">二进制</span> : null}
-              {file.flags?.includes('oversized') ? <span className="changes__flag">过大</span> : null}
+              {file.created ? <span className="changes__flag">{t('changes.created')}</span> : null}
+              {file.flags?.includes('binary') ? <span className="changes__flag">{t('changes.binary')}</span> : null}
+              {file.flags?.includes('oversized') ? <span className="changes__flag">{t('changes.oversized')}</span> : null}
               <Stats stats={file} />
             </button>
           </li>
         ))}
       </ul>
-      {item.source === 'tools' ? <p className="changes__note">dsh 重启过，这里只列出文件工具的修改，命令造成的改动不在其中。</p> : null}
-      {item.total > item.files.length ? <p className="changes__note">还有 {item.total - item.files.length} 个文件未列出。</p> : null}
+      {item.source === 'tools' ? <p className="changes__note">{t('changes.toolsOnly')}</p> : null}
+      {item.total > item.files.length ? <p className="changes__note">{t('changes.more', item.total - item.files.length)}</p> : null}
     </section>
   );
 }

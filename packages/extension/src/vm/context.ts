@@ -17,6 +17,7 @@
  */
 import { displayPath } from './projector.ts';
 import type { AttachmentView } from '@dsh-copilot/shared';
+import { t } from '../i18n.ts';
 
 export interface SelectionContext {
   readonly kind: 'selection';
@@ -115,30 +116,31 @@ export function attachmentLabel(attachment: AttachmentView): string {
     : `${attachment.path}:${attachment.startLine}`;
 }
 
-/** 插件自带的斜杠命令。模板命令把选区或当前文件作为上下文。 */
-export const PLUGIN_COMMANDS = [
-  { name: 'explain', description: '解释选中的代码或当前文件', hint: '[补充说明]' },
-  { name: 'fix', description: '找出并修复选中代码里的问题（附带诊断信息）', hint: '[问题描述]' },
-  { name: 'test', description: '为选中的代码编写测试并运行', hint: '[补充说明]' },
-  { name: 'new', description: '新建对话' },
-] as const;
+export const PLUGIN_COMMAND_NAMES = ['explain', 'fix', 'test', 'new'] as const;
+
+/** 插件自带的斜杠命令（说明按界面语言）。模板命令把选区或当前文件作为上下文。 */
+export function pluginCommands(): { name: string; description: string; hint?: string }[] {
+  return [
+    { name: 'explain', description: t('cmd.explain'), hint: t('cmd.hintExtra') },
+    { name: 'fix', description: t('cmd.fix'), hint: t('cmd.hintProblem') },
+    { name: 'test', description: t('cmd.test'), hint: t('cmd.hintExtra') },
+    { name: 'new', description: t('cmd.new') },
+  ];
+}
 
 export type TemplateName = 'explain' | 'fix' | 'test';
 
-const TEMPLATES: Record<TemplateName, string> = {
-  explain: '解释这段代码：它做了什么、关键逻辑和需要注意的地方。',
-  fix: '找出这段代码里的问题并修复。如果附带了诊断信息，先处理它们。',
-  test: '为这段代码编写测试，覆盖主要分支和边界情况，然后运行测试。',
-};
+const TEMPLATE_KEYS = { explain: 'template.explain', fix: 'template.fix', test: 'template.test' } as const;
 
 export function isTemplate(name: string): name is TemplateName {
-  return Object.hasOwn(TEMPLATES, name);
+  return Object.hasOwn(TEMPLATE_KEYS, name);
 }
 
-/** 模板命令展开成的提示词；用户在命令后面写的内容作为补充说明。 */
+/** 模板命令展开成的提示词（按界面语言）；用户在命令后面写的内容作为补充说明。 */
 export function templatePrompt(name: TemplateName, extra: string): string {
   const trimmed = extra.trim();
-  return trimmed ? `${TEMPLATES[name]}\n\n${trimmed}` : TEMPLATES[name];
+  const template = t(TEMPLATE_KEYS[name]);
+  return trimmed ? `${template}\n\n${trimmed}` : template;
 }
 
 /** 解析以 `/` 开头的消息：`/name 参数`。不是命令形式时返回 undefined。 */

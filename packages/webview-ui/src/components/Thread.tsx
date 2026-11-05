@@ -6,6 +6,7 @@ import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { InteractionCard } from './Interactions.tsx';
 import { ItemView } from './Items.tsx';
+import { useT } from '../i18n.ts';
 
 const STICK_THRESHOLD = 48;
 
@@ -15,6 +16,7 @@ export function Thread() {
   const session = useView((s) => s.session);
   const sessionKey = useView((s) => s.sessionKey);
   const scroller = useRef<HTMLDivElement>(null);
+  const t = useT();
   const stick = useRef(true);
 
   // 切换会话时回到底部
@@ -47,7 +49,7 @@ export function Thread() {
       {session.hasOlder ? (
         <div className="thread__older">
           <button type="button" className="link-button" disabled={session.loadingOlder} onClick={() => postToHost({ type: 'loadOlder', payload: {} })}>
-            {session.loadingOlder ? '正在加载…' : '加载更早的消息'}
+            {session.loadingOlder ? t('thread.loading') : t('thread.older')}
           </button>
         </div>
       ) : null}
@@ -58,8 +60,8 @@ export function Thread() {
         <InteractionCard key={interaction.id} interaction={interaction} />
       ))}
       {showThinking ? (
-        <div className="thinking" aria-label="dsh 正在处理">
-          <span className="shimmer">思考中…</span>
+        <div className="thinking" aria-label={t('thread.busy')}>
+          <span className="shimmer">{t('thread.thinking')}</span>
         </div>
       ) : null}
     </div>

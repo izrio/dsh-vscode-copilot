@@ -7,6 +7,7 @@ import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';
 import { EyeIcon, PlanIcon, QuestionIcon, ShieldIcon } from './icons.tsx';
+import { useT } from '../i18n.ts';
 
 type Of<K extends PendingInteraction['kind']> = Extract<PendingInteraction, { kind: K }>;
 
@@ -19,14 +20,15 @@ export function InteractionCard({ interaction }: { interaction: PendingInteracti
 
 function ApprovalCard({ item }: { item: Of<'approval'> }) {
   const [sent, setSent] = useState(false);
+  const t = useT();
   const blocked = item.dirtyFiles.length > 0;
   const respond = (decision: 'allow' | 'reject') => {
     setSent(true);
     postToHost({ type: 'respondApproval', payload: { id: item.id, decision } });
   };
-  const title = item.subjectKind === 'command' ? 'dsh 想运行这条命令' : item.subjectKind === 'file' ? 'dsh 想修改这个文件' : `dsh 想使用 ${item.toolName}`;
+  const title = item.subjectKind === 'command' ? t('approval.command') : item.subjectKind === 'file' ? t('approval.file') : t('approval.tool', item.toolName);
   return (
-    <section className="interaction interaction--approval" aria-label="需要你的确认" data-testid="approval-card">
+    <section className="interaction interaction--approval" aria-label={t('approval.label')} data-testid="approval-card">
       <header className="interaction__header">
         <ShieldIcon />
         <span>{title}</span>
@@ -38,26 +40,26 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
         </button>
       ) : null}
       {item.reason ? <p className="interaction__reason">{item.reason}</p> : null}
-      <p className="interaction__hint">这一步需要越过工作区沙箱，只对这一次生效。</p>
+      <p className="interaction__hint">{t('approval.hint')}</p>
       {blocked ? (
         <div className="interaction__warning" role="alert">
-          <span>{item.dirtyFiles.join('、')} 有未保存的修改，先保存再允许，避免和编辑器里的内容冲突。</span>
+          <span>{t('approval.dirty', item.dirtyFiles.join(', '))}</span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
-            全部保存
+            {t('dirty.saveAll')}
           </button>
         </div>
       ) : null}
       <div className="interaction__actions">
         <button type="button" className="button" disabled={sent || blocked} onClick={() => respond('allow')}>
-          允许本次
+          {t('approval.allow')}
         </button>
         <button type="button" className="button button--secondary" disabled={sent} onClick={() => respond('reject')}>
-          拒绝
+          {t('approval.reject')}
         </button>
         {item.previewable ? (
           <button type="button" className="toolbar-button interaction__preview" onClick={() => postToHost({ type: 'previewApproval', payload: { id: item.id } })}>
             <EyeIcon />
-            <span>预览修改</span>
+            <span>{t('approval.preview')}</span>
           </button>
         ) : null}
       </div>
@@ -67,6 +69,7 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
 
 /** 计划审阅：显示 dsh 提交的计划，批准后退出计划模式开始执行，或者写反馈让它继续完善。 */
 function PlanReviewCard({ id, question }: { id: string; question: QuestionView }) {
+  const t = useT();
   const [feedback, setFeedback] = useState<string | undefined>();
   const [sent, setSent] = useState(false);
   const intent = question.intent!;
@@ -76,10 +79,10 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
   };
   const keep = intent.keepPlanning ?? question.options.find((o) => o.label !== intent.approve)?.label ?? 'Keep planning';
   return (
-    <section className="interaction interaction--plan" aria-label="计划审阅" data-testid="plan-review-card">
+    <section className="interaction interaction--plan" aria-label={t('plan.label')} data-testid="plan-review-card">
       <header className="interaction__header">
         <PlanIcon />
-        <span>dsh 提交了计划，等你审阅</span>
+        <span>{t('plan.title')}</span>
       </header>
       {question.detail ? (
         <div className="interaction__plan">
@@ -92,8 +95,8 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
           rows={3}
           autoFocus
           value={feedback}
-          placeholder="哪里需要调整？（可以不写）"
-          aria-label="对计划的反馈"
+          placeholder={t('plan.feedbackPlaceholder')}
+          aria-label={t('plan.feedbackLabel')}
           disabled={sent}
           onChange={(event) => setFeedback(event.target.value)}
         />
@@ -102,19 +105,19 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
         {feedback === undefined ? (
           <>
             <button type="button" className="button" disabled={sent} onClick={() => answer(intent.approve)}>
-              批准并开始执行
+              {t('plan.approve')}
             </button>
             <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback('')}>
-              继续完善
+              {t('plan.keep')}
             </button>
           </>
         ) : (
           <>
             <button type="button" className="button" disabled={sent} onClick={() => answer(keep, feedback.trim() || undefined)}>
-              发送反馈
+              {t('plan.sendFeedback')}
             </button>
             <button type="button" className="button button--secondary" disabled={sent} onClick={() => setFeedback(undefined)}>
-              返回
+              {t('plan.back')}
             </button>
           </>
         )}
@@ -122,13 +125,13 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
           type="button"
           className="link-button interaction__skip"
           disabled={sent}
-          title="结束本轮，用输入框自己回复"
+          title={t('plan.replyTitle')}
           onClick={() => {
             setSent(true);
             postToHost({ type: 'answerQuestion', payload: { id, cancelled: true } });
           }}
         >
-          自己回复
+          {t('plan.reply')}
         </button>
       </div>
     </section>
@@ -141,6 +144,7 @@ interface Draft {
 }
 
 function QuestionCard({ item }: { item: Of<'question'> }) {
+  const t = useT();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [sent, setSent] = useState(false);
   const draftOf = (q: QuestionView): Draft => drafts[q.id] ?? { selected: [], custom: '' };
@@ -169,10 +173,10 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
   };
 
   return (
-    <section className="interaction interaction--question" aria-label="dsh 的提问" data-testid="question-card">
+    <section className="interaction interaction--question" aria-label={t('question.label')} data-testid="question-card">
       <header className="interaction__header">
         <QuestionIcon />
-        <span>dsh 想先确认一下</span>
+        <span>{t('question.title')}</span>
       </header>
       {item.questions.map((q) => {
         const draft = draftOf(q);
@@ -211,8 +215,8 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
             <input
               className="question__custom"
               value={draft.custom}
-              placeholder={q.options.length > 0 ? '其他（可选）' : '输入回答'}
-              aria-label={`${q.question} 的回答`}
+              placeholder={q.options.length > 0 ? t('question.other') : t('question.answer')}
+              aria-label={t('question.answerLabel', q.question)}
               onChange={(event) => update(q, { ...draft, custom: event.target.value })}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.nativeEvent.isComposing) submit();
@@ -223,12 +227,12 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
       })}
       <div className="interaction__actions">
         <button type="button" className="button" disabled={!complete || sent} onClick={submit}>
-          提交
+          {t('question.submit')}
         </button>
         <button type="button" className="button button--secondary" disabled={sent} onClick={skip}>
-          跳过
+          {t('question.skip')}
         </button>
-        {item.questions.some((q) => q.multiSelect) ? <span className="interaction__hint">可多选</span> : null}
+        {item.questions.some((q) => q.multiSelect) ? <span className="interaction__hint">{t('question.multi')}</span> : null}
       </div>
     </section>
   );

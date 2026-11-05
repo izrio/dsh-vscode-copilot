@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { RuntimeStatus } from './runtime.ts';
 import type {
   CommandView,
+  Locale,
   ConnectionState,
   ContextState,
   FileCandidate,
@@ -100,6 +101,7 @@ export interface HostSnapshot {
   readonly workspace: WorkspaceState;
   readonly context: ContextState;
   readonly commands: readonly CommandView[];
+  readonly locale: Locale;
 }
 
 /**
@@ -125,6 +127,7 @@ export type HostToWebview =
   | { readonly type: 'permissions'; readonly payload: PermissionState }
   | { readonly type: 'workspace'; readonly payload: WorkspaceState }
   | { readonly type: 'context'; readonly payload: ContextState }
+  | { readonly type: 'locale'; readonly payload: Locale }
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
   | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }

@@ -9,6 +9,7 @@ import type { RuntimeStatus } from '@dsh-copilot/shared';
 import { launchRuntime, LaunchError, probeVersion, stopRuntime, type LaunchedRuntime } from './launch.ts';
 import { locateDsh } from './locate.ts';
 import { checkVersionSupport, MINIMUM_DSH_VERSION } from './version.ts';
+import { t } from '../i18n.ts';
 
 export interface RuntimeConfig {
   readonly configuredPath?: string;
@@ -190,7 +191,7 @@ export class RuntimeManager {
     const max = this.options.maxRestarts ?? 3;
     this.options.log(`dsh 意外退出（${signal ?? `退出码 ${code}`}），第 ${this.consecutiveFailures} 次`);
     if (this.consecutiveFailures > max) {
-      this.setStatus({ kind: 'failed', message: `dsh 连续 ${max} 次意外退出，已停止自动重启` });
+      this.setStatus({ kind: 'failed', message: t('runtime.gaveUp', max) });
       return;
     }
     const wait = (this.options.backoffMs ?? ((n) => 1_000 * 2 ** (n - 1)))(this.consecutiveFailures);

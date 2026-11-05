@@ -15,6 +15,7 @@ import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
 import type { LiveAttempt } from '../dsh/session/journal.ts';
 import { splitContext } from './context.ts';
 import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
+import { t } from '../i18n.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
 export type ChangesLookup = (seq: number) => ChangesSummary | 'unavailable' | undefined;
@@ -112,6 +113,8 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
   let turnEdits: TurnEdit[] = [];
   let turnOpen = false;
   let missingCredentialRef: string | undefined;
+  /** /permission 命令的预设显示名，命令结束时用。 */
+  const permissionArgs = new Map<string, string>();
 
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
@@ -142,7 +145,8 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         itemIndex.set(`cmd:${commandId}`, { index: items.length });
         if (name === 'permission') {
           // 权限切换（大多来自输入框的权限菜单）显示成一行提示，结果到达前先占位
-          items.push({ kind: 'notice', id: `cmd:${commandId}`, level: 'info', text: `正在切换权限为「${presetName(args)}」` });
+          items.push({ kind: 'notice', id: `cmd:${commandId}`, level: 'info', text: t('notice.permissionSwitching', presetName(args)) });
+          permissionArgs.set(`cmd:${commandId}`, presetName(args));
           break;
         }
         items.push({ kind: 'activity', id: `cmd:${commandId}`, tool: 'slash', variant: 'generic', label: `/${name}${args ? ` ${firstLine(args)}` : ''}`, status: 'running' });
@@ -153,8 +157,8 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const previous = at ? items[at.index] : undefined;
         const result = typeof data.text === 'string' ? data.text.trim() : '';
         if (at && previous?.kind === 'notice') {
-          const preset = /「(.*)」/u.exec(previous.text)?.[1] ?? '';
-          items[at.index] = data.kind === 'error' ? { ...previous, level: 'error', text: `切换权限失败：${result}` } : { ...previous, text: `权限已切换为「${preset}」` };
+          const preset = permissionArgs.get(previous.id) ?? '';
+          items[at.index] = data.kind === 'error' ? { ...previous, level: 'error', text: t('notice.permissionFailed', result) } : { ...previous, text: t('notice.permissionSwitched', preset) };
           break;
         }
         if (!at || previous?.kind !== 'activity') break;
@@ -239,7 +243,14 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         if (call.tool === 'exit_plan_mode') {
           // 继续完善计划时工具以错误返回，但这不是失败；其他错误（例如不在计划模式）照常显示
           const result = textOf(message?.content);
-          const outcome = status === 'ok' && /approved/iu.test(result) ? '已批准' : /keep planning/iu.test(result) ? '继续完善' : /dismissed/iu.test(result) ? '用户自己回复' : undefined;
+          const outcome =
+            status === 'ok' && /approved/iu.test(result)
+              ? t('plan.approved')
+              : /keep planning/iu.test(result)
+                ? t('plan.keepPlanning')
+                : /dismissed/iu.test(result)
+                  ? t('plan.dismissed')
+                  : undefined;
           items[at.index] = outcome
             ? { ...previous, status: 'ok', label: `${previous.label}  ${outcome}` }
             : { ...previous, status, ...(result ? { output: truncate(result) } : {}) };
@@ -386,10 +397,10 @@ function summarizeExplore(group: Explore): Explore {
     else if (tool === 'ls' || tool === 'list') lists++;
     else searches++;
   }
-  const parts = [reads ? `读取 ${reads} 个文件` : '', searches ? `搜索 ${searches} 次` : '', lists ? `列出 ${lists} 个目录` : ''].filter(Boolean);
+  const parts = [reads ? t('explore.reads', reads) : '', searches ? t('explore.searches', searches) : '', lists ? t('explore.lists', lists) : ''].filter(Boolean);
   const statuses = group.entries.map((e) => e.status);
   const status = statuses.includes('running') ? 'running' : statuses.every((s) => s === 'error') ? 'error' : 'ok';
-  return { ...group, summary: parts.join('，'), status };
+  return { ...group, summary: parts.join(t('explore.separator')), status };
 }
 
 function changesCard(seq: number, summary: ChangesSummary | 'unavailable' | undefined, edits: readonly TurnEdit[], workspacePath?: string): Item | undefined {
@@ -430,19 +441,17 @@ function changesCard(seq: number, summary: ChangesSummary | 'unavailable' | unde
   return { kind: 'changes', id: `c:${seq}`, turn: 0, source: 'tools', files, total: files.length };
 }
 
-const PRESET_NAMES: Record<string, string> = { 'read-only': '只读', 'workspace-write': '工作区可写', 'danger-full-access': '完全访问' };
-
 function presetName(preset: string): string {
-  return PRESET_NAMES[preset] ?? preset;
+  return preset === 'read-only' || preset === 'workspace-write' || preset === 'danger-full-access' ? t(`preset.${preset}`) : preset;
 }
 
 /** 提问工具的结果是 JSON：`{ answers: [{ id, selected, custom? }] }` 或 `{ cancelled: true }`，转成可读的文字。 */
 function answersText(text: string): string {
   try {
     const parsed = JSON.parse(text) as { answers?: { selected?: string[]; custom?: string }[]; cancelled?: boolean };
-    if (parsed.cancelled) return '已跳过';
+    if (parsed.cancelled) return t('question.skipped');
     if (!Array.isArray(parsed.answers)) return text;
-    return parsed.answers.map((a) => `回答：${[...(a.selected ?? []), a.custom].filter(Boolean).join('、')}`).join('\n');
+    return parsed.answers.map((a) => t('question.answer', [...(a.selected ?? []), a.custom].filter(Boolean).join(t('list.separator')))).join('\n');
   } catch {
     return text;
   }
@@ -493,7 +502,7 @@ function textOf(content: unknown): string {
 }
 
 function truncate(text: string): string {
-  return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n…（已截断）` : text;
+  return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n${t('output.truncated')}` : text;
 }
 
 /** 工具调用的一行摘要：取最能说明这次调用的参数。 */
@@ -504,11 +513,11 @@ export function activityLabel(tool: string, rawArguments: unknown, workspacePath
   if (tool === 'exit_plan_mode') {
     const plan = typeof args.plan === 'string' ? args.plan : '';
     const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
-    return `计划  ${heading ?? '提交计划'}`;
+    return `${t('plan.label')}  ${heading ?? t('plan.untitled')}`;
   }
   if (tool === 'ask_user_question') {
     const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
-    return typeof first === 'string' ? `提问  ${firstLine(first)}` : '提问';
+    return typeof first === 'string' ? `${t('question.label')}  ${firstLine(first)}` : t('question.label');
   }
   const command = pick('command', 'cmd');
   if (command) return `${tool}  ${firstLine(command)}`;
@@ -539,7 +548,7 @@ function turnEndNotice(seq: number, reason: unknown): Item | undefined {
   const id = `n:${seq}`;
   switch (r?.kind) {
     case 'aborted':
-      return { kind: 'notice', id, level: 'info', text: '已停止生成' };
+      return { kind: 'notice', id, level: 'info', text: t('notice.stopped') };
     case 'error':
       // 没有配置 API Key 时 dsh 照常接收消息，在轮次结束时报 MISSING_CREDENTIAL
       if (r.error?.code === 'MISSING_CREDENTIAL') {
@@ -547,17 +556,17 @@ function turnEndNotice(seq: number, reason: unknown): Item | undefined {
           kind: 'notice',
           id,
           level: 'error',
-          text: '还没有配置模型的 API Key。配置后重新发送这条消息。',
-          action: { kind: 'configureApiKey', label: '配置 API Key' },
+          text: t('notice.missingKey'),
+          action: { kind: 'configureApiKey', label: t('notice.missingKeyAction') },
         };
       }
-      return { kind: 'notice', id, level: 'error', text: `出错了：${r.error?.message ?? '模型请求失败'}` };
+      return { kind: 'notice', id, level: 'error', text: t('notice.error', r.error?.message ?? t('notice.errorUnknown')) };
     case 'max-tokens':
-      return { kind: 'notice', id, level: 'warning', text: '回复达到了输出长度上限' };
+      return { kind: 'notice', id, level: 'warning', text: t('notice.maxTokens') };
     case 'blocked':
-      return { kind: 'notice', id, level: 'warning', text: '本轮被阻止' };
+      return { kind: 'notice', id, level: 'warning', text: t('notice.blocked') };
     case 'interrupted':
-      return { kind: 'notice', id, level: 'warning', text: '本轮被中断（dsh 可能重启过）' };
+      return { kind: 'notice', id, level: 'warning', text: t('notice.interrupted') };
     default:
       return undefined;
   }

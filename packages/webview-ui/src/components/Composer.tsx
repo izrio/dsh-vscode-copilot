@@ -15,6 +15,7 @@ import { ArrowUpIcon, CloseIcon, PlanIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
 import { StatusStrip } from './StatusStrip.tsx';
+import { useT } from '../i18n.ts';
 
 const MAX_HEIGHT = 200;
 const SEARCH_DELAY_MS = 60;
@@ -41,6 +42,7 @@ export function Composer() {
   const context = useView((s) => s.context);
   const commands = useView((s) => s.commands);
   const candidates = useView((s) => s.fileCandidates);
+  const t = useT();
   const [text, setText] = useState(() => loadState().draft ?? '');
   const [caret, setCaret] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -177,9 +179,9 @@ export function Composer() {
       <StatusStrip />
       {dirtyFiles > 0 ? (
         <div className="dirty-strip" data-testid="dirty-strip">
-          <span>{dirtyFiles} 个文件有未保存的修改，dsh 读取和修改的是磁盘上的版本</span>
+          <span>{t('dirty.strip', dirtyFiles)}</span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
-            全部保存
+            {t('dirty.saveAll')}
           </button>
         </div>
       ) : null}
@@ -189,8 +191,8 @@ export function Composer() {
           selected={selected}
           onSelect={accept}
           onHover={setSelected}
-          label={trigger.kind === 'command' ? '斜杠命令' : '引用文件'}
-          {...(trigger.kind === 'file' ? { empty: '没有匹配的文件' } : {})}
+          label={trigger.kind === 'command' ? t('completion.commands') : t('completion.files')}
+          {...(trigger.kind === 'file' ? { empty: t('completion.noFiles') } : {})}
         />
       ) : null}
       <div className="composer">
@@ -207,10 +209,10 @@ export function Composer() {
           onClick={syncCaret}
           onKeyDown={onKeyDown}
           placeholder={
-            connected ? (session.running ? '继续输入，会在当前回复结束后发送' : '描述任务，@ 引用文件，/ 使用命令') : '等待 dsh 连接…'
+            connected ? (session.running ? t('composer.placeholderRunning') : t('composer.placeholder')) : t('composer.placeholderOffline')
           }
           rows={1}
-          aria-label="消息"
+          aria-label={t('composer.label')}
           aria-autocomplete="list"
           aria-expanded={menuOpen}
           {...(menuOpen ? { 'aria-controls': 'composer-completion', 'aria-activedescendant': `completion-${selected}` } : {})}
@@ -222,27 +224,27 @@ export function Composer() {
             <button
               type="button"
               className="toolbar-button plan-badge"
-              title="计划模式：dsh 先做计划，不修改文件。点击退出"
+              title={t('composer.planTitle')}
               onClick={() => postToHost({ type: 'sendMessage', payload: { text: '/plan off' } })}
               data-testid="plan-badge"
             >
               <PlanIcon />
-              <span className="toolbar-button__text">计划模式</span>
+              <span className="toolbar-button__text">{t('composer.plan')}</span>
               <CloseIcon />
             </button>
           ) : null}
           {session.contextUsage !== undefined ? (
-            <span className="context-usage" title={`上下文已用 ${Math.round(session.contextUsage * 100)}%`}>
+            <span className="context-usage" title={t('composer.context', Math.round(session.contextUsage * 100))}>
               {Math.max(1, Math.round(session.contextUsage * 100))}%
             </span>
           ) : null}
           <span className="composer__spacer" />
           {showStop ? (
-            <button type="button" className="send-button send-button--stop" onClick={() => postToHost({ type: 'interrupt', payload: {} })} aria-label="停止生成" title="停止生成">
+            <button type="button" className="send-button send-button--stop" onClick={() => postToHost({ type: 'interrupt', payload: {} })} aria-label={t('composer.stop')} title={t('composer.stop')}>
               <StopIcon />
             </button>
           ) : (
-            <button type="button" className="send-button" disabled={!canSend} onClick={send} aria-label="发送" title="发送（Enter）">
+            <button type="button" className="send-button" disabled={!canSend} onClick={send} aria-label={t('composer.send')} title={t('composer.sendTitle')}>
               <ArrowUpIcon />
             </button>
           )}

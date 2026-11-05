@@ -9,6 +9,7 @@ export type {
   FileCandidate,
   Item,
   LineStats,
+  Locale,
   ModelOption,
   ModelState,
   PendingInteraction,

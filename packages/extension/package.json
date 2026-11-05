@@ -1,7 +1,7 @@
 {
   "name": "dsh-copilot",
   "displayName": "DSH Copilot",
-  "description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。",
+  "description": "%extension.description%",
   "version": "0.0.1",
   "publisher": "izrio",
   "private": true,
@@ -35,7 +35,7 @@
       "secondarySidebar": [
         {
           "id": "dsh",
-          "title": "DSH",
+          "title": "%container.title%",
           "icon": "media/dsh.svg"
         }
       ]
@@ -45,107 +45,122 @@
         {
           "type": "webview",
           "id": "dsh.chatView",
-          "name": "对话"
+          "name": "%view.chat%"
         }
       ]
     },
     "commands": [
       {
         "command": "dsh.openChat",
-        "title": "打开对话",
+        "title": "%command.openChat%",
         "category": "DSH"
       },
       {
         "command": "dsh.newSession",
-        "title": "新建对话",
+        "title": "%command.newSession%",
         "category": "DSH"
       },
       {
         "command": "dsh.interrupt",
-        "title": "停止生成",
+        "title": "%command.interrupt%",
         "category": "DSH"
       },
       {
         "command": "dsh.selectModel",
-        "title": "切换模型",
+        "title": "%command.selectModel%",
         "category": "DSH"
       },
       {
         "command": "dsh.openWebUI",
-        "title": "在浏览器中打开 dsh",
+        "title": "%command.openWebUI%",
         "category": "DSH"
       },
       {
         "command": "dsh.restartRuntime",
-        "title": "重启 dsh",
+        "title": "%command.restartRuntime%",
         "category": "DSH"
       },
       {
         "command": "dsh.showLogs",
-        "title": "查看日志",
+        "title": "%command.showLogs%",
         "category": "DSH"
       },
       {
         "command": "dsh.explainSelection",
-        "title": "解释这段代码",
+        "title": "%command.explainSelection%",
         "category": "DSH"
       },
       {
         "command": "dsh.fixSelection",
-        "title": "修复这段代码",
+        "title": "%command.fixSelection%",
         "category": "DSH"
       },
       {
         "command": "dsh.testSelection",
-        "title": "为这段代码写测试",
+        "title": "%command.testSelection%",
         "category": "DSH"
       },
       {
         "command": "dsh.addToChat",
-        "title": "添加到对话",
+        "title": "%command.addToChat%",
         "category": "DSH"
       },
       {
         "command": "dsh.configureApiKey",
-        "title": "配置 API Key",
+        "title": "%command.configureApiKey%",
         "category": "DSH"
       },
       {
         "command": "dsh.renameSession",
-        "title": "重命名会话",
+        "title": "%command.renameSession%",
         "category": "DSH"
       },
       {
         "command": "dsh.selectFolder",
-        "title": "选择对话对应的文件夹",
+        "title": "%command.selectFolder%",
         "category": "DSH"
       }
     ],
     "configuration": {
-      "title": "DSH",
+      "title": "%config.title%",
       "properties": {
         "dsh.runtime.path": {
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "markdownDescription": "dsh 可执行文件的路径。留空时在 `PATH` 中查找（DeepSeek Desktop 安装的 `dsh` 命令，或 `npm install -g @deepseek-ai/dsh`）。"
+          "markdownDescription": "%config.runtime.path%"
         },
         "dsh.runtime.profile": {
           "type": "string",
           "default": "web",
-          "markdownDescription": "启动 dsh 时使用的 profile。默认 `web`，与你自己运行的 `dsh web` 共用模型、API Key 和权限预设。"
+          "markdownDescription": "%config.runtime.profile%"
         },
         "dsh.context.includeActiveEditor": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "发送消息时默认附带当前编辑器：有选区时附带选中的代码和行号，否则只附带文件路径（dsh 需要时自己读取）。可以在输入框上方的标签上逐条关闭。"
+          "markdownDescription": "%config.context.includeActiveEditor%"
+        },
+        "dsh.ui.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh",
+            "en"
+          ],
+          "default": "auto",
+          "markdownDescription": "%config.ui.language%",
+          "markdownEnumDescriptions": [
+            "%config.ui.language.auto%",
+            "%config.ui.language.zh%",
+            "%config.ui.language.en%"
+          ]
         }
       }
     },
     "submenus": [
       {
         "id": "dsh.editorContext",
-        "label": "DSH"
+        "label": "%submenu.editor%"
       }
     ],
     "menus": {

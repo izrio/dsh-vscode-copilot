@@ -8,6 +8,7 @@ import type {
   ConnectionState,
   ContextState,
   FileCandidate,
+  Locale,
   HostToWebview,
   Item,
   ModelState,
@@ -39,6 +40,7 @@ export interface ViewState {
   readonly permissions: PermissionState;
   readonly workspace: WorkspaceState;
   readonly context: ContextState;
+  readonly locale: Locale;
   readonly commands: readonly CommandView[];
   /** 最近一次 `@` 补全的结果。 */
   readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
@@ -52,7 +54,7 @@ const initialState: ViewState = {
   runtime: { kind: 'idle' },
   connection: 'idle',
   sessions: [],
-  session: { title: '新对话', running: false, hasOlder: false, loadingOlder: false, sync: 'idle' },
+  session: { title: '', running: false, hasOlder: false, loadingOlder: false, sync: 'idle' },
   sessionKey: '',
   items: [],
   models: { options: [] },
@@ -60,6 +62,7 @@ const initialState: ViewState = {
   permissions: { options: [] },
   workspace: { dirtyFiles: 0 },
   context: { includeActiveByDefault: true, pinned: [] },
+  locale: 'zh',
   commands: [],
   fileCandidates: { requestId: -1, items: [] },
   toasts: [],
@@ -111,6 +114,7 @@ export function applyHostMessage(message: HostToWebview): void {
         permissions: p.permissions,
         workspace: p.workspace,
         context: p.context,
+        locale: p.locale,
         commands: p.commands,
       });
       return;
@@ -141,6 +145,9 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'context':
       set({ context: message.payload });
+      return;
+    case 'locale':
+      set({ locale: message.payload });
       return;
     case 'commands':
       set({ commands: message.payload });

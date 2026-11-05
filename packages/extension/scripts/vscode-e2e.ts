@@ -132,7 +132,8 @@ try {
     throw new Error('找不到插件的 Webview');
   };
 
-  await runCommand('DSH: 打开对话');
+  // code-server 的显示语言是英文：插件界面、命令标题都应该是英文（package.nls.json）
+  await runCommand('DSH: Open Chat');
   const webview = await findWebview();
   check('命令面板「DSH: 打开对话」打开插件视图', true);
   // 等到会话列表可用（空状态出现、没有状态提示）再开始对话
@@ -140,7 +141,8 @@ try {
   await webview.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 120_000 });
   check('插件启动 dsh 并连接成功', true);
 
-  const input = webview.getByRole('textbox', { name: '消息' });
+  const input = webview.getByRole('textbox', { name: 'Message' });
+  check('VS Code 显示语言为英文时插件界面是英文', ((await input.getAttribute('placeholder')) ?? '').startsWith('Describe a task'));
   await input.fill('你好');
   await input.press('Enter');
   await webview.locator('.assistant', { hasText: '可以帮你阅读和修改代码' }).waitFor({ timeout: 60_000 });
@@ -171,28 +173,28 @@ try {
     () => check('点击修改行在 Diff 编辑器里打开', false),
   );
   const tab = await page.locator('.tab.active').first().innerText().catch(() => '');
-  check(`Diff 标签标明修改前后（${tab.replace(/\s+/gu, ' ').trim()}）`, tab.includes('修改前'));
+  check(`Diff 标签标明修改前后（${tab.replace(/\s+/gu, ' ').trim()}）`, tab.includes('before'));
   const original = await page.locator('.monaco-diff-editor .editor.original .view-lines').first().innerText().catch(() => '');
   const modified = await page.locator('.monaco-diff-editor .editor.modified .view-lines').first().innerText().catch(() => '');
   check('Diff 左侧是修改前的内容，右侧是当前文件', !original.includes('一个演示项目') && modified.includes('一个演示项目'));
   await page.screenshot({ path: join(outDir, 'diff.png') });
   await webview.locator('.changes__file').first().click();
-  await page.waitForFunction(() => document.querySelector('.tab.active')?.textContent?.includes('本轮修改前') ?? false, undefined, { timeout: 15_000 }).then(
+  await page.waitForFunction(() => document.querySelector('.tab.active')?.textContent?.includes('before this turn') ?? false, undefined, { timeout: 15_000 }).then(
     () => check('点击改动汇总里的文件打开本轮 Diff', true),
     () => check('点击改动汇总里的文件打开本轮 Diff', false),
   );
 
   // 切换到完全访问时弹出 VS Code 的模态确认框
   await webview.getByTestId('permission-picker').click();
-  await webview.getByRole('menuitem', { name: /完全访问/u }).click();
+  await webview.getByRole('menuitem', { name: /Full access/u }).click();
   const dialog = page.locator('.monaco-dialog-box');
   await dialog.waitFor({ timeout: 10_000 }).then(
     () => check('切换到完全访问前弹出模态确认框', true),
     () => check('切换到完全访问前弹出模态确认框', false),
   );
   await page.screenshot({ path: join(outDir, 'permission-confirm.png') });
-  await dialog.getByRole('button', { name: '允许完全访问' }).click();
-  await webview.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('完全访问') ?? false, undefined, { timeout: 10_000 }).then(
+  await dialog.getByRole('button', { name: 'Allow full access' }).click();
+  await webview.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('Full access') ?? false, undefined, { timeout: 10_000 }).then(
     () => check('确认后权限切换为完全访问', true),
     () => check('确认后权限切换为完全访问', false),
   );
@@ -215,22 +217,22 @@ try {
     () => check('编辑器右键菜单里有 DSH 子菜单', false),
   );
   await dshMenu.hover();
-  const explain = page.locator('.monaco-menu .action-label', { hasText: '解释这段代码' }).first();
+  const explain = page.locator('.monaco-menu .action-label', { hasText: 'Explain This Code' }).first();
   await explain.waitFor({ timeout: 10_000 });
   await page.screenshot({ path: join(outDir, 'context-menu.png') });
   await explain.click();
-  const explainBubble = webview.locator('.user', { hasText: '解释这段代码' });
+  const explainBubble = webview.locator('.user', { hasText: 'Explain this code' });
   await explainBubble.waitFor({ timeout: 30_000 });
   check('右键「解释这段代码」发送消息，气泡显示选区标签', (await explainBubble.locator('.chip', { hasText: 'index.ts:1' }).count()) === 1);
-  for (let i = 0; i < 40 && !env.model.requests.some((r) => r.userText?.includes('解释这段代码')); i++) await page.waitForTimeout(500);
-  const explainRequest = env.model.requests.filter((r) => r.userText?.includes('解释这段代码')).at(-1);
+  for (let i = 0; i < 40 && !env.model.requests.some((r) => r.userText?.includes('Explain this code')); i++) await page.waitForTimeout(500);
+  const explainRequest = env.model.requests.filter((r) => r.userText?.includes('Explain this code')).at(-1);
   check(
     'dsh 收到的消息带有正确的路径、行号和代码',
     explainRequest?.userText?.includes('<selection path="src/index.ts" lines="1" language="typescript">\nexport const answer = 42;\n</selection>') === true,
   );
   await page.screenshot({ path: join(outDir, 'explain.png') });
 
-  await runCommand('DSH: 切换模型');
+  await runCommand('DSH: Switch Model');
   await page.waitForTimeout(800);
   check('命令「DSH: 切换模型」列出模型', (await page.locator('.quick-input-list .monaco-list-row').count()) > 0);
   await page.screenshot({ path: join(outDir, 'select-model.png') });

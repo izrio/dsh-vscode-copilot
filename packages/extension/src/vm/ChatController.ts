@@ -33,7 +33,8 @@ import {
   CONTEXT_OPEN,
   isTemplate,
   parseSlash,
-  PLUGIN_COMMANDS,
+  PLUGIN_COMMAND_NAMES,
+  pluginCommands,
   templatePrompt,
   withContext,
   type ContextAttachment,
@@ -42,6 +43,7 @@ import {
 } from './context.ts';
 import { displayPath, project, projectEvents, toolVariant, type EventsProjection, type ToolCallInfo } from './projector.ts';
 import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
+import { getLocale, t } from '../i18n.ts';
 
 export interface ChatControllerOptions {
   readonly workspacePath: string;
@@ -67,7 +69,7 @@ export interface ChatControllerOptions {
   readonly renderDelayMs?: number;
 }
 
-const NEW_SESSION_TITLE = '新对话';
+const newSessionTitle = (): string => t('session.new');
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
 /** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
@@ -155,6 +157,12 @@ export class ChatController {
     this.interactions?.dispose();
   }
 
+  /** 界面语言变化（设置 `dsh.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
+  localeChanged(): void {
+    this.options.post({ type: 'locale', payload: getLocale() });
+    this.scheduleRender();
+  }
+
   /** 编辑器里文件的未保存状态、当前编辑器或选区变化时调用。 */
   workspaceChanged(): void {
     this.scheduleRender();
@@ -164,7 +172,7 @@ export class ChatController {
   async askAboutSelection(template: TemplateName): Promise<void> {
     const attachment = this.snapshotAttachment(this.workbench.activeEditor());
     if (!attachment) {
-      this.toast('info', '先在编辑器里打开文件或选中代码');
+      this.toast('info', t('context.none'));
       return;
     }
     await this.send(templatePrompt(template, ''), { includeActive: false, extra: [attachment], diagnostics: template === 'fix' });
@@ -174,7 +182,7 @@ export class ChatController {
   pinActiveEditor(): void {
     const attachment = this.snapshotAttachment(this.workbench.activeEditor());
     if (!attachment) {
-      this.toast('info', '先在编辑器里打开文件或选中代码');
+      this.toast('info', t('context.none'));
       return;
     }
     this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
@@ -255,7 +263,7 @@ export class ChatController {
       (error: unknown) => {
         if (generation !== this.serviceGeneration) return;
         this.options.log(`初始化会话服务失败：${describe(error)}`);
-        this.toast('error', `无法读取 dsh 会话：${describe(error)}`);
+        this.toast('error', t('error.readSessions', describe(error)));
       },
     );
   }
@@ -289,6 +297,7 @@ export class ChatController {
       workspace: view.workspace,
       context: view.context,
       commands: view.commands,
+      locale: getLocale(),
     };
   }
 
@@ -351,7 +360,7 @@ export class ChatController {
       case 'answerQuestion': {
         const { id, ...answer } = message.payload;
         if (!this.interactions?.answerQuestion(id, 'cancelled' in answer ? { cancelled: true } : { answers: answer.answers })) {
-          this.toast('info', '这个问题已经结束');
+          this.toast('info', t('question.ended'));
         }
         return;
       }
@@ -371,12 +380,12 @@ export class ChatController {
   private respondApproval(id: string, allow: boolean): void {
     const pending = this.interactions?.get(id);
     if (!pending || pending.kind !== 'approval') {
-      this.toast('info', '这个请求已经结束');
+      this.toast('info', t('request.ended'));
       return;
     }
     if (allow && this.approvalView(pending).dirtyFiles.length > 0) {
       // 编辑器里还有未保存的内容，dsh 写入后会和编辑器冲突
-      this.toast('error', '要修改的文件有未保存的内容，请先保存');
+      this.toast('error', t('approval.dirty'));
       return;
     }
     this.interactions?.respondApproval(id, allow);
@@ -386,7 +395,7 @@ export class ChatController {
     const pending = this.interactions?.get(id);
     const call = pending?.kind === 'approval' && pending.request.callId ? this.toolCalls.get(pending.request.callId) : undefined;
     if (!call?.path) {
-      this.toast('info', '没有可以预览的内容');
+      this.toast('info', t('preview.none'));
       return;
     }
     await this.workbench.openDiff({ kind: 'proposed', path: call.path, tool: call.tool, args: call.args });
@@ -396,7 +405,7 @@ export class ChatController {
     if (ref.kind === 'tool') {
       const call = this.toolCalls.get(ref.callId);
       if (!call?.path) {
-        this.toast('info', '找不到这次修改的记录');
+        this.toast('info', t('diff.noRecord'));
         return;
       }
       if (!call.created && !call.diffs?.length) return this.workbench.openFile(call.path);
@@ -409,7 +418,7 @@ export class ChatController {
       const diff = await client.changesDiff(sessionId, ref.seq, ref.index);
       const path = this.absolute(diff.path);
       if (diff.kind !== 'text') {
-        this.toast('info', diff.kind === 'binary' ? '二进制文件，无法显示 Diff' : '文件太大，无法显示 Diff');
+        this.toast('info', diff.kind === 'binary' ? t('diff.binary') : t('diff.oversized'));
         return this.workbench.openFile(path);
       }
       await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
@@ -419,17 +428,17 @@ export class ChatController {
         this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
         this.changesVersion++;
         this.scheduleRender();
-        this.toast('info', '这一轮的改动记录已不可用（dsh 重启过），已改为显示文件工具的修改');
-      } else this.toast('error', `无法读取改动：${describe(error)}`);
+        this.toast('info', t('diff.turnGone'));
+      } else this.toast('error', t('diff.readFailed', describe(error)));
     }
   }
 
   private async selectPermission(preset: string): Promise<void> {
     if (preset === DANGER_PRESET) {
       const ok = await this.workbench.confirm(
-        '允许 dsh 完全访问？',
-        'danger-full-access 下 dsh 执行命令和修改文件不再受工作区沙箱限制，可以访问整台机器。只在你信任当前任务时使用。',
-        '允许完全访问',
+        t('danger.title'),
+        t('danger.detail'),
+        t('danger.allow'),
       );
       if (!ok) return;
     }
@@ -441,7 +450,7 @@ export class ChatController {
     try {
       await this.service.setPermission(this.activeId, preset);
     } catch (error) {
-      this.toast('error', `切换权限失败：${describe(error)}`);
+      this.toast('error', t('permission.failed', describe(error)));
     }
   }
 
@@ -463,7 +472,7 @@ export class ChatController {
     if (slash && isTemplate(slash.name)) {
       const attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
       if (attachments.length === 0 && !slash.args.trim()) {
-        this.toast('info', `/${slash.name} 需要上下文：先在编辑器里选中代码或打开文件，或者在命令后面写上要处理的内容`);
+        this.toast('info', t('template.needsContext', slash.name));
         return;
       }
       return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments);
@@ -482,7 +491,7 @@ export class ChatController {
   private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<void> {
     const service = this.service;
     if (!service) {
-      this.toast('error', 'dsh 尚未连接，请稍后再试');
+      this.toast('error', t('notConnected'));
       return;
     }
     try {
@@ -520,7 +529,7 @@ export class ChatController {
       }
     } catch (error) {
       // 消息可能刚好被送达，已经不在队列里
-      this.toast('info', error instanceof RemoteError ? '这条消息已经发出，不能再修改' : `操作失败：${describe(error)}`);
+      this.toast('info', error instanceof RemoteError ? t('queue.alreadySent') : t('queue.failed', describe(error)));
       this.options.log(`修改排队消息失败：${describe(error)}`);
     }
   }
@@ -529,16 +538,16 @@ export class ChatController {
     const sessionId = this.activeId;
     const service = this.service;
     if (!sessionId || !service) {
-      this.toast('info', '新对话发送第一条消息后才能重命名');
+      this.toast('info', t('rename.needsSession'));
       return;
     }
     const current = titleOf(service.projections(sessionId), []);
-    const title = (await this.workbench.input({ title: '重命名会话', value: current === NEW_SESSION_TITLE ? '' : current }))?.trim();
+    const title = (await this.workbench.input({ title: t('rename.title'), value: current === newSessionTitle() ? '' : current }))?.trim();
     if (!title || title === current) return;
     try {
       await service.rename(sessionId, title);
     } catch (error) {
-      this.toast('error', `重命名失败：${describe(error)}`);
+      this.toast('error', t('rename.failed', describe(error)));
     }
   }
 
@@ -549,14 +558,14 @@ export class ChatController {
   async configureApiKey(): Promise<void> {
     const service = this.service;
     if (!service) {
-      this.toast('error', 'dsh 尚未连接，请稍后再试');
+      this.toast('error', t('notConnected'));
       return;
     }
     const ref = this.credentialRef ?? DEFAULT_CREDENTIAL_REF;
     const value = (
       await this.workbench.input({
-        title: '配置 DeepSeek API Key',
-        prompt: `保存到 dsh 的凭据存储（${ref}），与 dsh Web UI、桌面版共用`,
+        title: t('apiKey.title'),
+        prompt: t('apiKey.prompt', ref),
         placeHolder: 'sk-…',
         password: true,
       })
@@ -566,9 +575,9 @@ export class ChatController {
       await service.client.setCredential(ref, value);
       await service.reloadModels().catch((error: unknown) => this.options.log(`重新读取模型目录失败：${describe(error)}`));
       this.credentialRef = undefined;
-      this.toast('info', 'API Key 已保存');
+      this.toast('info', t('apiKey.saved'));
     } catch (error) {
-      this.toast('error', `保存 API Key 失败：${describe(error)}`);
+      this.toast('error', t('apiKey.failed', describe(error)));
     }
   }
 
@@ -576,7 +585,7 @@ export class ChatController {
   private async runCommand(line: string): Promise<void> {
     const service = this.service;
     if (!service) {
-      this.toast('error', 'dsh 尚未连接，请稍后再试');
+      this.toast('error', t('notConnected'));
       return;
     }
     try {
@@ -584,7 +593,7 @@ export class ChatController {
       await service.client.executeCommand(sessionId, line);
     } catch (error) {
       this.options.log(`执行 ${line} 失败：${describe(error)}`);
-      this.toast('error', `执行命令失败：${describe(error)}`);
+      this.toast('error', t('command.failed', describe(error)));
     }
   }
 
@@ -601,7 +610,7 @@ export class ChatController {
     }
     if (this.draftPermission && this.draftPermission !== service.permissions?.defaultPreset) {
       await service.setPermission(sessionId, this.draftPermission).catch((error: unknown) => {
-        this.toast('error', `为新会话设置权限失败：${describe(error)}`);
+        this.toast('error', t('permission.newSessionFailed', describe(error)));
       });
     }
     this.draftPermission = undefined;
@@ -630,7 +639,7 @@ export class ChatController {
       .then(
       (commands) => {
         this.dshCommands = commands
-          .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !PLUGIN_COMMANDS.some((p) => p.name === c.name))
+          .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
           .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
         this.scheduleRender();
       },
@@ -644,7 +653,7 @@ export class ChatController {
       await this.service.cancel(this.activeId);
     } catch (error) {
       // 会话已经空闲时 dsh 会拒绝取消，不需要打扰用户
-      if (!(error instanceof RemoteError)) this.toast('error', `停止失败：${describe(error)}`);
+      if (!(error instanceof RemoteError)) this.toast('error', t('stop.failed', describe(error)));
       this.options.log(`停止失败：${describe(error)}`);
     }
   }
@@ -658,7 +667,7 @@ export class ChatController {
     try {
       await this.service.selectModel(this.activeId, selection);
     } catch (error) {
-      this.toast('error', `切换模型失败：${describe(error)}`);
+      this.toast('error', t('model.failed', describe(error)));
     }
   }
 
@@ -813,7 +822,7 @@ export class ChatController {
       const value = sessionId ? this.changes.get(`${sessionId}:${seq}`) : undefined;
       return value === 'loading' ? undefined : value;
     };
-    const key = [events, events.length, events[0]?.seq, events.at(-1)?.seq, this.workspacePath, this.changesVersion];
+    const key = [events, events.length, events[0]?.seq, events.at(-1)?.seq, this.workspacePath, this.changesVersion, getLocale()];
     if (!this.eventsMemo || this.eventsMemo.key.some((part, i) => part !== key[i])) {
       this.eventsMemo = { key, value: projectEvents({ events, workspacePath: this.workspacePath, changes }) };
     }
@@ -839,7 +848,7 @@ export class ChatController {
     const running = streamLive ? projection.turnOpen : projection.turnOpen || (summary?.running ?? false);
     const session: SessionHeader = {
       ...(sessionId ? { id: sessionId } : {}),
-      title: sessionId ? titleOf(projections, projection.items) : NEW_SESSION_TITLE,
+      title: sessionId ? titleOf(projections, projection.items) : newSessionTitle(),
       running,
       hasOlder: stream?.journal.hasOlder ?? false,
       loadingOlder: stream?.loadingOlder ?? false,
@@ -881,7 +890,7 @@ export class ChatController {
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
       context: this.contextState(),
-      commands: [...PLUGIN_COMMANDS.map((c) => ({ name: c.name, description: c.description, ...('hint' in c ? { hint: c.hint } : {}), source: 'plugin' as const })), ...this.dshCommands],
+      commands: [...pluginCommands().map((c) => ({ ...c, source: 'plugin' as const })), ...this.dshCommands],
     };
   }
 
@@ -1004,7 +1013,7 @@ function titleOf(projections: Readonly<Record<string, unknown>>, items: readonly
   const outline = projections.turnOutline as { prompt?: string }[] | undefined;
   const prompt = plainTitle(outline?.[0]?.prompt ?? items.find((item) => item.kind === 'user')?.text ?? '');
   if (prompt) return prompt.length > 40 ? `${prompt.slice(0, 40)}…` : prompt;
-  return NEW_SESSION_TITLE;
+  return newSessionTitle();
 }
 
 /** 标题只取第一行，去掉 Markdown 标题符号、强调符号和包裹的引号。 */
@@ -1081,17 +1090,17 @@ export function friendlyError(error: unknown): string {
   if (error instanceof RemoteError) {
     switch (error.code) {
       case 'session/writer-held':
-        return '这个会话正在另一个窗口或 dsh Web UI 中使用。请在那边继续，或者新建一个对话。';
+        return t('send.writerHeld');
       case 'session/model-unavailable':
-        return '所选模型当前不可用，请换一个模型。';
+        return t('send.modelUnavailable');
       case 'session/provider-credentials-unavailable':
       case 'session/provider-models-unavailable':
-        return '还没有配置模型的 API Key。可以在「更多 → 在浏览器中打开 dsh」的模型页面填写。';
+        return t('send.noCredentials');
       case 'session/agent-busy':
-        return 'dsh 正忙，请稍后再试。';
+        return t('send.busy');
       default:
-        return `发送失败：${error.message}`;
+        return t('send.failed', error.message);
     }
   }
-  return `发送失败：${describe(error)}`;
+  return t('send.failed', describe(error));
 }

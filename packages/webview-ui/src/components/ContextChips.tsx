@@ -4,6 +4,7 @@
 import type { AttachmentView } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
 import { CloseIcon, FileIcon, SelectionIcon } from './icons.tsx';
+import { useT } from '../i18n.ts';
 
 export function attachmentLabel(a: AttachmentView): string {
   const name = a.path.split(/[\\/]/u).pop() ?? a.path;
@@ -26,14 +27,15 @@ export function ContextChips({
   onToggle: () => void;
   pinned: readonly (AttachmentView & { readonly id: string })[];
 }) {
+  const t = useT();
   if (!active && pinned.length === 0) return null;
   return (
     <div className="context-chips" data-testid="context-chips">
       {pinned.map((a) => (
-        <span key={a.id} className="chip" title={`${a.path}${a.startLine ? ` 第 ${a.startLine}–${a.endLine ?? a.startLine} 行` : ''}，随下一条消息发送`}>
+        <span key={a.id} className="chip" title={t('chip.pinnedTitle', a.startLine ? t('chip.lines', a.path, a.startLine, a.endLine ?? a.startLine) : a.path)}>
           {a.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
           <span className="chip__label">{attachmentLabel(a)}</span>
-          <button type="button" className="chip__remove" aria-label={`移除 ${attachmentLabel(a)}`} onClick={() => postToHost({ type: 'removeAttachment', payload: { id: a.id } })}>
+          <button type="button" className="chip__remove" aria-label={t('chip.remove', attachmentLabel(a))} onClick={() => postToHost({ type: 'removeAttachment', payload: { id: a.id } })}>
             <CloseIcon />
           </button>
         </span>
@@ -45,15 +47,15 @@ export function ContextChips({
           aria-pressed={included}
           onClick={onToggle}
           title={
-            included
-              ? `${active.kind === 'selection' ? '选中的代码' : '当前文件'}会随消息发送，点击不附带`
-              : `点击附带${active.kind === 'selection' ? '选中的代码' : '当前文件'}`
+            active.kind === 'selection'
+              ? t(included ? 'chip.includedSelection' : 'chip.excludedSelection')
+              : t(included ? 'chip.includedFile' : 'chip.excludedFile')
           }
           data-testid="active-context"
         >
           {active.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
           <span className="chip__label">{attachmentLabel(active)}</span>
-          <span className="chip__hint">{active.kind === 'selection' ? '选区' : '当前文件'}</span>
+          <span className="chip__hint">{active.kind === 'selection' ? t('chip.selection') : t('chip.file')}</span>
         </button>
       ) : null}
     </div>

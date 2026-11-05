@@ -19,6 +19,7 @@ export interface Locator {
   innerText(): Promise<string>;
   allInnerTexts(): Promise<string[]>;
   inputValue(): Promise<string>;
+  evaluateAll<R>(fn: (elements: HTMLElement[]) => R): Promise<R>;
   evaluate<R>(fn: (element: HTMLElement) => R): Promise<R>;
   isDisabled(): Promise<boolean>;
   getAttribute(name: string): Promise<string | null>;

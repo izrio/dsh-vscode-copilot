@@ -7,6 +7,7 @@
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { redactSecrets } from '../util/redact.ts';
+import { t } from '../i18n.ts';
 
 export interface LaunchOptions {
   readonly command: string;
@@ -85,7 +86,7 @@ export function probeVersion(
       { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: needsShell(command, process.platform), windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new LaunchError(`dsh --version 执行失败：${error.message}`, redactSecrets(String(stderr))));
+          reject(new LaunchError(t('runtime.versionFailed', error.message), redactSecrets(String(stderr))));
           return;
         }
         resolve(String(stdout).trim());
@@ -146,7 +147,7 @@ export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> 
       reject(new LaunchError(message, tail.join('\n')));
     };
 
-    const timer = setTimeout(() => fail(`dsh 在 ${Math.round(timeoutMs / 1000)} 秒内没有就绪`), timeoutMs);
+    const timer = setTimeout(() => fail(t('runtime.timeout', Math.round(timeoutMs / 1000))), timeoutMs);
 
     const stdout = new LineSplitter((line) => {
       const safe = remember(line);
@@ -163,11 +164,11 @@ export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> 
 
     child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.once('error', (error) => fail(`无法启动 dsh：${error.message}`));
+    child.once('error', (error) => fail(t('runtime.spawnFailed', error.message)));
     child.once('exit', (code, signal) => {
       stdout.flush();
       stderr.flush();
-      fail(`dsh 在就绪前退出（${signal ?? `退出码 ${code}`}）`);
+      fail(t('runtime.exitedEarly', signal ?? t('runtime.exitCode', String(code))));
     });
   });
 }

@@ -1,6 +1,7 @@
 import { memo, useEffect, useState, type CSSProperties } from 'react';
 import { cachedHighlight, highlight, type HighlightedLines } from './highlighter.ts';
 import { CheckIcon, CopyIcon } from './icons.tsx';
+import { useT } from '../i18n.ts';
 
 /** 代码块：语言标签、复制按钮、按需高亮。流式输出时代码还在变化，高亮会稍后跟上。 */
 export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string; lang?: string }) {
@@ -28,6 +29,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string;
     };
   }, [code, lang]);
 
+  const t = useT();
   const copy = () => {
     void navigator.clipboard.writeText(code).then(() => {
       setCopied(true);
@@ -39,7 +41,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string;
     <div className="code-block">
       <div className="code-block__bar">
         <span className="code-block__lang">{lang ?? ''}</span>
-        <button type="button" className="icon-button" onClick={copy} aria-label="复制代码" title="复制">
+        <button type="button" className="icon-button" onClick={copy} aria-label={t('code.copy')} title={copied ? t('code.copied') : t('code.copyShort')}>
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
       </div>

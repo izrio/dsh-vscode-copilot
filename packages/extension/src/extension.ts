@@ -11,6 +11,7 @@ import { RuntimeManager, type RuntimeConfig } from './runtime/RuntimeManager.ts'
 import { ChatController } from './vm/ChatController.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
+import { resolveLocale, setLocale, t } from './i18n.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
 const FOLDER_KEY = 'dsh.folder';
@@ -20,6 +21,9 @@ let connection: DshConnection | undefined;
 let controller: ChatController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  const applyLocale = (): void =>
+    setLocale(resolveLocale(vscode.env.language, vscode.workspace.getConfiguration('dsh.ui').get<string>('language', 'auto')));
+  applyLocale();
   const output = vscode.window.createOutputChannel('DSH', { log: true });
   const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
   context.subscriptions.push(output, runtimeOutput);
@@ -69,7 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openWebUI: () => {
       const endpoint = manager.endpoint;
       if (!endpoint) {
-        void vscode.window.showWarningMessage('dsh 还没有启动');
+        void vscode.window.showWarningMessage(t('ext.notStarted'));
         return;
       }
       // 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持会话
@@ -123,7 +127,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('dsh.selectModel', async () => {
       const models = chat.modelState();
       if (models.options.length === 0) {
-        void vscode.window.showInformationMessage('dsh 还没有可用的模型');
+        void vscode.window.showInformationMessage(t('ext.noModels'));
         return;
       }
       const picked = await vscode.window.showQuickPick(
@@ -137,7 +141,7 @@ export function activate(context: vscode.ExtensionContext): void {
             effort: effort?.id ?? option.efforts[0]?.id,
           })),
         ),
-        { placeHolder: '选择模型' },
+        { placeHolder: t('ext.selectModel') },
       );
       if (picked) {
         await chat.handle({
@@ -173,12 +177,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('dsh.selectFolder', async () => {
       const list = folders();
       if (list.length < 2) {
-        void vscode.window.showInformationMessage('当前工作区只有一个文件夹');
+        void vscode.window.showInformationMessage(t('ext.singleFolder'));
         return;
       }
       const picked = await vscode.window.showQuickPick(
         list.map((f) => ({ label: f.name, description: f.uri.fsPath, picked: f.uri.fsPath === workspacePath, folder: f })),
-        { placeHolder: 'DSH 对话对应的文件夹（每个文件夹有自己的会话列表）' },
+        { placeHolder: t('ext.selectFolder') },
       );
       if (!picked || picked.folder.uri.fsPath === workspacePath) return;
       workspacePath = picked.folder.uri.fsPath;
@@ -192,6 +196,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
       if (event.affectsConfiguration('dsh.context')) chat.workspaceChanged();
+      if (event.affectsConfiguration('dsh.ui.language')) {
+        applyLocale();
+        chat.localeChanged();
+        renderStatusBar(status, manager.currentStatus, modelLabel);
+      }
     }),
   );
 }
@@ -223,11 +232,11 @@ function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus, mode
   const text: Record<RuntimeStatus['kind'], string> = {
     idle: '$(circle-outline) DSH',
     locating: '$(loading~spin) DSH',
-    starting: '$(loading~spin) DSH 启动中',
+    starting: `$(loading~spin) ${t('status.starting')}`,
     connected: `$(check) DSH${modelLabel ? ` · ${modelLabel}` : ''}`,
-    reconnecting: '$(loading~spin) DSH 重启中',
-    notInstalled: '$(warning) DSH 未安装',
-    unsupportedVersion: '$(warning) DSH 版本过低',
+    reconnecting: `$(loading~spin) ${t('status.reconnecting')}`,
+    notInstalled: `$(warning) ${t('status.notInstalled')}`,
+    unsupportedVersion: `$(warning) ${t('status.unsupported')}`,
     failed: '$(error) DSH',
     untrusted: '$(shield) DSH',
   };

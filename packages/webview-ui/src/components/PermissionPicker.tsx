@@ -4,19 +4,21 @@ import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { ChevronDownIcon, ShieldIcon } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
+import { useT, type Translate } from '../i18n.ts';
 
-const LABELS: Record<string, { name: string; hint: string }> = {
-  'read-only': { name: '只读', hint: '只能读取文件' },
-  'workspace-write': { name: '工作区可写', hint: '可以修改工作区里的文件' },
-  'danger-full-access': { name: '完全访问', hint: '不受沙箱限制' },
-};
+const KNOWN = ['read-only', 'workspace-write', 'danger-full-access'] as const;
+type Known = (typeof KNOWN)[number];
+const isKnown = (preset: string): preset is Known => (KNOWN as readonly string[]).includes(preset);
 
-export const permissionName = (preset: string): string => LABELS[preset]?.name ?? preset;
+/** 内置预设显示翻译后的名字；用户自定义的预设显示原名。 */
+export const permissionName = (preset: string, t: Translate): string => (isKnown(preset) ? t(`permission.${preset}`) : preset);
+const permissionHint = (preset: string, t: Translate): string | undefined => (isKnown(preset) ? t(`permission.${preset}.hint`) : undefined);
 
 export function PermissionPicker({ disabled }: { disabled: boolean }) {
   const permissions = useView((s) => s.permissions);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
+  const t = useT();
   if (permissions.options.length === 0) return null;
   const current = permissions.current;
   const danger = current === 'danger-full-access';
@@ -29,26 +31,26 @@ export function PermissionPicker({ disabled }: { disabled: boolean }) {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        title={current ? `权限：${permissionName(current)}` : '权限'}
+        title={current ? t('permission.title', permissionName(current, t)) : t('permission.label')}
         data-testid="permission-picker"
       >
         <ShieldIcon />
-        <span className="toolbar-button__text permission-picker__text">{current ? permissionName(current) : '权限'}</span>
+        <span className="toolbar-button__text permission-picker__text">{current ? permissionName(current, t) : t('permission.label')}</span>
         <ChevronDownIcon />
       </button>
-      <Popover open={open} onClose={close} className="model-menu permission-menu" label="选择权限">
+      <Popover open={open} onClose={close} className="model-menu permission-menu" label={t('permission.select')}>
         <div role="menu">
           {permissions.options.map((preset) => (
             <MenuItem
               key={preset}
               active={preset === current}
-              hint={LABELS[preset]?.hint}
+              hint={permissionHint(preset, t)}
               onSelect={() => {
                 close();
                 if (preset !== current) postToHost({ type: 'selectPermission', payload: { preset } });
               }}
             >
-              {permissionName(preset)}
+              {permissionName(preset, t)}
             </MenuItem>
           ))}
         </div>

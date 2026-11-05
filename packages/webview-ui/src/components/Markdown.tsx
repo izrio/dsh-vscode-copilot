@@ -6,6 +6,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { postToHost } from '../vscode.ts';
 import { CodeBlock } from './CodeBlock.tsx';
+import { useT } from '../i18n.ts';
 
 function openLink(event: MouseEvent<HTMLAnchorElement>, href: string | undefined): void {
   event.preventDefault();
@@ -31,8 +32,14 @@ const components: Components = {
       <table>{children}</table>
     </div>
   ),
-  img: ({ alt }) => <span className="md-image-placeholder">[图片{alt ? `：${alt}` : ''}]</span>,
+  img: ({ alt }) => <ImagePlaceholder alt={alt} />,
 };
+
+/** 不加载图片（CSP 也不允许外部图片），只显示占位文字。 */
+function ImagePlaceholder({ alt }: { alt: string | undefined }) {
+  const t = useT();
+  return <span className="md-image-placeholder">{alt ? t('markdown.imageAlt', alt) : t('markdown.image')}</span>;
+}
 
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (

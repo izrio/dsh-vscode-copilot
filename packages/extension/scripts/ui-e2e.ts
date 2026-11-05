@@ -16,6 +16,7 @@ import { mkdir } from 'node:fs/promises';
 import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
 import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
+import { setLocale } from '../src/i18n.ts';
 import { ChatController } from '../src/vm/ChatController.ts';
 import { reverseHunks, reverseToolDiffs } from '../src/vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
@@ -697,6 +698,26 @@ try {
     () => check('配置后不用重启就能对话', true),
     () => check('配置后不用重启就能对话', false),
   );
+
+  // 9. 英文界面：切换语言后 Webview 和 Host 生成的文字都换成英文
+  setLocale('en');
+  controller.localeChanged();
+  await page.waitForFunction(() => document.querySelector('textarea')?.getAttribute('placeholder')?.startsWith('Describe a task') ?? false, undefined, { timeout: 10_000 }).then(
+    () => check('切换到英文后输入框是英文', true),
+    () => check('切换到英文后输入框是英文', false),
+  );
+  await page.locator('.notice', { hasText: 'No API key is set' }).waitFor({ timeout: 10_000 }).then(
+    () => check('对话流里 Host 生成的提示也换成英文', true),
+    () => check('对话流里 Host 生成的提示也换成英文', false),
+  );
+  // 会话标题来自用户自己的消息，不算
+  const chrome = [
+    ...(await page.locator('.composer').allInnerTexts()),
+    ...(await page.locator('.header button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''))),
+  ];
+  check('顶栏和输入框里没有残留的中文', !chrome.some((text) => /[\u4e00-\u9fff]/u.test(text)), chrome.join(' | '));
+  await shot('26-english');
+  setLocale('zh');
 
   check('页面没有脚本错误', pageErrors.length === 0, pageErrors.join(' | '));
   const violations = await page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations);

@@ -6,3 +6,6 @@
 !media/**
 !package.json
 !README.md
+!package.nls.json
+!package.nls.zh-cn.json
+!CHANGELOG.md

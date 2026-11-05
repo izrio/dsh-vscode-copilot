@@ -11,6 +11,7 @@ import type { FileCandidate } from '@dsh-copilot/shared';
 import { SELECTION_LIMIT } from '../vm/context.ts';
 import { proposedContent, reverseHunks, reverseToolDiffs, unifiedFromHunks, unifiedFromToolDiffs } from '../vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../vm/workbench.ts';
+import { t } from '../i18n.ts';
 
 export const DIFF_SCHEME = 'dsh-diff';
 /** 只保留最近打开过的虚拟文档内容。 */
@@ -112,7 +113,7 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
         ...(options.placeHolder ? { placeHolder: options.placeHolder } : {}),
         password: options.password ?? false,
         ignoreFocusOut: true,
-        validateInput: (value) => (value.trim() ? undefined : '不能为空'),
+        validateInput: (value) => (value.trim() ? undefined : t('input.required')),
       }),
     );
   }
@@ -131,7 +132,7 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
       const selection = range ? new vscode.Range(range.startLine - 1, 0, (range.endLine ?? range.startLine) - 1, Number.MAX_SAFE_INTEGER) : undefined;
       await vscode.window.showTextDocument(uri, { preview: true, ...(selection ? { selection } : {}) });
     } catch (error) {
-      void vscode.window.showWarningMessage(`无法打开 ${basename(path)}：${describe(error)}`);
+      void vscode.window.showWarningMessage(t('open.failed', basename(path), describe(error)));
     }
   }
 
@@ -140,32 +141,32 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
     const name = basename(request.path);
     switch (request.kind) {
       case 'tool': {
-        if (request.created) return this.diff(this.virtual(request.path, 'empty', ''), file, `${name}（新建）`);
+        if (request.created) return this.diff(this.virtual(request.path, 'empty', ''), file, t('diff.created', name));
         const current = await this.read(file);
         const before = current === undefined ? undefined : reverseToolDiffs(current, request.diffs);
-        if (before !== undefined) return this.diff(this.virtual(request.path, 'before', before), file, `${name}（修改前 ↔ 当前）`);
+        if (before !== undefined) return this.diff(this.virtual(request.path, 'before', before), file, t('diff.toolTitle', name));
         return this.showUnified(request.path, unifiedFromToolDiffs(name, request.diffs));
       }
       case 'turn': {
         if (!request.after) {
           const before = reverseHunks('', request.hunks) ?? '';
-          return this.diff(this.virtual(request.path, 'before', before), this.virtual(request.path, 'deleted', ''), `${name}（已删除）`);
+          return this.diff(this.virtual(request.path, 'before', before), this.virtual(request.path, 'deleted', ''), t('diff.deleted', name));
         }
-        if (!request.before) return this.diff(this.virtual(request.path, 'empty', ''), file, `${name}（新建）`);
+        if (!request.before) return this.diff(this.virtual(request.path, 'empty', ''), file, t('diff.created', name));
         const current = await this.read(file);
         const before = current === undefined ? undefined : reverseHunks(current, request.hunks);
-        if (before !== undefined) return this.diff(this.virtual(request.path, 'before', before), file, `${name}（本轮修改前 ↔ 当前）`);
+        if (before !== undefined) return this.diff(this.virtual(request.path, 'before', before), file, t('diff.turnTitle', name));
         return this.showUnified(request.path, unifiedFromHunks(name, request.hunks));
       }
       case 'proposed': {
         const current = await this.read(file);
         const proposed = proposedContent(request.tool, request.args, current);
         if (proposed === undefined) {
-          void vscode.window.showInformationMessage(`无法预览对 ${name} 的修改：要替换的内容在文件里找不到或不唯一`);
+          void vscode.window.showInformationMessage(t('diff.cannotPreview', name));
           return;
         }
         const left = current === undefined ? this.virtual(request.path, 'empty', '') : file;
-        return this.diff(left, this.virtual(request.path, 'proposed', proposed), `${name}（当前 ↔ 将要写入）`);
+        return this.diff(left, this.virtual(request.path, 'proposed', proposed), t('diff.proposedTitle', name));
       }
     }
   }

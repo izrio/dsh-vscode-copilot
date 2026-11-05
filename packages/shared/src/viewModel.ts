@@ -227,3 +227,6 @@ export interface WorkspaceState {
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected';
+
+/** 界面语言：跟随 VS Code 的显示语言（中文用 zh，其他用 en），可以用设置 `dsh.ui.language` 指定。 */
+export type Locale = 'zh' | 'en';
