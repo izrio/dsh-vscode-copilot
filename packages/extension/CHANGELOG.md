@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 加载中的转圈、运行中的圆点和「思考中」在系统「减少动画」时也照常播放（之前全部停住；Windows 关了动画效果或在远程桌面里就是这种情况）。只停掉骨架屏的流光和光标闪烁。
+  Spinners, running dots and the "thinking" pulse keep animating when the OS asks for reduced motion (Windows with animation effects off, Remote Desktop); only the skeleton shimmer and cursor blink stop.
+
 - 行内代码不再是醒目的橙色：改用正文颜色，配淡淡的中性底色和描边（之前没设颜色，沿用了 VS Code 默认样式里主题的 textPreformat 色，很多深色主题是橙色）。跨行时每段都有完整描边。
   Inline code no longer shows in the theme's orange preformatted color: it uses the text color on a soft neutral background with a faint outline, and wraps cleanly.
 

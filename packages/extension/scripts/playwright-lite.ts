@@ -53,6 +53,7 @@ export interface Page extends Frame {
   waitForTimeout(ms: number): Promise<void>;
   frames(): Frame[];
   keyboard: { press(key: string): Promise<void>; type(text: string): Promise<void> };
+  emulateMedia(options: { reducedMotion?: 'reduce' | 'no-preference' | null }): Promise<void>;
   mouse: { move(x: number, y: number, options?: { steps?: number }): Promise<void>; down(): Promise<void>; up(): Promise<void> };
 }
 

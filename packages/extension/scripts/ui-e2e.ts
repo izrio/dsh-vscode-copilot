@@ -711,6 +711,11 @@ try {
   await page.waitForTimeout(2_200);
   const secondTick = await runStatus.innerText().catch(() => '');
   check('运行中显示运行状态和已用时间，每秒刷新', /秒/u.test(firstTick) && firstTick !== secondTick, `${firstTick} → ${secondTick}`);
+  // 系统要求减少动画（Windows 关了动画效果、远程桌面）时，加载中的转圈仍然要转
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const spinning = await runStatus.locator('.spin').evaluate((el) => el.getAnimations().some((a) => a.playState === 'running'));
+  check('减少动画模式下加载转圈仍在转', spinning);
+  await page.emulateMedia({ reducedMotion: null });
   await shot('07-running');
   await stop.click();
   await page.locator('.notice', { hasText: '已停止生成' }).waitFor({ timeout: 20_000 });

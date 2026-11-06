@@ -2181,10 +2181,16 @@ body.resizing {
   }
 }
 
+/*
+ * 系统要求减少动画时（Windows 关了「动画效果」、远程桌面会话默认如此）只停掉装饰性的动画。
+ * 加载中的转圈、运行中的圆点和「思考中」的明暗变化表示 dsh 还在工作，是必要的反馈，照常播放
+ * （转圈放慢一些；明暗变化不涉及位移）。
+ */
 @media (prefers-reduced-motion: reduce) {
-  .spin,
-  .shimmer,
-  .dot--running,
+  .spin {
+    animation-duration: 1.6s;
+  }
+
   .cursor {
     animation: none;
   }
@@ -2446,10 +2452,7 @@ body.resizing {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton,
-  .spin,
-  .shimmer,
-  .dot--running {
+  .skeleton {
     animation: none;
   }
 }
