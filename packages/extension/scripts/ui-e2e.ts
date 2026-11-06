@@ -22,7 +22,7 @@ import { reverseToolDiffs } from '../src/vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';
 import { loadPlaywright, type Page } from './playwright-lite.ts';
-import { DARK_THEME, LIGHT_THEME } from './theme-vars.ts';
+import { DARK_THEME, LIGHT_THEME, VSCODE_DEFAULT_STYLES } from './theme-vars.ts';
 
 const { values: cli } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== '--'),
@@ -241,7 +241,7 @@ const server = createServer((request, response) => {
     }
     if (url.pathname === '/theme-dark.css' || url.pathname === '/theme-light.css') {
       response.writeHead(200, { 'content-type': 'text/css' });
-      response.end(`:root{${url.pathname === '/theme-dark.css' ? DARK_THEME : LIGHT_THEME}}`);
+      response.end(`:root{${url.pathname === '/theme-dark.css' ? DARK_THEME : LIGHT_THEME}}${VSCODE_DEFAULT_STYLES}`);
       return;
     }
     const path = normalize(join(webviewDist, url.pathname));
@@ -325,6 +325,9 @@ try {
     body: getComputedStyle(document.body).color,
   }));
   check('代码高亮颜色生效（不被 CSP 拦截）', colors.token !== colors.body, JSON.stringify(colors));
+  // 行内代码不能沿用 VS Code 默认样式里的 textPreformat 色（深色主题里是橙色，太抢眼）
+  const inlineColor = await page.locator('.inline-code').first().evaluate((el) => getComputedStyle(el).color);
+  check('行内代码用正文色，不是主题的橙色', inlineColor !== 'rgb(215, 186, 125)', inlineColor);
   check('表格渲染', (await page.locator('.markdown table').count()) === 1);
   const ring = page.getByTestId('context-ring');
   await ring.waitFor({ timeout: 10_000 }).then(
