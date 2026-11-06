@@ -42,6 +42,8 @@ const LIST_EVENTS = ['api-session/added', 'api-session/removed', 'api-session/st
 export class SessionService {
   private workspaceId: string | undefined;
   private summaries: SessionSummaryWire[] = [];
+  /** 子代理会话 → 父会话。 */
+  private children = new Map<string, string>();
   private readonly projectionValues = new Map<string, Record<string, unknown>>();
   private readonly pendingBySession = new Map<string, PendingPrompt[]>();
   private catalog: ModelCatalog | undefined;
@@ -73,6 +75,11 @@ export class SessionService {
   /** 当前工作区的会话，按最近更新排序；空白会话不列出。 */
   get sessions(): readonly SessionSummaryWire[] {
     return this.summaries;
+  }
+
+  /** 子代理会话的父会话 id；不是子代理会话（或还没读到）时为 undefined。子代理会话不出现在会话列表里。 */
+  parentOf(sessionId: string): string | undefined {
+    return this.children.get(sessionId);
   }
 
   /** 重新读取模型目录（例如刚配置了 API Key）。 */
@@ -225,6 +232,9 @@ export class SessionService {
   private async refreshList(): Promise<void> {
     try {
       const all = await this.client.listSessions(this.abort.signal);
+      this.children = new Map(
+        all.filter((summary) => summary.parentSessionId && isInside(this.options.workspacePath, summary.cwd)).map((summary) => [summary.sessionId, summary.parentSessionId!]),
+      );
       this.summaries = all
         .filter((summary) => !summary.blank && summary.origin !== 'subagent' && !summary.parentSessionId)
         .filter((summary) => isInside(this.options.workspacePath, summary.cwd))

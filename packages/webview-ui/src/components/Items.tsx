@@ -8,6 +8,7 @@ import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
 import { TurnDone } from './RunStatus.tsx';
 import { ImageThumb } from './Images.tsx';
+import { SubagentRow } from './SubagentRow.tsx';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -45,6 +46,7 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
     case 'assistant':
       return <AssistantMessage item={item} />;
     case 'activity':
+      if (item.variant === 'subagent' && item.subagent) return <SubagentRow item={item} />;
       return item.variant === 'edit' ? <EditRow item={item} /> : <ActivityRow item={item} />;
     case 'explore':
       return <ExploreRow item={item} />;

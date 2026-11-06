@@ -22,6 +22,7 @@ export type {
   SessionChangesView,
   SessionHeader,
   SessionListItem,
+  SubagentView,
   TabsState,
   TabView,
   WorkspaceState,

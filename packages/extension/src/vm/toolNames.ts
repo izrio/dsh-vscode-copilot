@@ -65,6 +65,11 @@ const ALIASES: Readonly<Record<string, string>> = {
   list_files: 'ls',
   list_directory: 'ls',
   tree: 'ls',
+  // 子代理（委派任务）
+  subagent: 'subagent',
+  task: 'subagent',
+  spawn_subagent: 'subagent',
+  delegate_task: 'subagent',
   // 其他有专门界面的工具
   todo_write: 'todo_write',
   ask_user_question: 'ask_user_question',

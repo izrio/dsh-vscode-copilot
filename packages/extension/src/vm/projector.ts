@@ -93,8 +93,9 @@ const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'apply_patch', 'noteb
 const EXPLORE_TOOLS = new Set(['read', 'read_image', 'glob', 'grep', 'ls', 'list']);
 
 /** 按工具类型渲染；带前缀或别名的工具（`ops_grep`、`read_files`）按归一后的名字判断。 */
-export function toolVariant(tool: string): 'command' | 'edit' | 'explore' | 'generic' {
+export function toolVariant(tool: string): 'command' | 'edit' | 'explore' | 'subagent' | 'generic' {
   const name = canonicalTool(tool);
+  if (name === 'subagent') return 'subagent';
   if (COMMAND_TOOLS.has(name)) return 'command';
   if (EDIT_TOOLS.has(name)) return 'edit';
   if (EXPLORE_TOOLS.has(name)) return 'explore';
@@ -160,6 +161,57 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     }
   };
 
+  const handleUserMessage = (event: WireEvent, data: Record<string, unknown>): void => {
+    const source = data.source as { kind?: string; rpcId?: string } | undefined;
+    if (source?.kind !== 'user') return;
+    if (source.rpcId) persistedRequestIds.add(source.rpcId);
+    // 子代理会话的第一条消息：dsh 在任务后面追加了给子代理的说明（父代理 id、怎样回报），不显示
+    const content = Array.isArray(data.content)
+      ? (data.content as ContentBlock[]).filter((block) => !(block.type === 'text' && /^Your parent agent id is /u.test(block.text ?? '')))
+      : data.content;
+    const { text, attachments } = splitContext(textOf(content));
+    const images = imagesOf(data.content);
+    if (text || attachments.length || images.length) {
+      items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}), ...(images.length ? { images } : {}) });
+    }
+  };
+
+  /** 最近一次 subagent 工具调用（等它的 subagent/catalog）；子会话 id → 条目位置。 */
+  let lastSubagentCall: string | undefined;
+  const subagentIndex = new Map<string, number>();
+
+  /**
+   * 子代理结束的通知（`source.kind === 'subagent-settled'`）：更新对应子代理条目的状态和最终回答。
+   * 对应的条目不在已加载的历史里时单独显示一行。
+   * @returns 是这类通知（已处理，不再当作用户消息）。
+   */
+  const settleSubagent = (event: WireEvent, data: Record<string, unknown>): boolean => {
+    const source = data.source as { kind?: string; senderSessionId?: unknown; summary?: unknown } | undefined;
+    if (source?.kind !== 'subagent-settled') return false;
+    const childId = typeof source.senderSessionId === 'string' ? source.senderSessionId : undefined;
+    const { result, failed } = settledResult(data.content, typeof source.summary === 'string' ? source.summary : '');
+    const index = childId ? subagentIndex.get(childId) : undefined;
+    const previous = index !== undefined ? items[index] : undefined;
+    if (index !== undefined && previous?.kind === 'activity' && previous.subagent) {
+      items[index] = {
+        ...previous,
+        status: failed ? 'error' : 'ok',
+        subagent: { ...previous.subagent, state: failed ? 'failed' : 'done', endedAt: event.time, ...(result ? { result } : {}) },
+      };
+      return true;
+    }
+    items.push({
+      kind: 'activity',
+      id: `s:${event.seq}`,
+      tool: 'subagent',
+      variant: 'subagent',
+      label: t('subagent.untitled'),
+      status: failed ? 'error' : 'ok',
+      subagent: { state: failed ? 'failed' : 'done', endedAt: event.time, ...(childId ? { childId } : {}), ...(result ? { result } : {}) },
+    });
+    return true;
+  };
+
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
     return items[index]?.kind === 'explore' ? index : undefined;
@@ -169,6 +221,10 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     if (event.surfaceOp !== undefined && event.surfaceOp !== 'append') continue;
     const data = (event.data ?? {}) as Record<string, unknown>;
     switch (event.type) {
+      case 'user/message':
+        if (settleSubagent(event, data)) break;
+        handleUserMessage(event, data);
+        break;
       case 'turn/start':
         turnOpen = true;
         turnStartedAt = event.time;
@@ -176,17 +232,6 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         flushEdits(turnEdits);
         turnEdits = [];
         break;
-      case 'user/message': {
-        const source = data.source as { kind?: string; rpcId?: string } | undefined;
-        if (source?.kind !== 'user') break;
-        if (source.rpcId) persistedRequestIds.add(source.rpcId);
-        const { text, attachments } = splitContext(textOf(data.content));
-        const images = imagesOf(data.content);
-        if (text || attachments.length || images.length) {
-          items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}), ...(images.length ? { images } : {}) });
-        }
-        break;
-      }
       case 'command/run': {
         // 斜杠命令（/compact、/plan 等）不产生用户消息，只有 command/run 和 command/done
         const commandId = typeof data.commandId === 'string' ? data.commandId : `seq-${event.seq}`;
@@ -262,6 +307,22 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           break;
         }
         itemIndex.set(callId, { index: items.length });
+        if (variant === 'subagent') {
+          // 显示委派任务的简短描述；子会话 id 由随后的 subagent/catalog 或工具结果补上
+          const description = stringArg(args, 'description', 'label', 'name');
+          const prompt = stringArg(args, 'prompt', 'task', 'message');
+          lastSubagentCall = callId;
+          items.push({
+            kind: 'activity',
+            id: `t:${callId}`,
+            tool,
+            variant,
+            label: description ?? t('subagent.untitled'),
+            status: 'running',
+            subagent: { state: 'running', startedAt: event.time, ...(prompt ? { prompt } : {}) },
+          });
+          break;
+        }
         items.push({
           kind: 'activity',
           id: `t:${callId}`,
@@ -270,6 +331,17 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           label: variant === 'edit' && file ? displayPath(file, input.workspacePath) : label,
           status: 'running',
         });
+        break;
+      }
+      case 'subagent/catalog': {
+        // 紧跟在 subagent 工具调用之后：记下子会话 id 和开始时间
+        const childId = typeof data.childId === 'string' ? data.childId : undefined;
+        const at = lastSubagentCall ? itemIndex.get(lastSubagentCall) : undefined;
+        const previous = at ? items[at.index] : undefined;
+        if (!childId || previous?.kind !== 'activity' || !previous.subagent || previous.subagent.childId) break;
+        const startedAt = typeof data.childCreatedAt === 'number' ? data.childCreatedAt : previous.subagent.startedAt;
+        items[at!.index] = { ...previous, subagent: { ...previous.subagent, childId, ...(startedAt !== undefined ? { startedAt } : {}) } };
+        subagentIndex.set(childId, at!.index);
         break;
       }
       case 'tool/result': {
@@ -290,6 +362,17 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           break;
         }
         if (previous?.kind !== 'activity') break;
+        if (previous.variant === 'subagent' && previous.subagent) {
+          // 工具结果只是「started subagent <id>」；出错时显示原因
+          const text = textOf(message?.content);
+          const childId = previous.subagent.childId ?? /started subagent (\S+)/u.exec(text)?.[1];
+          if (childId && !previous.subagent.childId) subagentIndex.set(childId, at.index);
+          items[at.index] =
+            status === 'error'
+              ? { ...previous, status, subagent: { ...previous.subagent, state: 'failed', endedAt: event.time, ...(text ? { result: truncate(text) } : {}) } }
+              : { ...previous, subagent: { ...previous.subagent, ...(childId ? { childId } : {}) } };
+          break;
+        }
         if (canonicalTool(call.tool) === 'exit_plan_mode') {
           // 继续完善计划时工具以错误返回，但这不是失败；其他错误（例如不在计划模式）照常显示
           const result = textOf(message?.content);
@@ -516,6 +599,19 @@ function inboxItems(inbox: unknown): InboxItem[] {
     }
   }
   return result;
+}
+
+/**
+ * 子代理结束通知的内容：第一段是摘要（「Background subagent <id> finished …」），
+ * 「Its closing message:」之后是子代理的最终回答。摘要里没有 finished 时当作失败或被停止。
+ */
+function settledResult(content: unknown, summary: string): { result?: string; failed: boolean } {
+  const texts = Array.isArray(content) ? (content as ContentBlock[]).filter((b) => b.type === 'text').map((b) => b.text ?? '') : [];
+  const marker = texts.findIndex((text) => /closing message:?\s*$/iu.test(text.trim()));
+  const head = summary || texts[0] || '';
+  const failed = !/\bfinished\b/iu.test(head);
+  const rest = (marker >= 0 ? texts.slice(marker + 1) : failed ? texts : texts.slice(1)).join('\n\n').trim();
+  return { ...(rest ? { result: truncate(rest) } : {}), failed };
 }
 
 /** 合并行的摘要：「读取 2 个文件，搜索 1 次」。 */

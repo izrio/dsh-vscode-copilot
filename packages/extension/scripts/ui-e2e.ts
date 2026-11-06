@@ -138,6 +138,10 @@ const env = await createDshTestEnv({
       after: '明白，按你的选择来。',
     },
     E2E_IMAGE: { kind: 'text', chunks: ['图片', '收到了。'] },
+    // 子代理：父会话派出子代理；子代理的回答带 E2E_SUBDONE，父会话收到结束通知后据此回复
+    E2E_SUBAGENT: { kind: 'tool', tool: { name: 'subagent', input: { description: '核对配置', prompt: 'CHILD_E2E 看一下配置' } }, after: '已派出子代理。' },
+    CHILD_E2E: { kind: 'text', chunks: ['E2E_SUBDONE ', '配置', '没问题。'], delayMs: 700 },
+    E2E_SUBDONE: { kind: 'text', chunks: ['子代理汇报：配置没问题。'] },
     default: { kind: 'text', chunks: ['你好！', '有什么可以帮你？'], delayMs: 40 },
   },
 });
@@ -435,6 +439,38 @@ try {
   check('发送后输入框里的缩略图清空', (await page.getByTestId('composer-images').count()) === 0);
   await page.locator('.assistant', { hasText: '图片收到了' }).waitFor({ timeout: 20_000 });
   await shot('14b-image');
+
+  // 2b4. 子代理：卡片显示任务和状态，结束后显示回答；可以打开子代理的对话（只读）
+  await send('E2E_SUBAGENT 派个子代理核对配置');
+  const subagent = page.getByTestId('subagent').first();
+  await subagent.waitFor({ timeout: 20_000 });
+  check('子代理显示成一张卡片（描述 + 运行中）', (await subagent.innerText()).includes('核对配置') && /运行中|已完成/u.test(await subagent.innerText()), await subagent.innerText());
+  await page.locator('.subagent--done').waitFor({ timeout: 30_000 }).then(
+    () => check('子代理结束后显示已完成和用时', true),
+    async () => check('子代理结束后显示已完成和用时', false, await subagent.innerText()),
+  );
+  await page.locator('.assistant', { hasText: '子代理汇报' }).waitFor({ timeout: 20_000 });
+  check('结束通知不显示成用户消息', (await page.locator('.user', { hasText: 'Background subagent' }).count()) === 0);
+  await subagent.locator('.subagent__row').click();
+  check('点开子代理看到任务和回答', (await subagent.innerText()).includes('看一下配置') && (await subagent.innerText()).includes('配置没问题'), await subagent.innerText());
+  await shot('14d-subagent');
+  await subagent.getByRole('button', { name: '查看子代理的对话' }).click();
+  await page.getByTestId('subagent-strip').waitFor({ timeout: 10_000 }).then(
+    () => check('打开子代理的对话：提示只读，输入框不可用', true),
+    () => check('打开子代理的对话：提示只读，输入框不可用', false),
+  );
+  check('子代理对话里输入框禁用', await composer.isDisabled());
+  check('子代理对话的标题用任务描述', (await page.locator('.header__title-text').innerText()) === '子代理 · 核对配置', await page.locator('.header__title-text').innerText());
+  await page.locator('.assistant', { hasText: '配置没问题' }).first().waitFor({ timeout: 10_000 }).then(
+    () => check('子代理的对话内容可以查看', true),
+    () => check('子代理的对话内容可以查看', false),
+  );
+  await shot('14e-subagent-chat');
+  await page.getByTestId('subagent-strip').getByRole('button', { name: '返回父会话' }).click();
+  await page.locator('.assistant', { hasText: '子代理汇报' }).waitFor({ timeout: 10_000 });
+  await page.getByTestId('tabs').locator('.tab').nth(1).hover();
+  await page.getByTestId('tabs').locator('.tab').nth(1).locator('.tab__close').click();
+  await page.waitForTimeout(200);
 
   // 2b3. 字体与字号：「…」菜单里直接调整
   const bodySize = () => page!.evaluate(() => Number.parseFloat(getComputedStyle(document.body).fontSize));
@@ -805,7 +841,8 @@ try {
 
   // 7. 浅色主题
   await load('light');
-  await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 10_000 });
+  // 会话较长时开场只加载最近几轮，等最后一条消息
+  await page.locator('.user', { hasText: '重启之后还能继续吗' }).waitFor({ timeout: 10_000 });
   await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
   await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
   await shot('12-light');

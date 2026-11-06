@@ -125,8 +125,8 @@ export type Item =
       readonly kind: 'activity';
       readonly id: string;
       readonly tool: string;
-      /** 渲染样式：命令、文件修改、其他。 */
-      readonly variant: 'command' | 'edit' | 'generic';
+      /** 渲染样式：命令、文件修改、子代理、其他。 */
+      readonly variant: 'command' | 'edit' | 'subagent' | 'generic';
       /** 一行摘要，例如 `bash  pnpm test`、`write  src/a.ts`。 */
       readonly label: string;
       readonly status: 'running' | 'ok' | 'error';
@@ -138,6 +138,8 @@ export type Item =
       readonly created?: boolean;
       /** 可以打开 Diff。 */
       readonly diff?: DiffRef;
+      /** 子代理（variant 为 subagent）：委派的任务、状态和最终回答。 */
+      readonly subagent?: SubagentView;
     }
   | {
       /** 连续的只读操作（读文件、搜索）合并成一行。 */
@@ -173,6 +175,23 @@ export type Item =
       /** 可选的处理入口，例如缺少 API Key 时打开 dsh 设置。 */
       readonly action?: { readonly kind: 'openWebUI' | 'configureApiKey'; readonly label: string };
     };
+
+/**
+ * 一个子代理。dsh 的 subagent 工具立即返回子会话 id，子代理在后台运行；
+ * 结束时父会话收到一条 `subagent-settled` 通知，带着子代理的最终回答。
+ */
+export interface SubagentView {
+  /** 子会话 id；工具还没返回时没有。 */
+  readonly childId?: string;
+  /** 交给子代理的任务。 */
+  readonly prompt?: string;
+  readonly state: 'running' | 'done' | 'failed';
+  /** 子代理的最终回答（Markdown），或失败原因。 */
+  readonly result?: string;
+  /** 开始和结束的时间（毫秒时间戳，dsh 所在机器的时钟）。 */
+  readonly startedAt?: number;
+  readonly endedAt?: number;
+}
 
 export interface QuestionView {
   readonly id: string;
@@ -273,6 +292,8 @@ export interface SessionHeader {
   readonly folder?: string;
   /** 当前这一轮开始的时间（毫秒时间戳，dsh 所在机器的时钟）；运行中才有。 */
   readonly runningSince?: number;
+  /** 这是一个子代理的会话：只能查看，消息由父会话里的代理发送。 */
+  readonly subagentOf?: { readonly parentId: string };
   /** 本会话（已加载的历史里）改过的文件；没有改动时为 undefined。 */
   readonly changes?: SessionChangesView;
 }

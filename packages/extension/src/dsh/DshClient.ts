@@ -160,6 +160,14 @@ export interface PromptImageInput {
   readonly name?: string;
 }
 
+/**
+ * 会话地址。子代理的会话必须带上父会话（dsh 拒绝直接按 id 读取：「subagent Sessions require their durable parent address」）；
+ * mode 填 unknown，由 dsh 按子代理的记录核对。
+ */
+export function sessionAddress(sessionId: string, parentId?: string): Record<string, string> {
+  return parentId ? { kind: 'subagent', parentSessionId: parentId, childSessionId: sessionId, mode: 'unknown' } : { kind: 'session', sessionId };
+}
+
 /** 改动汇总只保存在 Host 内存里，Host 重启后返回 404。 */
 export class ChangesUnavailableError extends Error {
   constructor() {
@@ -244,9 +252,9 @@ export class DshClient {
    * 读取 `beforeSeq` 之前的一页历史，按轮次对齐。优先用 `session/events`，不可用时回退到 `session/page`。
    * 两者请求格式相同；0.2.1-rc.5 要求必须带 throughSeq。
    */
-  async readHistory(sessionId: string, beforeSeq: number, throughSeq: number, signal?: AbortSignal): Promise<{ records: WireEvent[]; hasMore: boolean }> {
+  async readHistory(sessionId: string, beforeSeq: number, throughSeq: number, signal?: AbortSignal, parentId?: string): Promise<{ records: WireEvent[]; hasMore: boolean }> {
     const request = {
-      address: { kind: 'session', sessionId },
+      address: sessionAddress(sessionId, parentId),
       throughSeq,
       beforeSeq,
       turnWindow: { minMessages: 50, minTurns: 2 },
@@ -376,11 +384,11 @@ export class DshClient {
    * 跟随一个会话：先给开场快照，之后是增量。带 `assistantStream: true` 才有逐字流。
    * 无法识别的帧会跳过并记日志，不中断整个流。
    */
-  async *follow(sessionId: string, signal?: AbortSignal, log: (line: string) => void = () => undefined): AsyncGenerator<FollowFrame> {
+  async *follow(sessionId: string, signal?: AbortSignal, log: (line: string) => void = () => undefined, parentId?: string): AsyncGenerator<FollowFrame> {
     // 与官方客户端相同的开场窗口：至少 50 条消息、跨过至少两轮（历史不够时给全部）
     const stream = this.mux.open(
       'session/follow',
-      { request: { address: { kind: 'session', sessionId }, assistantStream: true, turnWindow: { minMessages: 50, minTurns: 2 } } },
+      { request: { address: sessionAddress(sessionId, parentId), assistantStream: true, turnWindow: { minMessages: 50, minTurns: 2 } } },
       signal,
     );
     for await (const raw of stream) {

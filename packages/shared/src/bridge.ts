@@ -76,7 +76,11 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   /** 新建对话：打开一个新标签（已有空的新对话标签时切换过去），不覆盖当前会话。 */
   z.object({ type: z.literal('newSession'), payload: empty }),
   /** 打开会话：已经在某个标签里时切换过去，否则在新标签里打开。 */
-  z.object({ type: z.literal('switchSession'), payload: z.object({ sessionId: z.string().min(1) }) }),
+  z.object({
+    type: z.literal('switchSession'),
+    /** parentId / label：打开的是子代理的会话时，它的父会话（读取子代理的会话要用父会话地址）和任务描述（做标题）。 */
+    payload: z.object({ sessionId: z.string().min(1), parentId: z.string().min(1).optional(), label: z.string().max(200).optional() }),
+  }),
   z.object({ type: z.literal('activateTab'), payload: z.object({ key: z.string().min(1) }) }),
   /** 关闭标签只是不再显示，会话仍在 dsh 里，可以从会话列表重新打开。 */
   z.object({ type: z.literal('closeTab'), payload: z.object({ key: z.string().min(1) }) }),

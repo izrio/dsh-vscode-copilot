@@ -176,6 +176,23 @@ export class ChatController {
   private tabs: Tab[] = [];
   private activeTab = '';
   private tabCounter = 0;
+  /** 子代理会话 → 父会话：从父会话里打开时由 Webview 告知，会话列表刷新后也能从 dsh 读到。 */
+  private readonly subagentParents = new Map<string, string>();
+  /** 子代理会话 → 任务描述：dsh 给子代理会话起的标题带着给子代理的说明，用描述代替。 */
+  private readonly subagentLabels = new Map<string, string>();
+
+  /** 会话标题；子代理的会话显示「子代理 · 描述」。 */
+  private titleFor(sessionId: string, projections: Readonly<Record<string, unknown>>, items: Parameters<typeof titleOf>[1]): string {
+    const label = this.subagentLabels.get(sessionId);
+    if (label) return t('subagent.title', label);
+    return titleOf(projections, items);
+  }
+
+  /** 子代理会话的父会话；不是子代理会话时为 undefined。 */
+  private parentOf(sessionId: string): string | undefined {
+    return this.subagentParents.get(sessionId) ?? this.service?.parentOf(sessionId);
+  }
+
   /** 后台标签的 follow 流（会话 id → 流），按切走的先后排列。 */
   private readonly background = new Map<string, SessionStream>();
 
@@ -302,7 +319,7 @@ export class ChatController {
       return {
         key: tab.key,
         sessionId: tab.sessionId,
-        title: titleOf(service?.projections(tab.sessionId) ?? {}, []),
+        title: this.titleFor(tab.sessionId, service?.projections(tab.sessionId) ?? {}, []),
         running: summary?.running ?? false,
         ...(attention.has(tab.sessionId) ? { needsAttention: true } : {}),
       };
@@ -442,9 +459,10 @@ export class ChatController {
         if (anySession) this.loadCommands(anySession);
         // 已经不存在的会话（被删除或不属于这个工作区）不再保留标签
         const before = this.tabs.length;
-        this.tabs = this.tabs.filter((tab) => !tab.sessionId || tab.sessionId === restoredId || service.sessions.some((s) => s.sessionId === tab.sessionId));
+        const known = (id: string) => service.sessions.some((s) => s.sessionId === id) || this.parentOf(id) !== undefined;
+        this.tabs = this.tabs.filter((tab) => !tab.sessionId || tab.sessionId === restoredId || known(tab.sessionId));
         if (this.tabs.length !== before) this.saveTabs();
-        if (restoredId && !service.sessions.some((s) => s.sessionId === restoredId)) {
+        if (restoredId && !known(restoredId)) {
           this.options.log(`上次打开的会话 ${restoredId} 已不存在，改为新对话`);
           this.setActive(undefined);
         } else {
@@ -511,6 +529,8 @@ export class ChatController {
         this.newTab();
         return;
       case 'switchSession':
+        if (message.payload.parentId) this.subagentParents.set(message.payload.sessionId, message.payload.parentId);
+        if (message.payload.label) this.subagentLabels.set(message.payload.sessionId, message.payload.label);
         this.openSessionTab(message.payload.sessionId);
         return;
       case 'activateTab':
@@ -828,6 +848,11 @@ export class ChatController {
       this.toast('error', t('notConnected'));
       return;
     }
+    if (this.activeId && this.parentOf(this.activeId)) {
+      // 子代理的对话由父会话里的代理驱动，这里只能查看
+      this.toast('info', t('subagent.readOnly'));
+      return;
+    }
     try {
       const sessionId = await this.ensureSession(service);
       await service.prompt(sessionId, withContext(text, attachments, this.workspacePath), undefined, images);
@@ -1050,9 +1075,11 @@ export class ChatController {
       this.loadCommands(sessionId);
     } else if (service && sessionId) {
       parked?.dispose();
+      const parentId = this.parentOf(sessionId);
       const stream = new SessionStream({
         client: service.client,
         sessionId,
+        ...(parentId ? { parentId } : {}),
         onChange: () => this.scheduleRender(),
         onSnapshotProjections: (baseline) => service.acceptSnapshotProjections(sessionId, baseline),
         log: this.options.log,
@@ -1122,7 +1149,7 @@ export class ChatController {
     const running = streamLive ? projection.turnOpen : projection.turnOpen || (summary?.running ?? false);
     const session: SessionHeader = {
       ...(sessionId ? { id: sessionId } : {}),
-      title: sessionId ? titleOf(projections, projection.items) : newSessionTitle(),
+      title: sessionId ? this.titleFor(sessionId, projections, projection.items) : newSessionTitle(),
       running,
       hasOlder: stream?.journal.hasOlder ?? false,
       loadingOlder: stream?.loadingOlder ?? false,
@@ -1136,6 +1163,7 @@ export class ChatController {
       ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
       ...(projection.sessionChanges ? { changes: projection.sessionChanges } : {}),
       ...(running && this.eventsMemo.value.turnStartedAt !== undefined ? { runningSince: this.eventsMemo.value.turnStartedAt } : {}),
+      ...(sessionId && this.parentOf(sessionId) ? { subagentOf: { parentId: this.parentOf(sessionId)! } } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();

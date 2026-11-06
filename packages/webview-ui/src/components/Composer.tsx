@@ -20,7 +20,7 @@ import { loadState, postToHost, saveState } from '../vscode.ts';
 import { Completion, type CompletionItem } from './Completion.tsx';
 import { ContextChips } from './ContextChips.tsx';
 import { ContextRing } from './ContextRing.tsx';
-import { ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.tsx';
+import { AgentIcon, ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
 import { SessionChanges } from './SessionChanges.tsx';
@@ -290,7 +290,9 @@ export function Composer() {
       .filter((file): file is File => file !== null);
   };
 
-  const canSend = connected && (text.trim().length > 0 || images.length > 0);
+  /** 子代理的对话：只能查看。 */
+  const readOnly = session.subagentOf !== undefined;
+  const canSend = connected && !readOnly && (text.trim().length > 0 || images.length > 0);
   const send = () => {
     if (!canSend) return;
     postToHost({ type: 'sendMessage', payload: { text: text.trim(), includeActive, ...(images.length ? { images } : {}) } });
@@ -340,6 +342,15 @@ export function Composer() {
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
             <SaveIcon />
             {t('dirty.saveAll')}
+          </button>
+        </div>
+      ) : null}
+      {session.subagentOf ? (
+        <div className="subagent-strip" data-testid="subagent-strip">
+          <AgentIcon />
+          <span>{t('subagent.readOnlyHint')}</span>
+          <button type="button" className="link-button" onClick={() => postToHost({ type: 'switchSession', payload: { sessionId: session.subagentOf!.parentId } })}>
+            {t('subagent.backToParent')}
           </button>
         </div>
       ) : null}
@@ -405,8 +416,15 @@ export function Composer() {
             if (!event.clipboardData.types.includes('text/plain')) event.preventDefault();
             void addImages(files);
           }}
+          disabled={readOnly}
           placeholder={
-            connected ? (session.running ? t('composer.placeholderRunning') : t('composer.placeholder')) : t('composer.placeholderOffline')
+            readOnly
+              ? t('subagent.readOnlyHint')
+              : connected
+                ? session.running
+                  ? t('composer.placeholderRunning')
+                  : t('composer.placeholder')
+                : t('composer.placeholderOffline')
           }
           rows={1}
           aria-label={t('composer.label')}
@@ -415,8 +433,8 @@ export function Composer() {
           {...(menuOpen ? { 'aria-controls': 'composer-completion', 'aria-activedescendant': `completion-${selected}` } : {})}
         />
         <div className="composer__toolbar">
-          <ModelPicker disabled={!connected} />
-          <PermissionPicker disabled={!connected} />
+          <ModelPicker disabled={!connected || readOnly} />
+          <PermissionPicker disabled={!connected || readOnly} />
           {session.planMode ? (
             <button
               type="button"

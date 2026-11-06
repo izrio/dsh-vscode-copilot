@@ -2677,3 +2677,157 @@ body.resizing {
   padding-top: 2px;
   font-size: 0.92em;
 }
+
+/* ---------- 子代理 ---------- */
+
+.subagent {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  font-size: 0.92em;
+}
+
+.subagent__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent__row:hover {
+  background: var(--hover);
+}
+
+.subagent__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.subagent__icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.subagent__kind {
+  flex: none;
+  color: var(--muted);
+}
+
+.subagent__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.subagent__status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.subagent__status svg {
+  width: 13px;
+  height: 13px;
+}
+
+.subagent--running .subagent__status svg {
+  color: var(--accent);
+}
+
+.subagent--done .subagent__status svg {
+  color: var(--vscode-charts-green, #3fb950);
+}
+
+.subagent--failed .subagent__status {
+  color: var(--vscode-errorForeground);
+}
+
+.subagent__time {
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent__chevron {
+  flex: none;
+  color: var(--muted);
+}
+
+.subagent__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px 10px 38px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.subagent__heading {
+  margin: 4px 0 2px;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.subagent__prompt {
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--vscode-foreground) 85%, transparent);
+}
+
+.subagent__result {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.subagent__pending {
+  color: var(--muted);
+}
+
+.subagent__open {
+  align-self: flex-start;
+}
+
+.subagent-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 6px;
+  padding: 4px 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.subagent-strip svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.subagent-strip .link-button {
+  margin-left: auto;
+}
+
+.thread > .subagent {
+  flex-shrink: 0;
+}

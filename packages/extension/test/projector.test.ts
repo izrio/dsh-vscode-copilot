@@ -219,6 +219,46 @@ describe('project：按工具类型渲染（M2）', () => {
     ]);
   });
 
+  it('子代理：一行显示描述和状态，结束通知补上最终回答，通知本身不显示成用户消息', () => {
+    const at = (seq: number, time: number, type: string, data: unknown) => ({ type, seq, time, data });
+    const child = '84903303-223c-47ff-8f73-b6bc2070075c';
+    const events = [
+      at(1, 1_000, 'turn/start', { turn: 1 }),
+      at(2, 1_100, 'tool/call', { callId: 'c1', name: 'subagent', arguments: JSON.stringify({ description: '探针子代理', prompt: 'CHILD_TASK 报一下你的模型' }) }),
+      at(3, 1_200, 'subagent/catalog', { version: 0, childId: child, childCreatedAt: 1_150, mode: 'continuable', label: '探针子代理' }),
+      at(4, 1_300, 'tool/result', { message: { toolCallId: 'c1', content: [{ type: 'text', text: `started subagent ${child}` }], isError: false } }),
+      at(5, 1_400, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ];
+    const running = projectEvents({ events }).items.find((item) => item.kind === 'activity');
+    expect(running).toMatchObject({ variant: 'subagent', label: '探针子代理', subagent: { childId: child, state: 'running', startedAt: 1_150, prompt: 'CHILD_TASK 报一下你的模型' } });
+    expect(running && 'output' in running).toBe(false);
+
+    const settled = at(6, 16_150, 'user/message', {
+      content: [
+        { type: 'text', text: `Background subagent ${child} finished and will do no further work unless you send it more.` },
+        { type: 'text', text: 'Its closing message:' },
+        { type: 'text', text: '我是子代理，模型是 mock。' },
+      ],
+      source: { kind: 'subagent-settled', form: 'notice', summary: `Background subagent ${child} finished and will do no further work unless you send it more.`, senderSessionId: child },
+      role: 'user',
+    });
+    const items = projectEvents({ events: [...events, settled] }).items;
+    expect(items.filter((item) => item.kind === 'user')).toEqual([]);
+    expect(items.find((item) => item.kind === 'activity')).toMatchObject({
+      status: 'ok',
+      subagent: { state: 'done', result: '我是子代理，模型是 mock。', startedAt: 1_150, endedAt: 16_150 },
+    });
+  });
+
+  it('只加载到结束通知（子代理的调用在更早的历史里）时单独显示一行', () => {
+    const items = projectEvents({
+      events: [
+        { type: 'user/message', seq: 9, time: 9, data: { content: [{ type: 'text', text: 'Background subagent x stopped.' }], source: { kind: 'subagent-settled', summary: 'Background subagent x stopped.', senderSessionId: 'x' } } },
+      ],
+    }).items;
+    expect(items).toMatchObject([{ kind: 'activity', variant: 'subagent', subagent: { childId: 'x', state: 'failed' } }]);
+  });
+
   it('write 新建文件：标记新建，新增行数取内容行数', () => {
     const items = project({
       events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],

@@ -1,5 +1,10 @@
 # 更新记录 / Changelog
 
+## 未发布 / Unreleased
+
+- 子代理：dsh 派出的子代理显示成一张卡片——任务描述、运行中 / 已完成 / 未完成、用时（运行中每秒刷新）；点开看交给它的任务和它的最终回答（之前只有一行工具名，结束通知也不显示）。「查看子代理的对话」在标签里打开子代理自己的会话（只读，标题是任务描述，可以返回父会话）。
+  Subagents show as a card with the task description, running/done state and elapsed time; expand it for the delegated task and the subagent's final answer. "Open the subagent's conversation" opens the child session read-only in a tab.
+
 ## 0.2.3
 
 行内代码不再是醒目的橙色；系统减少动画时加载转圈照常播放。支持 dsh `0.2.1-rc.5` 及以上。
