@@ -1,6 +1,10 @@
 # 更新记录 / Changelog
 
-## 未发布 / Unreleased
+## 0.2.3
+
+行内代码不再是醒目的橙色；系统减少动画时加载转圈照常播放。支持 dsh `0.2.1-rc.5` 及以上。
+
+Inline code no longer shows in orange; loading indicators keep animating under reduced motion. Requires dsh `0.2.1-rc.5` or later.
 
 - 加载中的转圈、运行中的圆点和「思考中」在系统「减少动画」时也照常播放（之前全部停住；Windows 关了动画效果或在远程桌面里就是这种情况）。只停掉骨架屏的流光和光标闪烁。
   Spinners, running dots and the "thinking" pulse keep animating when the OS asks for reduced motion (Windows with animation effects off, Remote Desktop); only the skeleton shimmer and cursor blink stop.
