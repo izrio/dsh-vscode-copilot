@@ -2,8 +2,16 @@
 
 ## 未发布 / Unreleased
 
-- 子代理：dsh 派出的子代理显示成一张卡片——任务描述、运行中 / 已完成 / 未完成、用时（运行中每秒刷新）；点开看交给它的任务和它的最终回答（之前只有一行工具名，结束通知也不显示）。「查看子代理的对话」在标签里打开子代理自己的会话（只读，标题是任务描述，可以返回父会话）。
-  Subagents show as a card with the task description, running/done state and elapsed time; expand it for the delegated task and the subagent's final answer. "Open the subagent's conversation" opens the child session read-only in a tab.
+**改名为 Harness Deck，支持多个底层。** / **Renamed to Harness Deck, with switchable backends.**
+
+- 底层可以切换：内置的 dsh，或设置 `harnessDeck.backends` 里的 ACP（Agent Client Protocol）代理，默认配好了 oh-my-pi（`omp acp`）。「…」→「底层」或命令「切换底层」里切换；每个底层的会话分开保存。
+  Switchable backends: the built-in dsh, or ACP agents from `harnessDeck.backends` (oh-my-pi preconfigured). Switch from "…" → Backend or the Switch Backend command; sessions are kept per backend.
+- ACP 底层支持流式回复和推理、工具行（读文件和搜索合并、命令输出、修改的增删行数和 Diff）、审批、待办、用量、斜杠命令、模型和思考等级、模式（计划模式）、会话列表和重新打开、停止、图片；用真实的 oh-my-pi 做端到端测试，并每天在 CI 里对 oh-my-pi 的固定版本和最新版本各跑一次。
+  ACP backends cover streaming replies and reasoning, tool rows (grouped reads/searches, command output, edit line counts and diffs), approvals, to-dos, usage, slash commands, model and thought level, modes (plan), session list and reload, stop and images; tested end to end against real oh-my-pi, nightly in CI.
+- 插件改名为 Harness Deck：命令、视图和设置从 `dsh.*` 改为 `harnessDeck.*`（原来的设置第一次启动时自动迁移），安装包改名为 `harness-deck-<版本>.vsix`。这是新的扩展 id，升级后可以卸载 DSH Copilot。
+  Renamed to Harness Deck: commands, views and settings moved from `dsh.*` to `harnessDeck.*` (old settings are migrated on first start); the package is `harness-deck-<version>.vsix`. It is a new extension id, so DSH Copilot can be uninstalled afterwards.
+- 子代理：dsh 派出的子代理显示成一张卡片（任务描述、状态、用时，点开看任务和回答），可以打开子代理自己的对话（只读）。
+  Subagents show as a card (task, state, elapsed time; expand for the task and answer) and their conversation can be opened read-only.
 
 ## 0.2.3
 

@@ -16,6 +16,7 @@ import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
 import { resolveLocale, setLocale, t } from './i18n.ts';
 import { redactSecrets } from './util/redact.ts';
+import { command, migrateSettings, SECTION, settings } from './settings.ts';
 
 const FOLDER_KEY = 'dsh.folder';
 const BACKEND_KEY = 'dsh.backend';
@@ -24,12 +25,14 @@ let active: RunningBackend | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const applyLocale = (): void =>
-    setLocale(resolveLocale(vscode.env.language, vscode.workspace.getConfiguration('dsh.ui').get<string>('language', 'auto')));
+    setLocale(resolveLocale(vscode.env.language, settings('ui').get<string>('language', 'auto')));
   applyLocale();
-  const output = vscode.window.createOutputChannel('DSH', { log: true });
+  // 旧版本（DSH Copilot）的设置搬到 harnessDeck.* 下
+  void migrateSettings().then((moved) => moved.length && log(`已迁移旧设置：${moved.join(', ')}`));
+  const output = vscode.window.createOutputChannel('Harness Deck', { log: true });
   // 所有日志都先脱敏：错误信息里可能带着底层回显的令牌或 API Key
   const log = (line: string): void => output.info(redactSecrets(line));
-  const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
+  const runtimeOutput = vscode.window.createOutputChannel('Harness Deck: Backend', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
   // 多根工作区：用上次选择的文件夹，默认第一个；会话按文件夹分开
@@ -38,7 +41,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let workspacePath = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath ?? homedir();
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  status.command = 'dsh.openChat';
+  status.command = command('openChat');
   context.subscriptions.push(status);
   let modelLabel: string | undefined;
 
@@ -49,7 +52,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // ---- 底层列表与切换 ----
-  const profiles = (): BackendProfile[] => parseProfiles(vscode.workspace.getConfiguration('dsh').get<unknown>('backends', []), log);
+  const profiles = (): BackendProfile[] => parseProfiles(settings().get<unknown>('backends', []), log);
   const backendsState = (): BackendsState => ({ items: profiles().map(profileView), active: active?.profile.id ?? DSH_PROFILE.id });
   const updateStatusBar = (): void => renderStatusBar(status, active, modelLabel);
 
@@ -65,19 +68,19 @@ export function activate(context: vscode.ExtensionContext): void {
     onStatus: () => updateStatusBar(),
     controllerOptions: () => ({
       workbench,
-      includeActiveEditor: () => vscode.workspace.getConfiguration('dsh.context').get<boolean>('includeActiveEditor', true),
+      includeActiveEditor: () => settings('context').get<boolean>('includeActiveEditor', true),
       post: (message) => provider?.post(message),
       log,
       folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
-      selectFolder: () => void vscode.commands.executeCommand('dsh.selectFolder'),
+      selectFolder: () => void vscode.commands.executeCommand(command('selectFolder')),
       openExternal,
       showLogs: () => output.show(),
       appearance: readAppearance,
       backends: backendsState,
-      showTurnChanges: () => vscode.workspace.getConfiguration('dsh.ui').get<boolean>('showTurnChanges', false),
+      showTurnChanges: () => settings('ui').get<boolean>('showTurnChanges', false),
       openSettings: () => void vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`),
       setAppearance: async (patch) => {
-        const config = vscode.workspace.getConfiguration('dsh.ui');
+        const config = settings('ui');
         for (const [key, value] of Object.entries(patch) as [string, number | string | null | undefined][]) {
           if (value === undefined) continue;
           // 写到已经设置过的那一级（工作区设置会盖过用户设置），都没设置过时写用户设置
@@ -150,20 +153,20 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const focusView = () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
   context.subscriptions.push(
-    vscode.commands.registerCommand('dsh.openChat', focusView),
-    vscode.commands.registerCommand('dsh.newSession', async () => {
+    vscode.commands.registerCommand(command('openChat'), focusView),
+    vscode.commands.registerCommand(command('newSession'), async () => {
       await focusView();
       await current().controller.handle({ type: 'newSession', payload: {} });
     }),
-    vscode.commands.registerCommand('dsh.interrupt', () => current().controller.handle({ type: 'interrupt', payload: {} })),
-    vscode.commands.registerCommand('dsh.selectBackend', async () => {
+    vscode.commands.registerCommand(command('interrupt'), () => current().controller.handle({ type: 'interrupt', payload: {} })),
+    vscode.commands.registerCommand(command('selectBackend'), async () => {
       const picked = await vscode.window.showQuickPick(
         profiles().map((p) => ({ label: p.name, description: p.kind === 'dsh' ? 'dsh' : `ACP · ${p.command}`, picked: p.id === active?.profile.id, id: p.id })),
         { placeHolder: t('ext.selectBackend') },
       );
       if (picked) await switchBackend(picked.id);
     }),
-    vscode.commands.registerCommand('dsh.selectModel', async () => {
+    vscode.commands.registerCommand(command('selectModel'), async () => {
       const chat = current().controller;
       const models = chat.modelState();
       if (models.options.length === 0) {
@@ -190,29 +193,29 @@ export function activate(context: vscode.ExtensionContext): void {
         });
       }
     }),
-    vscode.commands.registerCommand('dsh.explainSelection', async () => {
+    vscode.commands.registerCommand(command('explainSelection'), async () => {
       // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
       const sending = current().controller.askAboutSelection('explain');
       await focusView();
       await sending;
     }),
-    vscode.commands.registerCommand('dsh.fixSelection', async () => {
+    vscode.commands.registerCommand(command('fixSelection'), async () => {
       const sending = current().controller.askAboutSelection('fix');
       await focusView();
       await sending;
     }),
-    vscode.commands.registerCommand('dsh.testSelection', async () => {
+    vscode.commands.registerCommand(command('testSelection'), async () => {
       const sending = current().controller.askAboutSelection('test');
       await focusView();
       await sending;
     }),
-    vscode.commands.registerCommand('dsh.addToChat', async () => {
+    vscode.commands.registerCommand(command('addToChat'), async () => {
       current().controller.pinActiveEditor();
       await focusView();
     }),
-    vscode.commands.registerCommand('dsh.configureApiKey', () => current().controller.configureApiKey()),
-    vscode.commands.registerCommand('dsh.renameSession', () => current().controller.renameSession()),
-    vscode.commands.registerCommand('dsh.selectFolder', async () => {
+    vscode.commands.registerCommand(command('configureApiKey'), () => current().controller.configureApiKey()),
+    vscode.commands.registerCommand(command('renameSession'), () => current().controller.renameSession()),
+    vscode.commands.registerCommand(command('selectFolder'), async () => {
       const list = folders();
       if (list.length < 2) {
         void vscode.window.showInformationMessage(t('ext.singleFolder'));
@@ -227,24 +230,24 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.workspaceState.update(FOLDER_KEY, workspacePath);
       current().controller.setWorkspace(workspacePath);
     }),
-    vscode.commands.registerCommand('dsh.restartRuntime', () => current().restart()),
-    vscode.commands.registerCommand('dsh.openWebUI', () => current().controller.handle({ type: 'openWebUI', payload: {} })),
-    vscode.commands.registerCommand('dsh.showLogs', () => output.show()),
+    vscode.commands.registerCommand(command('restartRuntime'), () => current().restart()),
+    vscode.commands.registerCommand(command('openWebUI'), () => current().controller.handle({ type: 'openWebUI', payload: {} })),
+    vscode.commands.registerCommand(command('showLogs'), () => output.show()),
     vscode.workspace.onDidGrantWorkspaceTrust(startIfTrusted),
     vscode.workspace.onDidChangeConfiguration((event) => {
       const chat = current().controller;
-      if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
-      if (event.affectsConfiguration('dsh.backends')) {
+      if (event.affectsConfiguration(`${SECTION}.dsh`)) output.info('dsh 运行时设置已修改，执行「Harness Deck：重启底层」后生效');
+      if (event.affectsConfiguration(`${SECTION}.backends`)) {
         // 当前底层被删掉时回到 dsh；否则只刷新列表（命令和参数的修改在重启底层后生效）
         if (!profiles().some((p) => p.id === active?.profile.id)) void switchBackend(DSH_PROFILE.id);
         else chat.backendsChanged();
       }
-      if (event.affectsConfiguration('dsh.context')) chat.workspaceChanged();
-      if (event.affectsConfiguration('dsh.ui.fontSize') || event.affectsConfiguration('dsh.ui.fontFamily') || event.affectsConfiguration('dsh.ui.codeFontFamily')) {
+      if (event.affectsConfiguration(`${SECTION}.context`)) chat.workspaceChanged();
+      if (event.affectsConfiguration(`${SECTION}.ui.fontSize`) || event.affectsConfiguration(`${SECTION}.ui.fontFamily`) || event.affectsConfiguration(`${SECTION}.ui.codeFontFamily`)) {
         chat.appearanceChanged();
       }
-      if (event.affectsConfiguration('dsh.ui.showTurnChanges')) chat.workspaceChanged();
-      if (event.affectsConfiguration('dsh.ui.language')) {
+      if (event.affectsConfiguration(`${SECTION}.ui.showTurnChanges`)) chat.workspaceChanged();
+      if (event.affectsConfiguration(`${SECTION}.ui.language`)) {
         applyLocale();
         chat.localeChanged();
         updateStatusBar();
@@ -259,7 +262,7 @@ export async function deactivate(): Promise<void> {
 
 /** 界面字号和字体；0 或空字符串表示跟随 VS Code。 */
 function readAppearance(): AppearanceState {
-  const config = vscode.workspace.getConfiguration('dsh.ui');
+  const config = settings('ui');
   const size = config.get<number>('fontSize', 0);
   const family = config.get<string>('fontFamily', '').trim();
   const code = config.get<string>('codeFontFamily', '').trim();

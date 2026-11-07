@@ -1,10 +1,10 @@
-# DSH Copilot for VS Code
+# Harness Deck（原 DSH Copilot）
 
-[DeepSeek Harness（dsh）](https://github.com/deepseek-ai/deepseek-harness) 的 VS Code 前端，交互参考 Codex：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。
+编程代理的 VS Code 对话面板，交互参考 Codex：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。
 
-Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
+面板背后的底层可以切换：内置的 [DeepSeek Harness（dsh）](https://github.com/deepseek-ai/deepseek-harness)，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 的代理——默认配好了 [oh-my-pi](https://github.com/can1357/oh-my-pi)。Agent 能力都由底层提供；插件负责启动和连接底层，把会话数据转换成界面，并补上 VS Code 集成。
 
-> 当前版本：**v0.1.0**（M0–M5 完成）。安装包在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases) 下载（`dsh-copilot-<版本>.vsix`，VS Code 扩展视图「⋯ → 从 VSIX 安装…」）。使用说明见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。功能：基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区；中英文界面。
+> 安装包在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases) 下载（`harness-deck-<版本>.vsix`，VS Code 扩展视图「⋯ → 从 VSIX 安装…」）。使用说明和不同底层的差别见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。
 
 ![点击修改记录，在 VS Code 的 Diff 编辑器里查看改动](docs/images/m2-vscode-diff.png)
 
@@ -95,13 +95,13 @@ pnpm smoke -- --dsh "$(command -v dsh)"
 界面端到端测试（真实 dsh + 插件的 Host 侧逻辑 + Chromium 中的界面，需要先 `pnpm build`，本机装有 playwright 和 Chromium）：
 
 ```bash
-pnpm --filter dsh-copilot e2e -- --dsh "$(command -v dsh)"
+pnpm --filter harness-deck e2e -- --dsh "$(command -v dsh)"
 ```
 
 在真实 VS Code 中验证（需要先 `pnpm package`，并安装 code-server）：
 
 ```bash
-pnpm --filter dsh-copilot vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
+pnpm --filter harness-deck vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
 ```
 
 截图默认保存在仓库根目录的 `.e2e-screenshots/`（已忽略）。

@@ -4,7 +4,7 @@
  * 覆盖 VS Code 外壳之外的全部链路，并截图供界面验收。
  *
  * 用法（需要先 `pnpm build`，本机装有 playwright 和 Chromium）：
- *   pnpm --filter dsh-copilot run e2e -- --dsh /path/to/dsh [--node-bin <Node 24 bin>] [--out <截图目录>]
+ *   pnpm --filter harness-deck run e2e -- --dsh /path/to/dsh [--node-bin <Node 24 bin>] [--out <截图目录>]
  */
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';

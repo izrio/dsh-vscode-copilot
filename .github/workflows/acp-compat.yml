@@ -36,7 +36,7 @@ jobs:
       - name: UI end-to-end test
         run: |
           pnpm build
-          NODE_PATH="$(npm root -g)" pnpm --filter dsh-copilot acp-e2e -- --omp "$(command -v omp)" --out "$GITHUB_WORKSPACE/acp-screenshots"
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck acp-e2e -- --omp "$(command -v omp)" --out "$GITHUB_WORKSPACE/acp-screenshots"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

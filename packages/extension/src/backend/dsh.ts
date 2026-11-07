@@ -10,6 +10,7 @@ import { RuntimeManager, type RuntimeConfig } from '../runtime/RuntimeManager.ts
 import { ChatController, type ChatControllerOptions } from '../vm/ChatController.ts';
 import { webUIUrl } from '../util/webUrl.ts';
 import { t } from '../i18n.ts';
+import { settings } from '../settings.ts';
 import type { BackendProfile, RunningBackend } from './types.ts';
 
 /** 各种底层共用的、由 extension.ts 提供的能力。 */
@@ -112,7 +113,7 @@ async function externalOrigin(base: string): Promise<string> {
 }
 
 function readRuntimeConfig(workspacePath: string): RuntimeConfig {
-  const config = vscode.workspace.getConfiguration('dsh.runtime');
+  const config = settings('dsh');
   return {
     configuredPath: config.get<string>('path', ''),
     profile: config.get<string>('profile', 'web') || 'web',

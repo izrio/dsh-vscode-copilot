@@ -1,7 +1,7 @@
 /**
  * ACP 底层的界面端到端测试：真实的 oh-my-pi（`omp acp`）+ 本地假模型 + Chromium 里的真实 Webview。
  *
- *   pnpm --filter dsh-copilot acp-e2e -- --omp <omp 的 cli.js 或可执行文件> [--bun <bun>] [--out <截图目录>]
+ *   pnpm --filter harness-deck acp-e2e -- --omp <omp 的 cli.js 或可执行文件> [--bun <bun>] [--out <截图目录>]
  *
  * 覆盖：启动和 initialize、草稿会话带来的模型和模式、流式回复、工具行（写文件、命令）、审批、会话列表、
  * 重新打开会话（session/load 回放）、切换模式、停止生成。

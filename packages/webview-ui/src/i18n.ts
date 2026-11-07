@@ -1,5 +1,5 @@
 /**
- * 界面文字。语言由 Host 决定（VS Code 的显示语言或设置 `dsh.ui.language`），随快照下发。
+ * 界面文字。语言由 Host 决定（VS Code 的显示语言或设置 `harnessDeck.ui.language`），随快照下发。
  * 新增文字时两种语言都要写：`en` 的类型来自 `zh`，漏写会在类型检查时报错。
  */
 import type { Locale } from '@dsh-copilot/shared';
@@ -198,7 +198,7 @@ const zh = {
   'runtime.restarting': '{agent} 意外退出，正在重启（第 {0} 次）',
   'runtime.notInstalled': '找不到 {agent}',
   'runtime.notInstalledDetail':
-    '请安装 DeepSeek Desktop 并在菜单「管理 dsh 命令…」中安装 dsh 命令，或执行 npm install -g @deepseek-ai/dsh（需要 Node 24.9 以上），也可以在设置 dsh.runtime.path 中指定路径。',
+    '请安装 DeepSeek Desktop 并在菜单「管理 dsh 命令…」中安装 dsh 命令，或执行 npm install -g @deepseek-ai/dsh（需要 Node 24.9 以上），也可以在设置 harnessDeck.dsh.path 中指定路径。',
   'runtime.tooOld': '{agent} {0} 版本过低',
   'runtime.tooOldDetail': '需要 {0} 或更高版本。',
   'runtime.failed': '{agent} 启动失败',
@@ -445,7 +445,7 @@ const en: Record<MessageKey, string> = {
   'runtime.restarting': '{agent} exited unexpectedly; restarting (attempt {0})',
   'runtime.notInstalled': '{agent} not found',
   'runtime.notInstalledDetail':
-    'Install DeepSeek Desktop and choose "Manage dsh command…" from its menu, or run npm install -g @deepseek-ai/dsh (requires Node 24.9 or later). You can also set the path in the dsh.runtime.path setting.',
+    'Install DeepSeek Desktop and choose "Manage dsh command…" from its menu, or run npm install -g @deepseek-ai/dsh (requires Node 24.9 or later). You can also set the path in the harnessDeck.dsh.path setting.',
   'runtime.tooOld': '{agent} {0} is too old',
   'runtime.tooOldDetail': 'Version {0} or later is required.',
   'runtime.failed': '{agent} failed to start',

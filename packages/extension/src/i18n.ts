@@ -1,6 +1,6 @@
 /**
  * Extension Host 侧的界面文字：提示、对话流里的提示行和活动行、模板命令、原生对话框、状态栏。
- * 语言在激活时按 VS Code 的显示语言（或设置 `dsh.ui.language`）设定，之后随设置变化；测试默认中文。
+ * 语言在激活时按 VS Code 的显示语言（或设置 `harnessDeck.ui.language`）设定，之后随设置变化；测试默认中文。
  * 日志不翻译。新增文字时两种语言都要写：`en` 的类型来自 `zh`。
  */
 import type { Locale } from '@dsh-copilot/shared';
@@ -65,7 +65,7 @@ const zh = {
   'acp.newFailed': '无法新建会话：{0}',
   'acp.untitled': '未命名会话',
   'acp.noImages': '{0} 不接受图片，只发送了文字。',
-  'acp.notFound': '找不到命令 {0}。请先安装，或在设置 dsh.backends 里改成完整路径。',
+  'acp.notFound': '找不到命令 {0}。请先安装，或在设置 harnessDeck.backends 里改成完整路径。',
   'acp.exited': '{0} 意外退出：{1}',
   'acp.image': '图片',
   'notice.blocked': '本轮被阻止',
@@ -115,7 +115,7 @@ const zh = {
   'ext.noModels': 'dsh 还没有可用的模型',
   'ext.selectModel': '选择模型',
   'ext.singleFolder': '当前工作区只有一个文件夹',
-  'ext.selectFolder': 'DSH 对话对应的文件夹（每个文件夹有自己的会话列表）',
+  'ext.selectFolder': '对话对应的文件夹（每个文件夹有自己的会话列表）',
   'status.starting': '{0} 启动中',
   'status.reconnecting': '{0} 重启中',
   'status.notInstalled': '{0} 未安装',
@@ -191,7 +191,7 @@ const en: Record<HostMessageKey, string> = {
   'acp.newFailed': 'Could not start a session: {0}',
   'acp.untitled': 'Untitled session',
   'acp.noImages': '{0} does not accept images; only the text was sent.',
-  'acp.notFound': 'Command {0} not found. Install it first, or set its full path in the dsh.backends setting.',
+  'acp.notFound': 'Command {0} not found. Install it first, or set its full path in the harnessDeck.backends setting.',
   'acp.exited': '{0} exited unexpectedly: {1}',
   'acp.image': 'Image',
   'notice.blocked': 'This turn was blocked',
@@ -241,7 +241,7 @@ const en: Record<HostMessageKey, string> = {
   'ext.noModels': 'dsh has no models available yet',
   'ext.selectModel': 'Select a model',
   'ext.singleFolder': 'This workspace has only one folder',
-  'ext.selectFolder': 'Folder for DSH chats (each folder has its own sessions)',
+  'ext.selectFolder': 'Folder for the chat (each folder has its own sessions)',
   'status.starting': '{0} starting',
   'status.reconnecting': '{0} restarting',
   'status.notInstalled': '{0} not installed',
@@ -258,7 +258,7 @@ const catalogs: Record<Locale, Record<HostMessageKey, string>> = { zh, en };
 
 let current: Locale = 'zh';
 
-/** VS Code 的语言标识（例如 `zh-cn`、`en`）→ 界面语言。`setting` 是 `dsh.ui.language`（auto / zh / en）。 */
+/** VS Code 的语言标识（例如 `zh-cn`、`en`）→ 界面语言。`setting` 是 `harnessDeck.ui.language`（auto / zh / en）。 */
 export function resolveLocale(vscodeLanguage: string, setting = 'auto'): Locale {
   if (setting === 'zh' || setting === 'en') return setting;
   return vscodeLanguage.toLowerCase().startsWith('zh') ? 'zh' : 'en';

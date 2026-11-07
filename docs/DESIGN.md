@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.8（M5 完成，v0.1.0）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.9（多底层：dsh + ACP，插件改名 Harness Deck）｜ 日期：2026-11-07 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -38,6 +38,7 @@
 | v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
 | v0.7 | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
 | **v0.8** | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
+| **v0.9** | 多底层：插件改名 Harness Deck；dsh 成为底层之一，另可接入 ACP（Agent Client Protocol）代理，默认配置 oh-my-pi。结构见第 15 节；设置从 `dsh.*` 改为 `harnessDeck.*`（第 8 节的旧名自动迁移） |
 
 ---
 
@@ -828,8 +829,8 @@ dsh-vscode-copilot/
 | --- | --- | --- | --- |
 | 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、排队消息与队列操作、计划审阅、状态条、重命名、API Key 配置、切换文件夹、投影缓存与现算一致、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
-| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
-| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter harness-deck e2e` |
+| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter harness-deck vscode-e2e` |
 | 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
 | 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
 
@@ -987,3 +988,33 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 | Q5 | 你们会不会 fork 或定制 dsh（比如加插件、改默认配置）？ | 假设不 fork，直接用官方发布版本 |
 | Q6 | 分发方式：VS Code 市场 / Open VSX / 内部 vsix？ | 假设先出 vsix，稳定后再上市场 |
 | Q7 | 插件的开源协议？ | 未定，`package.json` 暂写 `UNLICENSED` |
+
+
+## 15. 多底层（dsh + ACP）
+
+插件改名为 Harness Deck 后，对话面板背后的「底层」可以切换。界面和视图模型（`shared/viewModel`）与底层无关；每种底层有自己的控制器，实现同一个接口 `ChatBackendController`（`backend/types.ts`），把底层的数据投影成视图模型、处理 Webview 消息。
+
+```
+extension.ts ── 底层列表（dsh + 设置 harnessDeck.backends）── 当前底层 RunningBackend
+                                                         ├─ dsh：RuntimeManager → DshConnection → ChatController
+                                                         └─ ACP：AcpConnection（stdio JSON-RPC）→ AcpController
+```
+
+| 模块 | 职责 |
+| --- | --- |
+| `backend/types.ts` | 控制器接口、底层配置、正在运行的底层 |
+| `backend/profiles.ts` | 解析设置里的 ACP 底层（校验、去重、默认 id） |
+| `backend/dsh.ts` / `backend/acp.ts` | 两种底层的生命周期：启动、状态、重启、停止 |
+| `acp/connection.ts` | 启动代理进程，按行分隔的 JSON-RPC 2.0；回答代理的请求、转发 `session/update` |
+| `acp/projection.ts` | 一个 ACP 会话的投影：回复和推理按 messageId 拼接，工具调用按 kind / 工具名渲染（读和搜索合并成「浏览」、命令带输出、修改带增删行数和 diff），plan → 待办，usage、命令、config option、标题 |
+| `acp/AcpController.ts` | 会话（`session/new` 草稿会话、`session/list`、`session/load` 回放）、发送（编辑器上下文、图片、一轮进行中时本地排队）、`session/cancel`、审批（`session/request_permission`）、模型 / 思考等级 / 模式（`session/set_config_option`）、Diff |
+
+约定：
+
+- 同一时间只运行一个底层；切换时停掉旧的、启动新的，Webview 重新取快照。会话和标签按底层分开保存在 workspaceState。
+- 新对话先建草稿会话（`session/new`），这样发消息前就能看到代理的模型、模式和斜杠命令；第一条消息发出后草稿成为正式会话。
+- 代理的 config option 按 category 对应界面：model → 模型选择，thought_level → 思考等级（挂在当前模型下），mode → 权限选择（显示代理给的名称）；mode 为 plan 时显示计划模式标记。
+- 文案里的「dsh」换成当前底层的名称（Webview 文案的 `{agent}` 占位）；只对 dsh 成立的内容（沙箱说明、API Key、浏览器打开）在其他底层不显示。
+- ACP 没有的能力（每轮改动汇总、会话改动栏、插队、子代理、提问卡片、多开标签）在界面上自然不出现。
+
+测试：`acp/projection` 的单元测试用真实 oh-my-pi 的帧；`scripts/acp-e2e.ts` 用真实的 `omp acp` + 本地假模型 + Chromium 里的 Webview 跑通对话、审批、工具行、会话列表和回放、模式、停止；CI（`acp-compat.yml`）每天对 oh-my-pi 的固定版本和最新版本各跑一次。

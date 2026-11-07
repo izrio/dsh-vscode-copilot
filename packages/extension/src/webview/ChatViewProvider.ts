@@ -15,7 +15,7 @@ export interface ChatViewHost {
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewId = 'dsh.chatView';
+  static readonly viewId = 'harnessDeck.chatView';
   private view: vscode.WebviewView | undefined;
 
   constructor(
