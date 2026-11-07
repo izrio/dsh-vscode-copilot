@@ -3,6 +3,7 @@ import type { HostToWebview } from '@dsh-copilot/shared';
 import { applyHostMessage, requestPrefill, useView } from './store.ts';
 import { postToHost } from './vscode.ts';
 import { BackendChooser } from './components/BackendChooser.tsx';
+import { BackendLogo } from './components/BackendLogo.tsx';
 import { Composer } from './components/Composer.tsx';
 import { Header } from './components/Header.tsx';
 import { RuntimeBanner } from './components/RuntimeBanner.tsx';
@@ -116,8 +117,9 @@ function Home() {
         <div className="home__context">
           {current && backends.items.length > 1 ? (
             <button type="button" className="home__chip home__chip--backend" data-testid="home-backend" title={t('home.switchBackend')} onClick={() => setChoosing(true)}>
-              <span className={`status-dot ${current.available === false ? 'status-dot--missing' : 'status-dot--ok'}`} />
+              <BackendLogo backend={current} size="sm" />
               {current.name}
+              {current.available === false ? <span className="status-dot status-dot--missing" title={t('backend.missing')} /> : null}
               <ChevronDownIcon />
             </button>
           ) : null}

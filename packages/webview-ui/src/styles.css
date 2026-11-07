@@ -2357,6 +2357,11 @@ body.resizing {
   height: 13px;
 }
 
+.home__chip .backend-logo {
+  width: 15px;
+  height: 15px;
+}
+
 .home__chip--backend {
   color: var(--vscode-foreground);
   font-weight: 500;
@@ -2596,15 +2601,45 @@ kbd {
   outline-offset: -2px;
 }
 
-.backend-option__avatar {
+.backend-logo {
   --tone: var(--accent);
-  display: flex;
+  display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: 9px;
+}
+
+.backend-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.backend-logo--sm {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+/* 没有底色的图标（DeepSeek 鲸鱼）放在白色圆角方块里 */
+.backend-logo--tile {
+  /* 用像素：百分比的内边距按父元素宽度计算，会把方块撑大 */
+  padding: 5px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.backend-logo--sm.backend-logo--tile {
+  padding: 1px;
+}
+
+/* 自定义代理：名称首字母，强调色渐变 */
+.backend-logo--monogram {
   background: linear-gradient(135deg, var(--tone), color-mix(in srgb, var(--tone) 65%, #000000));
   color: #ffffff;
   font-size: 0.8em;
@@ -2612,16 +2647,14 @@ kbd {
   letter-spacing: 0.02em;
 }
 
-.backend-option__avatar--blue {
-  --tone: var(--vscode-charts-blue, #3794ff);
+.backend-logo--sm.backend-logo--monogram {
+  font-size: 0.5em;
+  letter-spacing: 0;
 }
 
-.backend-option__avatar--purple {
-  --tone: var(--vscode-charts-purple, #b180d7);
-}
-
-.backend-option__avatar--green {
-  --tone: var(--vscode-charts-green, #89d185);
+/* 菜单里的图标不跟随菜单项的颜色变化 */
+.menu-item__icon .backend-logo {
+  color: #ffffff;
 }
 
 .backend-option__body {

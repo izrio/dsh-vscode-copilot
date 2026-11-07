@@ -16,9 +16,9 @@ import {
   RefreshIcon,
   SearchIcon,
   SpinnerIcon,
-  ServerIcon,
   TextSizeIcon,
 } from './icons.tsx';
+import { BackendLogo } from './BackendLogo.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
 import { AppearancePanel } from './AppearancePanel.tsx';
 import { useT, type Translate } from '../i18n.ts';
@@ -138,8 +138,8 @@ export function Header() {
                   <MenuItem
                     key={backend.id}
                     active={backend.id === backends.active}
-                    icon={backend.id === backends.active ? <CheckIcon /> : <ServerIcon />}
-                    hint={backend.kind === 'acp' ? 'ACP' : undefined}
+                    icon={<BackendLogo backend={backend} size="sm" />}
+                    hint={backend.id === backends.active ? <CheckIcon /> : backend.kind === 'acp' ? 'ACP' : undefined}
                     onSelect={() => {
                       close();
                       if (backend.id !== backends.active) postToHost({ type: 'selectBackend', payload: { id: backend.id } });

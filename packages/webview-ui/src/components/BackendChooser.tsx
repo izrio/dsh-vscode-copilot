@@ -8,6 +8,7 @@ import type { MessageKey } from '../i18n.ts';
 import { useT } from '../i18n.ts';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
+import { BackendLogo } from './BackendLogo.tsx';
 import { ArrowLeftIcon, CheckIcon, CopyIcon, SparkleIcon, SpinnerIcon } from './icons.tsx';
 
 /** 内置底层的说明；自定义的 ACP 代理显示启动命令。 */
@@ -62,9 +63,7 @@ function BackendOption({ backend, active, onChoose }: { readonly backend: Backen
   return (
     <div className={`backend-option ${active ? 'backend-option--active' : ''}`}>
       <button type="button" role="radio" aria-checked={active} className="backend-option__main" onClick={onChoose} data-testid={`backend-option-${backend.id}`}>
-        <span className={`backend-option__avatar backend-option__avatar--${avatarTone(backend.id)}`} aria-hidden="true">
-          {monogram(backend.name)}
-        </span>
+        <BackendLogo backend={backend} />
         <span className="backend-option__body">
           <span className="backend-option__name">
             {backend.name}
@@ -128,21 +127,4 @@ function InstallHint({ backend }: { readonly backend: BackendView }) {
       </button>
     </div>
   );
-}
-
-/** 名称的首字母（中文取第一个字），作为头像。 */
-function monogram(name: string): string {
-  const words = name.split(/[\s_-]+/u).filter(Boolean);
-  if (words.length > 1) return words.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-  const word = words[0] ?? '?';
-  // CodeBuddy → CB；其他取前两个字符
-  const capitals = word.match(/\p{Lu}/gu) ?? [];
-  return (capitals.length >= 2 ? capitals.slice(0, 2).join('') : [...word].slice(0, 2).join('')).toUpperCase();
-}
-
-function avatarTone(id: string): string {
-  if (id === 'dsh') return 'blue';
-  if (id === 'oh-my-pi') return 'purple';
-  if (id === 'codebuddy') return 'green';
-  return 'accent';
 }

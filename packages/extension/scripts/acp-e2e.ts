@@ -261,6 +261,12 @@ try {
   check('点首页的底层标签打开选择卡片（不是欢迎卡片，可以返回）', (await chooser.locator('[data-testid="backend-later"]').count()) === 0);
   await chooser.getByRole('button', { name: '返回' }).click();
   await page.locator('.home').waitFor({ timeout: 5_000 });
+  check('卡片和首页用各个底层的官方图标', (await page.locator('.home__chip [data-logo]').count()) === 1);
+  await page.getByRole('button', { name: '更多' }).click();
+  const backendItems = page.locator('.more-menu .menu-item [data-logo]');
+  check('菜单里的底层带官方图标', (await backendItems.count()) === 3, String(await backendItems.count()));
+  await shot('00b-menu');
+  await page.keyboard.press('Escape');
 
   // 2. 草稿会话：发消息前模型和模式就能用
   await page.getByTestId('model-picker').locator('.toolbar-button__text', { hasText: modelLabel }).waitFor({ timeout: 60_000 }).then(
