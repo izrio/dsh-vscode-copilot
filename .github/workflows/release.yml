@@ -73,8 +73,8 @@ jobs:
             echo "   code --install-extension harness-deck-${VERSION}.vsix"
             echo '   ```'
             echo
-            echo "3. 需要能在终端运行 \`dsh\`（0.2.1-rc.5 及以上）：安装 DeepSeek Desktop 并在菜单「管理 dsh 命令…」中安装，或 \`npm install -g @deepseek-ai/dsh\`（Node ≥ 24.9）。使用说明见 [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/packages/extension/README.md)。"
-            echo "   Requires \`dsh\` 0.2.1-rc.5 or later on your PATH (DeepSeek Desktop → \"Manage dsh command…\", or \`npm install -g @deepseek-ai/dsh\` with Node ≥ 24.9)."
+            echo "3. 至少装好一个底层：dsh（0.2.1-rc.5 及以上，DeepSeek Desktop 菜单「管理 dsh 命令…」或 \`npm install -g @deepseek-ai/dsh\`）、oh-my-pi（\`bun install -g @oh-my-pi/pi-coding-agent\`）或 CodeBuddy（\`npm install -g @tencent-ai/codebuddy-code\`）。第一次打开面板时会让你选底层。使用说明见 [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/packages/extension/README.md)。"
+            echo "   Install at least one backend: dsh 0.2.1-rc.5+ (DeepSeek Desktop → \"Manage dsh command…\", or \`npm install -g @deepseek-ai/dsh\`), oh-my-pi (\`bun install -g @oh-my-pi/pi-coding-agent\`) or CodeBuddy (\`npm install -g @tencent-ai/codebuddy-code\`). The panel asks which one to use on first open."
             echo
             echo "SHA-256：\`$(cut -d' ' -f1 "release/harness-deck-${VERSION}.vsix.sha256")\`"
             echo

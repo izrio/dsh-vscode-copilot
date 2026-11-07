@@ -2,7 +2,7 @@
   "name": "harness-deck",
   "displayName": "Harness Deck",
   "description": "%extension.description%",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "publisher": "izrio",
   "icon": "media/icon.png",
   "private": true,
