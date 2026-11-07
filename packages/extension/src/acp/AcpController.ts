@@ -106,6 +106,8 @@ export interface AcpControllerOptions
    * 在别的会话里发消息前用 restartRuntime 重启代理并加载那个会话；绑定的会话正在回复时不新建会话。
    */
   readonly singleSession?: boolean;
+  /** 代理要求登录、又没有提供登录方式时显示的说明（例如 Claude：在终端登录 Claude Code）。 */
+  readonly signInHint?: string;
 }
 
 export interface AuthMethod {
@@ -493,19 +495,34 @@ export class AcpController implements ChatBackendController {
     try {
       result = await link.request('session/new', params);
     } catch (error) {
-      const methods = this.init?.authMethods ?? [];
-      if (!(error instanceof AcpError) || error.code !== -32000 || methods.length === 0) throw error;
-      const run = (methodId: string) => link.request('authenticate', { methodId });
-      if (this.options.authenticate) {
-        if (!(await this.options.authenticate(methods, run))) throw new Error(t('acp.signInCancelled'));
-      } else {
-        await run(methods[0]!.id);
-      }
+      if (!isAuthRequired(error)) throw error;
+      if (!(await this.signIn(link))) throw new Error(this.authRequiredText(error));
       result = await link.request('session/new', params);
     }
     this.projectionFor(result.sessionId).setConfigOptions(result.configOptions);
     if (this.options.singleSession && this.link === link) this.bound = result.sessionId;
     return result.sessionId;
+  }
+
+  /**
+   * 代理要求登录（-32000）：有登录方式时登录（多种时由宿主让用户选）。
+   * @returns 登录完成；代理没有登录方式或用户取消时为 false。
+   */
+  private async signIn(link: AcpLink): Promise<boolean> {
+    const methods = this.init?.authMethods ?? [];
+    if (methods.length === 0) return false;
+    const run = (methodId: string) => link.request('authenticate', { methodId });
+    if (this.options.authenticate) {
+      if (!(await this.options.authenticate(methods, run))) throw new Error(t('acp.signInCancelled'));
+    } else {
+      await run(methods[0]!.id);
+    }
+    return true;
+  }
+
+  /** 需要登录时给用户看的说明：底层配置里的提示（Claude），没有时用代理返回的原话。 */
+  private authRequiredText(error?: unknown): string {
+    return t('acp.authRequired', this.agentName(), this.options.signInHint ?? (error ? describe(error) : ''));
   }
 
   private async refreshList(): Promise<void> {
@@ -672,11 +689,19 @@ export class AcpController implements ChatBackendController {
       ...(text.trim() ? [{ type: 'text', text }] : []),
       ...sent.map((image) => ({ type: 'image', mimeType: image.mediaType, data: image.data })),
     ];
+    const send = () => link.request<{ stopReason?: string } | null>('session/prompt', { sessionId, prompt: content });
     try {
-      const result = await link.request<{ stopReason?: string } | null>('session/prompt', { sessionId, prompt: content });
+      let result: { stopReason?: string } | null;
+      try {
+        result = await send();
+      } catch (error) {
+        // 登录过期或还没登录（Claude 在发消息时才发现）：能登录就登录后重发这一轮
+        if (!isAuthRequired(error) || !(await this.signIn(link).catch(() => false))) throw error;
+        result = await send();
+      }
       projection.endTurn(Date.now(), result?.stopReason ?? 'end_turn');
     } catch (error) {
-      projection.endTurn(Date.now(), undefined, describe(error));
+      projection.endTurn(Date.now(), undefined, isAuthRequired(error) ? this.authRequiredText(error) : describe(error));
     }
     this.remember(sessionId, this.titleOf(sessionId));
     void this.refreshList();
@@ -993,4 +1018,9 @@ export function wholeFile(diff: AcpDiff, current: string | undefined): string | 
   const at = current.indexOf(diff.newText);
   if (at < 0 || current.indexOf(diff.newText, at + 1) >= 0) return undefined;
   return current.slice(0, at) + diff.oldText + current.slice(at + diff.newText.length);
+}
+
+/** ACP 的「需要认证」错误（RequestError.authRequired，-32000）。 */
+function isAuthRequired(error: unknown): boolean {
+  return error instanceof AcpError && error.code === -32000;
 }

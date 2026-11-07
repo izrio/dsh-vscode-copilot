@@ -32,6 +32,7 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
     saveSessions: (sessions) => void state.update(key('sessions'), [...sessions]),
     authenticate: (methods, run) => signIn(profile.name, methods, run, host.log),
     singleSession: profile.singleSession === true,
+    ...(profile.signInHint ? { signInHint: profile.signInHint } : {}),
   });
 
   const setStatus = (next: RuntimeStatus): void => {

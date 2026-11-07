@@ -1019,6 +1019,14 @@ extension.ts ── 底层列表（dsh + 内置 ACP 代理 + 设置 harnessDeck.
 - 内置的 ACP 代理写在代码里而不是设置的默认值里：用户改过 `harnessDeck.backends` 后默认值不再生效，新加的内置项会看不到。设置里 id 相同的一项替换内置项。
 - 代理要求登录（`session/new` 返回 -32000）：只有一种方式时直接 `authenticate`；有多种时让用户选，`authenticate` 等浏览器登录完成，期间显示可以取消的进度。
 
+### 15.0 Claude
+
+Claude 通过 Claude Code 的官方 ACP 适配器 `claude-agent-acp`（`@agentclientprotocol/claude-agent-acp`，0.101 测试）接入，基本是标准 ACP，投影不需要改（帧见 `test/fixtures/claude/tools.json`）：工具带 `name`，TodoWrite 是 `plan` 更新，写入和修改带 diff，支持 `session/list`、`session/load`，同一进程可以同时有多个会话。
+
+- 没有登录方式（`authMethods` 为空），没登录时 `session/prompt` 才返回 -32000。底层配置的 `signInHint` 用来在对话里说明怎么登录（`claude` → `/login`，或 `ANTHROPIC_API_KEY`）；有登录方式的代理则登录后重发这一轮。
+- 默认模式是 Auto（由 Claude 判断要不要问）；`echo`、`ls` 这类只读命令在 Manual 模式下也不问。
+- 端到端测试用 `ANTHROPIC_BASE_URL` 指向本地假模型，并且不把运行环境自己的 `ANTHROPIC_*` / `CLAUDE_*` 变量传给代理。
+
 ### 15.1 CodeBuddy 的差异
 
 CodeBuddy（`codebuddy --acp`，2.181 测试）基本遵守 ACP，但有几处要适配（实测，帧见 `test/fixtures/codebuddy/tools.json`）：

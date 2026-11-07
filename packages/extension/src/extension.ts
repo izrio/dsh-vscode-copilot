@@ -22,6 +22,13 @@ import { command, migrateSettings, SECTION, settings } from './settings.ts';
 
 const FOLDER_KEY = 'dsh.folder';
 const BACKEND_KEY = 'dsh.backend';
+/** 内置 ACP 代理的安装和登录提示（Host 侧文案）。 */
+const BUILTIN_HINTS = {
+  'oh-my-pi': 'acp.ompHint',
+  codebuddy: 'acp.codebuddyHint',
+  claude: 'acp.claudeHint',
+  'claude-sign-in': 'acp.claudeSignIn',
+} as const;
 /** 用户已经在选择卡片里选过底层（或跳过）：不再在第一次打开时询问。按用户记，不按工作区。 */
 const CHOSEN_KEY = 'harnessDeck.backendChosen';
 
@@ -57,7 +64,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ---- 底层列表与切换 ----
   const profiles = (): BackendProfile[] =>
-    parseProfiles(settings().get<unknown>('backends', []), log, builtinProfiles((id) => t(id === 'codebuddy' ? 'acp.codebuddyHint' : 'acp.ompHint')));
+    parseProfiles(settings().get<unknown>('backends', []), log, builtinProfiles((id) => t(BUILTIN_HINTS[id])));
   /** 每个底层的命令在本机找不找得到（选择卡片显示「已安装」或安装命令）。 */
   const availability = new Map<string, boolean>();
   const needsChoice = (): boolean => !context.globalState.get<boolean>(CHOSEN_KEY) && context.workspaceState.get<string>(BACKEND_KEY) === undefined;

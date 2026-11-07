@@ -1,5 +1,12 @@
 # 更新记录 / Changelog
 
+## 未发布 / Unreleased
+
+- 新的内置底层 **Claude**：通过 Claude Code 的官方 ACP 适配器（`npm install -g @agentclientprotocol/claude-agent-acp`）接入，登录和设置与 Claude Code 共用；选择卡片、首页和菜单里显示 Claude 的图标。
+  New built-in backend **Claude**, through Claude Code's official ACP adapter (`npm install -g @agentclientprotocol/claude-agent-acp`); sign-in and settings are shared with Claude Code. The chooser, home and menu show the Claude icon.
+- ACP 底层发消息时才发现需要登录（Claude 没登录或登录过期）：代理有登录方式时先登录再重发这一轮，没有时在对话里说明怎么登录，而不是只显示「Authentication required」。
+  When an ACP backend reports that sign-in is needed while sending (Claude signed out or expired), the panel signs in and resends if the agent offers a sign-in method, or explains how to sign in instead of showing "Authentication required".
+
 ## 0.3.0
 
 **改名为 Harness Deck，支持多个底层：dsh、oh-my-pi、CodeBuddy，以及任何 ACP 代理。** 第一次打开面板时选底层；新首页和新标志；子代理显示。dsh 底层支持 `0.2.1-rc.5` 及以上。

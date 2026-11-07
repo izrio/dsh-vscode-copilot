@@ -17,6 +17,7 @@ const DESCRIPTIONS: Readonly<Record<string, MessageKey>> = {
   dsh: 'backend.desc.dsh',
   'oh-my-pi': 'backend.desc.omp',
   codebuddy: 'backend.desc.codebuddy',
+  claude: 'backend.desc.claude',
 };
 
 export function BackendChooser({ welcome, onClose }: { readonly welcome: boolean; readonly onClose?: () => void }) {

@@ -45,6 +45,8 @@ export type BackendProfile =
        * 在别的会话里发消息前要重启代理再加载那个会话。
        */
       readonly singleSession?: boolean;
+      /** 代理要求登录、又没有提供登录方式时给用户的说明（Claude：在终端运行 claude 登录，或设置 ANTHROPIC_API_KEY）。 */
+      readonly signInHint?: string;
     };
 
 /** 正在运行的底层。 */

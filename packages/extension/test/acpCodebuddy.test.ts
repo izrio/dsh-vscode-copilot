@@ -101,14 +101,14 @@ describe('Edit 片段的整文件 Diff', () => {
 describe('内置底层', () => {
   const builtins = builtinProfiles((id) => `install ${id}`);
 
-  it('dsh、oh-my-pi、CodeBuddy 总在列表里，设置里的项追加在后面', () => {
-    expect(parseProfiles([{ name: 'Gemini CLI', command: 'gemini' }], undefined, builtins).map((p) => p.id)).toEqual(['dsh', 'oh-my-pi', 'codebuddy', 'gemini-cli']);
+  it('dsh 和内置的 ACP 代理总在列表里，设置里的项追加在后面', () => {
+    expect(parseProfiles([{ name: 'Gemini CLI', command: 'gemini' }], undefined, builtins).map((p) => p.id)).toEqual(['dsh', 'oh-my-pi', 'codebuddy', 'claude', 'gemini-cli']);
     expect(builtins.find((p) => p.id === 'codebuddy')).toMatchObject({ command: 'codebuddy', args: ['--acp'], installHint: 'install codebuddy' });
   });
 
   it('设置里 id 相同的项替换内置项，位置不变；没写安装提示时沿用内置的', () => {
     const profiles = parseProfiles([{ id: 'codebuddy', name: 'CodeBuddy', command: '/opt/cb/bin/codebuddy', args: ['--acp'], env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'internal' } }], undefined, builtins);
-    expect(profiles.map((p) => p.id)).toEqual(['dsh', 'oh-my-pi', 'codebuddy']);
+    expect(profiles.map((p) => p.id)).toEqual(['dsh', 'oh-my-pi', 'codebuddy', 'claude']);
     expect(profiles[2]).toMatchObject({ command: '/opt/cb/bin/codebuddy', env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'internal' }, installHint: 'install codebuddy' });
   });
 

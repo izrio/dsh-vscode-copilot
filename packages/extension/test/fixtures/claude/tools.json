@@ -1,0 +1,917 @@
+{
+ "note": "Real frames from @agentclientprotocol/claude-agent-acp 0.101.0 with a local mock model (paths shortened to /w).",
+ "live": [
+  {
+   "prompt": "HELLO 打个招呼"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "你好，"
+   },
+   "messageId": "msg_7afcf3ff-1ea1-4484-8637-04ff5bbb699a"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "我是 Claude。"
+   },
+   "messageId": "msg_7afcf3ff-1ea1-4484-8637-04ff5bbb699a"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "READ 一下"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "先看看文件。"
+   },
+   "messageId": "msg_8a819be1-c67f-4131-b02d-8b4845622812"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call",
+   "name": "Read",
+   "rawInput": {},
+   "status": "pending",
+   "title": "Read File",
+   "kind": "read",
+   "content": [],
+   "locations": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "file_path": "/w/notes.txt"
+   },
+   "title": "Read notes.txt",
+   "locations": [
+    {
+     "path": "/w/notes.txt",
+     "line": 1
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "HELLO 打个招呼",
+   "updatedAt": "2026-11-07T09:46:48.209Z"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolResponse": {
+      "type": "text",
+      "file": {
+       "filePath": "/w/notes.txt",
+       "content": "line one\nline two\n",
+       "numLines": 3,
+       "startLine": 1,
+       "totalLines": 3
+      }
+     },
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call_update"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "1\tline one\n2\tline two\n3\t",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n1\tline one\n2\tline two\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "文件有两行。"
+   },
+   "messageId": "msg_f8c25736-7f54-4ccf-b805-75d3412545df"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "WRITE 文件"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call",
+   "name": "Write",
+   "rawInput": {},
+   "status": "pending",
+   "title": "Preparing file…",
+   "kind": "edit",
+   "content": [],
+   "locations": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "file_path": "/w/hello.txt",
+    "content": "hello\nworld\n"
+   },
+   "title": "Write hello.txt",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/hello.txt",
+     "oldText": null,
+     "newText": "hello\nworld\n"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/hello.txt"
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolResponse": {
+      "type": "create",
+      "filePath": "/w/hello.txt",
+      "content": "hello\nworld\n",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false
+     },
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call_update"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "File created successfully at: /w/hello.txt (file state is current in your context — no need to Read it back)"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call",
+   "name": "Edit",
+   "rawInput": {},
+   "status": "pending",
+   "title": "Edit",
+   "kind": "edit",
+   "content": [],
+   "locations": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "replace_all": false,
+    "file_path": "/w/notes.txt",
+    "old_string": "line two",
+    "new_string": "line 2\nline three"
+   },
+   "title": "Edit notes.txt",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/notes.txt",
+     "oldText": "line two",
+     "newText": "line 2\nline three"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/notes.txt"
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolResponse": {
+      "filePath": "/w/notes.txt",
+      "oldString": "line two",
+      "newString": "line 2\nline three",
+      "originalFile": "line one\nline two\n",
+      "structuredPatch": [
+       {
+        "oldStart": 1,
+        "oldLines": 2,
+        "newStart": 1,
+        "newLines": 3,
+        "lines": [
+         " line one",
+         "-line two",
+         "+line 2",
+         "+line three"
+        ]
+       }
+      ],
+      "userModified": false,
+      "replaceAll": false
+     },
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call_update",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/notes.txt",
+     "oldText": "line one\nline two",
+     "newText": "line one\nline 2\nline three"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/notes.txt",
+     "line": 1
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "The file /w/notes.txt has been updated successfully. (file state is current in your context — no need to Read it back)"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "写好了。"
+   },
+   "messageId": "msg_3d99aef6-118e-4944-807f-5cabfe5df2eb"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "BASH 跑一下"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call",
+   "name": "Bash",
+   "rawInput": {},
+   "status": "pending",
+   "title": "Terminal",
+   "kind": "execute",
+   "content": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "command": "ls",
+    "description": "List files"
+   },
+   "title": "ls",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "List files"
+     }
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolResponse": {
+      "stdout": "hello.txt\nnotes.txt",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false
+     },
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call_update"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "hello.txt\nnotes.txt",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```console\nhello.txt\nnotes.txt\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "列出来了。"
+   },
+   "messageId": "msg_e481e383-2a6c-4486-a74a-2c4807729161"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "GREP 搜"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Grep"
+    }
+   },
+   "toolCallId": "toolu_b79962ad50ac430e9e74c6f4b88e883d",
+   "sessionUpdate": "tool_call",
+   "name": "Grep",
+   "rawInput": {},
+   "status": "pending",
+   "title": "grep",
+   "kind": "search",
+   "content": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Grep"
+    }
+   },
+   "toolCallId": "toolu_b79962ad50ac430e9e74c6f4b88e883d",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "pattern": "line",
+    "path": "/w"
+   },
+   "title": "grep \"line\" /w"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Grep"
+    }
+   },
+   "toolCallId": "toolu_b79962ad50ac430e9e74c6f4b88e883d",
+   "sessionUpdate": "tool_call_update",
+   "status": "failed",
+   "rawOutput": "<tool_use_error>Error: No such tool available: Grep. Grep is not available in this session — search file contents with `grep` via the Bash tool instead.</tool_use_error>",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n<tool_use_error>Error: No such tool available: Grep. Grep is not available in this session — search file contents with `grep` via the Bash tool instead.</tool_use_error>\n```"
+     }
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Glob"
+    }
+   },
+   "toolCallId": "toolu_6dc642c60ff04cda93cc903535e20a84",
+   "sessionUpdate": "tool_call",
+   "name": "Glob",
+   "rawInput": {},
+   "status": "pending",
+   "title": "Find",
+   "kind": "search",
+   "content": [],
+   "locations": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Glob"
+    }
+   },
+   "toolCallId": "toolu_6dc642c60ff04cda93cc903535e20a84",
+   "sessionUpdate": "tool_call_update",
+   "rawInput": {
+    "pattern": "*.txt"
+   },
+   "title": "Find `*.txt`"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Glob"
+    }
+   },
+   "toolCallId": "toolu_6dc642c60ff04cda93cc903535e20a84",
+   "sessionUpdate": "tool_call_update",
+   "status": "failed",
+   "rawOutput": "<tool_use_error>Error: No such tool available: Glob. Glob is not available in this session — find files with `find` via the Bash tool instead.</tool_use_error>",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n<tool_use_error>Error: No such tool available: Glob. Glob is not available in this session — find files with `find` via the Bash tool instead.</tool_use_error>\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "找到了。"
+   },
+   "messageId": "msg_9e452d4a-4b6c-4658-ad2e-975871e9638f"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "TODO 计划"
+  },
+  {
+   "sessionUpdate": "plan",
+   "entries": [
+    {
+     "content": "做第一步",
+     "status": "in_progress",
+     "priority": "medium"
+    },
+    {
+     "content": "第二步",
+     "status": "pending",
+     "priority": "medium"
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "计划好了。"
+   },
+   "messageId": "msg_14c8e1f9-aa4b-439d-9d05-6def037cd63e"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "sessionUpdate": "current_mode_update",
+   "currentModeId": "plan"
+  }
+ ],
+ "load": [
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "HELLO 打个招呼"
+   },
+   "messageId": "86f9bfc3-23a2-462e-b4af-1f1453250cb9"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "你好，我是 Claude。"
+   },
+   "messageId": "msg_7afcf3ff-1ea1-4484-8637-04ff5bbb699a"
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "READ 一下"
+   },
+   "messageId": "ab928d22-9d60-4571-857d-4f2a6caee006"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "先看看文件。"
+   },
+   "messageId": "msg_8a819be1-c67f-4131-b02d-8b4845622812"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call",
+   "name": "Read",
+   "rawInput": {
+    "file_path": "/w/notes.txt"
+   },
+   "status": "pending",
+   "title": "Read notes.txt",
+   "kind": "read",
+   "content": [],
+   "locations": [
+    {
+     "path": "/w/notes.txt",
+     "line": 1
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Read"
+    }
+   },
+   "toolCallId": "toolu_eb30a06552d6403fab9de466865e0656",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "1\tline one\n2\tline two\n3\t",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n1\tline one\n2\tline two\n3\t\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "文件有两行。"
+   },
+   "messageId": "msg_f8c25736-7f54-4ccf-b805-75d3412545df"
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "WRITE 文件"
+   },
+   "messageId": "8d0f1c23-9a45-461c-9ae8-c351671bbf04"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call",
+   "name": "Write",
+   "rawInput": {
+    "file_path": "/w/hello.txt",
+    "content": "hello\nworld\n"
+   },
+   "status": "pending",
+   "title": "Write hello.txt",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/hello.txt",
+     "oldText": null,
+     "newText": "hello\nworld\n"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/hello.txt"
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Write"
+    }
+   },
+   "toolCallId": "toolu_a5974eed764246b9b3ccc23f7cf6fe8d",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "File created successfully at: /w/hello.txt (file state is current in your context — no need to Read it back)"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call",
+   "name": "Edit",
+   "rawInput": {
+    "replace_all": false,
+    "file_path": "/w/notes.txt",
+    "old_string": "line two",
+    "new_string": "line 2\nline three"
+   },
+   "status": "pending",
+   "title": "Edit notes.txt",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/notes.txt",
+     "oldText": "line two",
+     "newText": "line 2\nline three"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/notes.txt"
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Edit"
+    }
+   },
+   "toolCallId": "toolu_44d5a8c550f54d91b5b2a2c23b303629",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "The file /w/notes.txt has been updated successfully. (file state is current in your context — no need to Read it back)"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "写好了。"
+   },
+   "messageId": "msg_3d99aef6-118e-4944-807f-5cabfe5df2eb"
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "BASH 跑一下"
+   },
+   "messageId": "13448597-26dc-43eb-80b9-a9f6f1387d2d"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call",
+   "name": "Bash",
+   "rawInput": {
+    "command": "ls",
+    "description": "List files"
+   },
+   "status": "pending",
+   "title": "ls",
+   "kind": "execute",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "List files"
+     }
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Bash"
+    }
+   },
+   "toolCallId": "toolu_e9dc781084e2439aa872d7df85031c07",
+   "sessionUpdate": "tool_call_update",
+   "status": "completed",
+   "rawOutput": "hello.txt\nnotes.txt",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```console\nhello.txt\nnotes.txt\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "列出来了。"
+   },
+   "messageId": "msg_e481e383-2a6c-4486-a74a-2c4807729161"
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "GREP 搜"
+   },
+   "messageId": "81f0d7d2-ce85-4ad2-9fb6-d2fc3cf88c89"
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Grep"
+    }
+   },
+   "toolCallId": "toolu_b79962ad50ac430e9e74c6f4b88e883d",
+   "sessionUpdate": "tool_call",
+   "name": "Grep",
+   "rawInput": {
+    "pattern": "line",
+    "path": "/w"
+   },
+   "status": "pending",
+   "title": "grep \"line\" /w",
+   "kind": "search",
+   "content": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Grep"
+    }
+   },
+   "toolCallId": "toolu_b79962ad50ac430e9e74c6f4b88e883d",
+   "sessionUpdate": "tool_call_update",
+   "status": "failed",
+   "rawOutput": "<tool_use_error>Error: No such tool available: Grep. Grep is not available in this session — search file contents with `grep` via the Bash tool instead.</tool_use_error>",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n<tool_use_error>Error: No such tool available: Grep. Grep is not available in this session — search file contents with `grep` via the Bash tool instead.</tool_use_error>\n```"
+     }
+    }
+   ]
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Glob"
+    }
+   },
+   "toolCallId": "toolu_6dc642c60ff04cda93cc903535e20a84",
+   "sessionUpdate": "tool_call",
+   "name": "Glob",
+   "rawInput": {
+    "pattern": "*.txt"
+   },
+   "status": "pending",
+   "title": "Find `*.txt`",
+   "kind": "search",
+   "content": [],
+   "locations": []
+  },
+  {
+   "_meta": {
+    "claudeCode": {
+     "toolName": "Glob"
+    }
+   },
+   "toolCallId": "toolu_6dc642c60ff04cda93cc903535e20a84",
+   "sessionUpdate": "tool_call_update",
+   "status": "failed",
+   "rawOutput": "<tool_use_error>Error: No such tool available: Glob. Glob is not available in this session — find files with `find` via the Bash tool instead.</tool_use_error>",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "```\n<tool_use_error>Error: No such tool available: Glob. Glob is not available in this session — find files with `find` via the Bash tool instead.</tool_use_error>\n```"
+     }
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "找到了。"
+   },
+   "messageId": "msg_9e452d4a-4b6c-4658-ad2e-975871e9638f"
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "TODO 计划"
+   },
+   "messageId": "c5f8e4b0-7c3f-4c0c-995a-25b1952832f3"
+  },
+  {
+   "sessionUpdate": "plan",
+   "entries": [
+    {
+     "content": "做第一步",
+     "status": "in_progress",
+     "priority": "medium"
+    },
+    {
+     "content": "第二步",
+     "status": "pending",
+     "priority": "medium"
+    }
+   ]
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "计划好了。"
+   },
+   "messageId": "msg_14c8e1f9-aa4b-439d-9d05-6def037cd63e"
+  }
+ ]
+}

@@ -3,6 +3,7 @@
  *
  *   pnpm --filter harness-deck acp-e2e -- --omp <omp 的 cli.js 或可执行文件> [--bun <bun>] [--out <截图目录>]
  *   pnpm --filter harness-deck acp-e2e -- --codebuddy <codebuddy 可执行文件> [--out <截图目录>]
+ *   pnpm --filter harness-deck acp-e2e -- --claude <claude-agent-acp 可执行文件> [--out <截图目录>]
  *
  * oh-my-pi 用自定义提供方（Anthropic Messages）指向假模型；CodeBuddy 用 CODEBUDDY_API_KEY + CODEBUDDY_BASE_URL
  * （OpenAI Chat Completions），都不需要真实账号。
@@ -32,15 +33,16 @@ const { values: cli } = parseArgs({
     omp: { type: 'string' },
     bun: { type: 'string' },
     codebuddy: { type: 'string' },
+    claude: { type: 'string' },
     out: { type: 'string' },
     headed: { type: 'boolean', default: false },
   },
 });
-if (!cli.omp && !cli.codebuddy) {
-  console.error('需要 --omp <omp 可执行文件，或 @oh-my-pi/pi-coding-agent 的 dist/cli.js（配合 --bun）>，或 --codebuddy <codebuddy 可执行文件>');
+if (!cli.omp && !cli.codebuddy && !cli.claude) {
+  console.error('需要 --omp <omp 可执行文件，或 @oh-my-pi/pi-coding-agent 的 dist/cli.js（配合 --bun）>、--codebuddy <codebuddy 可执行文件>，或 --claude <claude-agent-acp 可执行文件>');
   process.exit(2);
 }
-const agent = cli.codebuddy ? 'codebuddy' : 'omp';
+const agent: 'omp' | 'codebuddy' | 'claude' = cli.claude ? 'claude' : cli.codebuddy ? 'codebuddy' : 'omp';
 setLocale('zh');
 const playwright = loadPlaywright();
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -58,28 +60,38 @@ function check(name: string, ok: boolean, detail?: string): void {
 const home = await mkdtemp(join(tmpdir(), 'acp-e2e-home-'));
 const workspace = await mkdtemp(join(tmpdir(), 'acp-e2e-ws-'));
 await writeFile(join(workspace, 'README.md'), '# demo\n');
-/** 两种代理的工具名和参数不同：omp 是 `write { path }`，CodeBuddy 是 `Write { file_path }`（绝对路径）。 */
+/** Claude Code 会自动放行 echo、ls 这类只读命令：用一个要写入的命令，审批才会出现。 */
+const bashCommand = agent === 'claude' ? 'mkdir -p out && ls' : 'echo hi && ls';
+/** 代理的工具名和参数不同：omp 是 `write { path }`，CodeBuddy 和 Claude 是 `Write { file_path }`（绝对路径）。 */
 const tools =
   agent === 'omp'
-    ? { read: { name: 'read', input: { path: 'README.md' } }, write: { name: 'write', input: { path: 'notes.md', content: '# 笔记\n\n第一条\n' } }, bash: { name: 'bash', input: { command: 'echo hi && ls' } } }
+    ? { read: { name: 'read', input: { path: 'README.md' } }, write: { name: 'write', input: { path: 'notes.md', content: '# 笔记\n\n第一条\n' } }, bash: { name: 'bash', input: { command: bashCommand } } }
     : {
         read: { name: 'Read', input: { file_path: join(workspace, 'README.md') } },
         write: { name: 'Write', input: { file_path: join(workspace, 'notes.md'), content: '# 笔记\n\n第一条\n' } },
-        bash: { name: 'Bash', input: { command: 'echo hi && ls', description: 'List files' } },
+        bash: { name: 'Bash', input: { command: bashCommand, description: 'List files' } },
       };
 const model = await startMockModel({
   HELLO: { kind: 'text', chunks: ['你好，', `我是 ${agent}。`], delayMs: 60 },
   WORK: { kind: 'tools', tools: [tools.read, tools.write, tools.bash], after: '写好了笔记，也看过目录了。' },
-  TODO: {
-    kind: 'tools',
-    tools: [
-      { name: 'TaskCreate', input: { subject: '读代码', description: '先读', activeForm: '正在读代码' } },
-      { name: 'TaskCreate', input: { subject: '改代码', description: '再改' } },
-      { name: 'TaskUpdate', input: { taskId: '1', status: 'completed' } },
-      { name: 'TaskUpdate', input: { taskId: '2', status: 'in_progress' } },
-    ],
-    after: '列好计划了。',
-  },
+  // CodeBuddy 的待办是 TaskCreate / TaskUpdate，Claude 是 TodoWrite（发成 plan 更新）
+  TODO:
+    agent === 'claude'
+      ? {
+          kind: 'tool',
+          tool: { name: 'TodoWrite', input: { todos: [ { content: '读代码', status: 'completed', activeForm: '正在读代码' }, { content: '改代码', status: 'in_progress', activeForm: '正在改代码' } ] } },
+          after: '列好计划了。',
+        }
+      : {
+          kind: 'tools',
+          tools: [
+            { name: 'TaskCreate', input: { subject: '读代码', description: '先读', activeForm: '正在读代码' } },
+            { name: 'TaskCreate', input: { subject: '改代码', description: '再改' } },
+            { name: 'TaskUpdate', input: { taskId: '1', status: 'completed' } },
+            { name: 'TaskUpdate', input: { taskId: '2', status: 'in_progress' } },
+          ],
+          after: '列好计划了。',
+        },
   SLOW: { kind: 'hold', chunks: ['正在', '慢慢', '想'] },
   default: { kind: 'text', chunks: ['好的。'] },
 } as never);
@@ -99,17 +111,26 @@ if (agent === 'omp') {
   args = cli.bun ? [cli.omp!, 'acp', '--model', 'mock/mock-model'] : ['acp', '--model', 'mock/mock-model'];
   modelLabel = 'Mock Model';
   defaultModeLabel = 'Default';
-} else {
+} else if (agent === 'codebuddy') {
   command = cli.codebuddy!;
   args = ['--acp', '--model', 'mock-model'];
   agentEnv = { CODEBUDDY_API_KEY: 'dummy', CODEBUDDY_BASE_URL: `${model.url}/v1` };
   modelLabel = 'mock-model';
   defaultModeLabel = 'Always Ask';
+} else {
+  command = cli.claude!;
+  args = [];
+  // Claude Agent SDK 的模型请求走 ANTHROPIC_BASE_URL（Anthropic Messages，假模型直接支持）
+  agentEnv = { ANTHROPIC_API_KEY: 'sk-ant-e2e', ANTHROPIC_BASE_URL: model.url, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' };
+  modelLabel = 'Default (recommended)';
+  defaultModeLabel = 'Auto';
 }
+/** 运行测试的环境自己的 Claude / Anthropic 变量不传给代理：只用上面给的假模型。 */
+const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => agent !== 'claude' || !/^(ANTHROPIC|CLAUDE)/u.test(key)));
 
 // ---- 控制器和代理进程 ----
 let page: Page | undefined;
-const activeBackend = agent === 'omp' ? 'oh-my-pi' : 'codebuddy';
+const activeBackend = agent === 'omp' ? 'oh-my-pi' : agent;
 let backendChosen = false;
 const backendMessages: string[] = [];
 let stored: StoredSession[] = [];
@@ -133,6 +154,7 @@ const controller = new AcpController({
       { id: 'dsh', name: 'dsh', kind: 'dsh', available: false, installCommand: 'npm install -g @deepseek-ai/dsh' },
       { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp', command: 'omp acp', available: agent === 'omp' },
       { id: 'codebuddy', name: 'CodeBuddy', kind: 'acp', command: 'codebuddy --acp', available: agent === 'codebuddy' },
+      { id: 'claude', name: 'Claude', kind: 'acp', command: 'claude-agent-acp', available: agent === 'claude' },
     ],
     active: activeBackend,
     workspace: basename(workspace),
@@ -148,7 +170,7 @@ const newConnection = () =>
     command,
     args,
     cwd: workspace,
-    env: { ...process.env, HOME: home, USERPROFILE: home, ...agentEnv },
+    env: { ...baseEnv, HOME: home, USERPROFILE: home, ...agentEnv },
     log: (line) => console.log(`  [conn] ${line}`),
     onStderr: (line) => console.log(`  [${agent}] ${line}`),
     onNotification: (method, params) => {
@@ -234,6 +256,7 @@ try {
   // 1. 启动代理，initialize
   const init = await connect();
   if (agent === 'omp') check('omp 启动，initialize 返回代理信息', init.agentInfo?.name === 'omp', JSON.stringify(init.agentInfo));
+  else if (agent === 'claude') check('Claude 适配器启动，initialize 返回代理信息', init.agentInfo?.name === '@agentclientprotocol/claude-agent-acp', JSON.stringify(init.agentInfo));
   // CodeBuddy 的 initialize 没有 agentInfo，有登录方式
   else check('CodeBuddy 启动，initialize 返回登录方式', (init.authMethods?.length ?? 0) > 1, JSON.stringify(init.authMethods));
 
@@ -243,7 +266,7 @@ try {
     () => check('第一次打开显示选择底层的卡片', true),
     () => check('第一次打开显示选择底层的卡片', false),
   );
-  check('卡片列出 dsh、oh-my-pi、CodeBuddy', (await chooser.locator('.backend-option').count()) === 3);
+  check('卡片列出 dsh、oh-my-pi、CodeBuddy、Claude', (await chooser.locator('.backend-option').count()) === 4);
   const current = chooser.locator(`[data-testid="backend-option-${activeBackend}"]`);
   check('当前底层标为「当前」并显示已安装', (await current.getAttribute('aria-checked')) === 'true' && (await current.innerText()).includes('已安装'), await current.innerText());
   check('没装的底层显示安装命令', (await chooser.locator('.backend-option__install', { hasText: 'npm install -g @deepseek-ai/dsh' }).count()) === 1);
@@ -255,7 +278,7 @@ try {
   );
   check('选择发给了 Host', backendMessages.join(',') === activeBackend, backendMessages.join(','));
   const homeBackend = page.getByTestId('home-backend');
-  check('首页显示当前底层和工作区', (await homeBackend.innerText()).includes(agent === 'omp' ? 'oh-my-pi' : 'CodeBuddy') && (await page.locator('.home__chip', { hasText: basename(workspace) }).count()) === 1);
+  check('首页显示当前底层和工作区', (await homeBackend.innerText()).includes({ omp: 'oh-my-pi', codebuddy: 'CodeBuddy', claude: 'Claude' }[agent]) && (await page.locator('.home__chip', { hasText: basename(workspace) }).count()) === 1);
   await homeBackend.click();
   await chooser.waitFor({ timeout: 5_000 });
   check('点首页的底层标签打开选择卡片（不是欢迎卡片，可以返回）', (await chooser.locator('[data-testid="backend-later"]').count()) === 0);
@@ -264,7 +287,7 @@ try {
   check('卡片和首页用各个底层的官方图标', (await page.locator('.home__chip [data-logo]').count()) === 1);
   await page.getByRole('button', { name: '更多' }).click();
   const backendItems = page.locator('.more-menu .menu-item [data-logo]');
-  check('菜单里的底层带官方图标', (await backendItems.count()) === 3, String(await backendItems.count()));
+  check('菜单里的底层带官方图标', (await backendItems.count()) === 4, String(await backendItems.count()));
   await shot('00b-menu');
   await page.keyboard.press('Escape');
 
@@ -284,23 +307,32 @@ try {
   );
   check('用户消息显示', (await page.locator('.user', { hasText: 'HELLO 打个招呼' }).count()) === 1);
 
-  // 4. 工具：读文件、写文件（omp 无需审批，CodeBuddy 默认模式要审批）、命令（需要审批）
+  // 4. 工具：读文件、写文件（omp 无需审批，CodeBuddy 默认模式和 Claude 的 Manual 模式要审批）、命令（需要审批）
+  if (agent === 'claude') {
+    // Claude 默认是 Auto（由 Claude 自己决定要不要问）：切到 Manual，审批才会出现
+    await page.getByTestId('permission-picker').click();
+    await page.getByRole('menuitem', { name: /Manual/u }).click();
+    await page.waitForFunction(() => (document.querySelector('[data-testid="permission-picker"]')?.getAttribute('title') ?? '').includes('Manual'), undefined, { timeout: 10_000 }).then(
+      () => check('切换到 Claude 的 Manual 模式', true),
+      () => check('切换到 Claude 的 Manual 模式', false),
+    );
+  }
   await send('WORK 写个笔记再看看目录');
   const approval = page.getByTestId('approval-card');
-  if (agent === 'codebuddy') {
+  if (agent !== 'omp') {
     await approval.waitFor({ timeout: 30_000 }).then(
       () => check('写文件需要审批时显示审批卡片', true),
       () => check('写文件需要审批时显示审批卡片', false),
     );
     check('写文件的审批卡片显示文件（从已收到的工具调用补上）', (await approval.innerText()).includes('notes.md'), await approval.innerText().catch(() => ''));
     await approval.getByRole('button', { name: /允许本次/u }).click();
-    await page.waitForFunction(() => !document.querySelector('[data-testid="approval-card"]') || document.querySelector('[data-testid="approval-card"]')?.textContent?.includes('echo hi'), undefined, { timeout: 30_000 });
+    await page.waitForFunction((cmd: string) => !document.querySelector('[data-testid="approval-card"]') || document.querySelector('[data-testid="approval-card"]')?.textContent?.includes(cmd), bashCommand, { timeout: 30_000 });
   }
-  await approval.filter({ hasText: 'echo hi' }).waitFor({ timeout: 30_000 }).then(
+  await approval.filter({ hasText: bashCommand }).waitFor({ timeout: 30_000 }).then(
     () => check('命令需要审批时显示审批卡片', true),
     () => check('命令需要审批时显示审批卡片', false),
   );
-  check('审批卡片显示要运行的命令', (await approval.innerText()).includes('echo hi && ls'), await approval.innerText().catch(() => ''));
+  check('审批卡片显示要运行的命令', (await approval.innerText()).includes(bashCommand), await approval.innerText().catch(() => ''));
   await shot('02-approval');
   await approval.getByRole('button', { name: /允许本次/u }).click();
   await page.locator('.assistant', { hasText: '写好了笔记' }).waitFor({ timeout: 30_000 });
@@ -308,7 +340,7 @@ try {
   check('读文件显示成「浏览」行', (await explore.count()) === 1 && (await explore.innerText()).includes('读取 1 个文件'), await explore.first().innerText().catch(() => ''));
   const edit = page.locator('.activity--edit', { hasText: 'notes.md' });
   check('写文件显示成修改行和增加的行数', (await edit.count()) === 1 && (await edit.innerText()).includes('+3'), await edit.innerText().catch(() => ''));
-  const commandRow = page.locator('.activity--command', { hasText: 'echo hi' });
+  const commandRow = page.locator('.activity--command', { hasText: bashCommand });
   check('命令显示成「已运行」行', (await commandRow.count()) === 1 && (await commandRow.innerText()).includes('已运行'), await commandRow.innerText().catch(() => ''));
   await commandRow.locator('.activity__row').click();
   check('点开命令看到输出', (await commandRow.innerText()).includes('notes.md'), await commandRow.innerText());
@@ -316,8 +348,8 @@ try {
   check('笔记真的写到了工作区', (await readFile(join(workspace, 'notes.md'), 'utf8').catch(() => '')).includes('第一条'));
   await shot('03-tools');
 
-  // 待办：omp 用 plan 更新；CodeBuddy 的 TaskCreate / TaskUpdate 完成时带上整张待办表
-  if (agent === 'codebuddy') {
+  // 待办：omp 和 Claude 用 plan 更新；CodeBuddy 的 TaskCreate / TaskUpdate 完成时带上整张待办表
+  if (agent !== 'omp') {
     await send('TODO 列个计划');
     await page.locator('.assistant', { hasText: '列好计划了' }).waitFor({ timeout: 30_000 });
     const todo = page.locator('.todo-card');
@@ -325,7 +357,7 @@ try {
       async () => check('待办显示在输入框上方的状态条', (await todo.innerText()).includes('改代码') && (await todo.innerText()).includes('1/2'), await todo.innerText()),
       () => check('待办显示在输入框上方的状态条', false),
     );
-    check('待办工具不显示成对话里的工具行', (await page.locator('.activity', { hasText: 'TaskCreate' }).count()) === 0);
+    check('待办工具不显示成对话里的工具行', (await page.locator('.activity', { hasText: 'TaskCreate' }).count()) + (await page.locator('.activity', { hasText: 'TodoWrite' }).count()) === 0);
     await shot('03b-todos');
   }
 
@@ -348,7 +380,7 @@ try {
     () => check('重新打开会话：历史从代理回放', true),
     () => check('重新打开会话：历史从代理回放', false),
   );
-  check('回放的历史里有工具行', (await page.locator('.activity--command', { hasText: 'echo hi' }).count()) === 1);
+  check('回放的历史里有工具行', (await page.locator('.activity--command', { hasText: bashCommand }).count()) === 1);
 
   // 6. 模式：切到 Plan，显示计划模式标记
   await page.getByTestId('permission-picker').click();

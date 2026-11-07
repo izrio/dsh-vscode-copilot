@@ -25,11 +25,13 @@ type AcpProfile = Extract<BackendProfile, { kind: 'acp' }>;
  * 内置的 ACP 代理。不放在设置的默认值里：用户改过 `harnessDeck.backends` 后，设置的默认值就不再生效，新加的内置项会看不到。
  * @param hint - 安装提示的文案（Host 侧 i18n）。
  */
-export function builtinProfiles(hint: (id: 'oh-my-pi' | 'codebuddy') => string): AcpProfile[] {
+export function builtinProfiles(hint: (id: 'oh-my-pi' | 'codebuddy' | 'claude' | 'claude-sign-in') => string): AcpProfile[] {
   return [
     { id: 'oh-my-pi', kind: 'acp', name: 'oh-my-pi', command: 'omp', args: ['acp'], env: {}, installHint: hint('oh-my-pi') },
     // CodeBuddy 2.x 的 ACP 只给一个会话推送实时更新，见 BackendProfile.singleSession
     { id: 'codebuddy', kind: 'acp', name: 'CodeBuddy', command: 'codebuddy', args: ['--acp'], env: {}, installHint: hint('codebuddy'), singleSession: true },
+    // Claude Code 通过 ACP 官方适配器（Claude Agent SDK）接入；登录状态和 Claude Code 共用
+    { id: 'claude', kind: 'acp', name: 'Claude', command: 'claude-agent-acp', args: [], env: {}, installHint: hint('claude'), signInHint: hint('claude-sign-in') },
   ];
 }
 
@@ -53,6 +55,7 @@ export function parseProfiles(raw: unknown, log: (line: string) => void = () => 
         ...(override.installHint || !builtin.installHint ? {} : { installHint: builtin.installHint }),
         // 代理本身的限制：覆盖命令路径时沿用，除非明确写了 false
         ...(override.singleSession === undefined && builtin.singleSession ? { singleSession: true } : {}),
+        ...(builtin.signInHint ? { signInHint: builtin.signInHint } : {}),
       };
     }),
     ...fromSettings.filter((p) => !builtinIds.has(p.id)),
@@ -99,6 +102,7 @@ const INSTALL_COMMANDS: Readonly<Record<string, string>> = {
   dsh: 'npm install -g @deepseek-ai/dsh',
   'oh-my-pi': 'bun install -g @oh-my-pi/pi-coding-agent',
   codebuddy: 'npm install -g @tencent-ai/codebuddy-code',
+  claude: 'npm install -g @agentclientprotocol/claude-agent-acp',
 };
 
 /**

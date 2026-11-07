@@ -2,15 +2,17 @@
  * 底层的图标：内置底层用各自的官方图标（来源见 assets/backends/README.md），设置里加的 ACP 代理用名称首字母。
  */
 import type { BackendView } from '@dsh-copilot/shared';
+import claude from '../assets/backends/claude.svg?inline';
 import codebuddy from '../assets/backends/codebuddy.png?inline';
 import deepseek from '../assets/backends/deepseek.svg?inline';
 import ohMyPi from '../assets/backends/oh-my-pi.png?inline';
 
-/** tile：图标本身没有底色（DeepSeek 的鲸鱼），放在白色圆角方块里，与 DeepSeek 应用图标一致。 */
+/** tile：图标本身没有底色（DeepSeek 的鲸鱼、Claude 的星芒），放在白色圆角方块里。 */
 const LOGOS: Readonly<Record<string, { readonly src: string; readonly tile?: boolean }>> = {
   dsh: { src: deepseek, tile: true },
   'oh-my-pi': { src: ohMyPi },
   codebuddy: { src: codebuddy },
+  claude: { src: claude, tile: true },
 };
 
 export function BackendLogo({ backend, size = 'md' }: { readonly backend: Pick<BackendView, 'id' | 'name'>; readonly size?: 'sm' | 'md' }) {

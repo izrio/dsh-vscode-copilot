@@ -38,7 +38,7 @@ export interface Frame {
   locator(selector: string, options?: LocatorOptions): Locator;
   getByRole(role: string, options?: { name?: string | RegExp }): Locator;
   getByTestId(id: string): Locator;
-  waitForFunction(fn: () => boolean | undefined, arg?: undefined, options?: { timeout?: number }): Promise<unknown>;
+  waitForFunction<A = undefined>(fn: (arg: A) => boolean | undefined, arg?: A, options?: { timeout?: number }): Promise<unknown>;
   evaluate<R>(fn: () => R): Promise<R>;
 }
 
