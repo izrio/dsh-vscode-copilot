@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
+import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';
 import {
@@ -38,6 +39,7 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
   const [sent, setSent] = useState<'allow' | 'reject' | undefined>();
   const t = useT();
   const blocked = item.dirtyFiles.length > 0;
+  const isDsh = useView((s) => (s.backends.items.find((b) => b.id === s.backends.active)?.kind ?? 'dsh') === 'dsh');
   const respond = (decision: 'allow' | 'reject') => {
     setSent(decision);
     postToHost({ type: 'respondApproval', payload: { id: item.id, decision } });
@@ -55,8 +57,9 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
           {item.subject}
         </button>
       ) : null}
-      {item.reason ? <p className="interaction__reason">{item.reason}</p> : null}
-      <p className="interaction__hint">{t('approval.hint')}</p>
+      {item.reason && item.reason !== item.subject ? <p className="interaction__reason">{item.reason}</p> : null}
+      {/* 「越过沙箱、只对这一次生效」是 dsh 的审批语义，其他底层不显示 */}
+      {isDsh ? <p className="interaction__hint">{t('approval.hint')}</p> : null}
       {blocked ? (
         <div className="interaction__warning" role="alert">
           <span>{t('approval.dirty', item.dirtyFiles.join(', '))}</span>

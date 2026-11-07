@@ -301,7 +301,8 @@
     "smoke": "tsx scripts/m0-smoke.ts",
     "package": "vsce package --no-dependencies --skip-license",
     "e2e": "tsx scripts/ui-e2e.ts",
-    "vscode-e2e": "tsx scripts/vscode-e2e.ts"
+    "vscode-e2e": "tsx scripts/vscode-e2e.ts",
+    "acp-e2e": "tsx scripts/acp-e2e.ts"
   },
   "dependencies": {
     "@dsh-copilot/shared": "workspace:*",

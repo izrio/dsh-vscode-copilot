@@ -66,7 +66,7 @@ export function buildLaunchArgs(profile: string, launcherArgs: readonly string[]
   return ['--profile', profile, ...launcherArgs, '--no-open', '--host', '127.0.0.1', '--port', '0'];
 }
 
-function needsShell(command: string, platform: NodeJS.Platform): boolean {
+export function needsShell(command: string, platform: NodeJS.Platform): boolean {
   return platform === 'win32' && /\.(cmd|bat)$/iu.test(command);
 }
 

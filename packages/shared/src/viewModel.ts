@@ -257,6 +257,8 @@ export interface PermissionState {
   readonly options: readonly string[];
   /** 当前会话的预设；不匹配任何预设时为 custom。 */
   readonly current?: string;
+  /** 底层给的显示名和说明（ACP 代理的模式）；没有时用 dsh 预设的翻译名或原名。 */
+  readonly labels?: Readonly<Record<string, { readonly name: string; readonly description?: string }>>;
 }
 
 /** 当前会话（或尚未创建的新对话）的元信息。 */

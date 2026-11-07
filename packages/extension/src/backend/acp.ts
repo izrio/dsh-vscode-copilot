@@ -1,7 +1,126 @@
-/** ACP 底层（下一步实现）。 */
-import type { BackendHost } from './dsh.ts';
+/**
+ * ACP 底层：按设置里的命令启动代理（例如 `omp acp`），`initialize` 之后交给 AcpController。
+ * 代理意外退出时显示失败和最后几行错误输出，可以从横幅里重试。
+ */
+import * as vscode from 'vscode';
+import type { RuntimeStatus } from '@dsh-copilot/shared';
+import { AcpController, type AcpInitialize, type StoredSession } from '../acp/AcpController.ts';
+import { AcpConnection } from '../acp/connection.ts';
+import { locateExecutable } from '../runtime/locate.ts';
+import { t } from '../i18n.ts';
+import { processEnvWithProxy, type BackendHost } from './dsh.ts';
 import type { BackendProfile, RunningBackend } from './types.ts';
 
-export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' }>, _host: BackendHost): RunningBackend {
-  throw new Error(`ACP 底层 ${profile.name} 尚未实现`);
+/** 协议版本：ACP v1。 */
+const PROTOCOL_VERSION = 1;
+
+export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' }>, host: BackendHost): RunningBackend {
+  const state = host.context.workspaceState;
+  const key = (name: string) => host.stateKey(`acp.${profile.id}.${name}`);
+  let status: RuntimeStatus = { kind: 'idle' };
+  let connection: AcpConnection | undefined;
+  let generation = 0;
+
+  const common = host.controllerOptions();
+  const controller = new AcpController({
+    ...common,
+    workspacePath: host.workspacePath(),
+    restartRuntime: () => void restart(),
+    loadActiveSessionId: () => state.get<string>(key('activeSessionId')),
+    saveActiveSessionId: (sessionId) => void state.update(key('activeSessionId'), sessionId),
+    loadSessions: () => state.get<StoredSession[]>(key('sessions')),
+    saveSessions: (sessions) => void state.update(key('sessions'), [...sessions]),
+  });
+
+  const setStatus = (next: RuntimeStatus): void => {
+    status = next;
+    controller.setRuntimeStatus(next);
+    host.onStatus(next);
+  };
+
+  const start = async (): Promise<void> => {
+    if (!vscode.workspace.isTrusted) {
+      setStatus({ kind: 'untrusted' });
+      return;
+    }
+    if (connection?.running) return;
+    const current = ++generation;
+    setStatus({ kind: 'locating' });
+    const env = processEnvWithProxy(profile.env);
+    const located = await locateExecutable(profile.command, { env, platform: process.platform });
+    if (current !== generation) return;
+    if (located.kind === 'notFound') {
+      host.log(`找不到 ${profile.name} 的命令 ${profile.command}`);
+      setStatus({ kind: 'notInstalled', detail: profile.installHint ?? t('acp.notFound', profile.command) });
+      return;
+    }
+    setStatus({ kind: 'starting' });
+    const conn = new AcpConnection({
+      command: located.command,
+      args: profile.args,
+      cwd: host.workspacePath(),
+      env,
+      log: host.log,
+      onStderr: (line) => host.runtimeLog(line, 'stderr'),
+      onNotification: (method, params) => {
+        if (method === 'session/update') controller.onSessionUpdate(params);
+      },
+      onRequest: (method, params) => controller.onAgentRequest(method, params),
+      onExit: (code, signal, stderr) => {
+        if (current !== generation) return;
+        host.log(`${profile.name} 退出（${signal ?? code}）`);
+        connection = undefined;
+        controller.setLink(undefined);
+        setStatus({ kind: 'failed', message: t('acp.exited', profile.name, stderr.split('\n').slice(-5).join('\n') || String(signal ?? code)) });
+      },
+    });
+    connection = conn;
+    try {
+      await conn.start();
+      host.log(`已启动 ${profile.name}：${located.command} ${profile.args.join(' ')}`);
+      const init = await conn.request<AcpInitialize>('initialize', {
+        protocolVersion: PROTOCOL_VERSION,
+        // 文件和终端由代理自己处理（不通过编辑器）
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientInfo: { name: 'harness-deck', title: 'Harness Deck', version: host.context.extension.packageJSON.version as string },
+      });
+      if (current !== generation) return;
+      const agent = init.agentInfo;
+      host.log(`${profile.name} 就绪：${agent?.title ?? agent?.name ?? ''} ${agent?.version ?? ''}（ACP v${init.protocolVersion ?? '?'}）`);
+      setStatus({ kind: 'connected', version: agent?.version ?? '', newerThanTested: false });
+      controller.setLink(conn, init);
+    } catch (error) {
+      if (current !== generation) return;
+      const message = error instanceof Error ? error.message : String(error);
+      host.log(`启动 ${profile.name} 失败：${message}`);
+      connection = undefined;
+      await conn.dispose();
+      setStatus({ kind: 'failed', message });
+    }
+  };
+
+  const stopConnection = async (): Promise<void> => {
+    generation++;
+    const conn = connection;
+    connection = undefined;
+    controller.setLink(undefined);
+    await conn?.dispose();
+  };
+
+  const restart = async (): Promise<void> => {
+    await stopConnection();
+    await start();
+  };
+
+  return {
+    profile,
+    controller,
+    start: () => void start(),
+    restart: () => void restart(),
+    currentStatus: () => status,
+    stop: async () => {
+      await stopConnection();
+      controller.dispose();
+    },
+  };
 }

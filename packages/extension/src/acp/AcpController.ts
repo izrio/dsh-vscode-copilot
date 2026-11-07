@@ -1,0 +1,895 @@
+/**
+ * ACP 底层的控制器：和 dsh 的 ChatController 实现同一个接口、产出同样的视图模型，界面不区分底层。
+ *
+ * - 会话：`session/list` 列出（代理支持时），`session/load` 打开并回放历史，第一条消息前先 `session/new` 建好草稿会话
+ *   （这样模型、模式和斜杠命令在发消息前就能用）；
+ * - 发送：`session/prompt`（附带编辑器上下文和图片），一轮进行中时新消息在本地排队，结束后依次发送；停止用 `session/cancel`；
+ * - 审批：代理的 `session/request_permission` 显示成审批卡片；
+ * - 模型、模式：代理的 config option（category 为 model / mode / thought_level）对应模型选择和权限选择。
+ *
+ * 没有对应能力的功能（每轮改动汇总、子代理、dsh 的队列和插队）在界面上自然不出现。
+ */
+import type {
+  BackendsState,
+  CommandView,
+  ConnectionState,
+  ContextState,
+  DiffRef,
+  HostSnapshot,
+  ImageView,
+  Item,
+  ModelState,
+  PendingInteraction,
+  PermissionState,
+  PromptImage,
+  RuntimeStatus,
+  SessionHeader,
+  SessionListItem,
+  WebviewToHost,
+} from '@dsh-copilot/shared';
+import { isAbsolute, resolve } from 'node:path';
+import type { ChatBackendController } from '../backend/types.ts';
+import { getLocale, t } from '../i18n.ts';
+import {
+  isTemplate,
+  parseSlash,
+  pluginCommands,
+  templatePrompt,
+  withContext,
+  type ContextAttachment,
+  type TemplateName,
+} from '../vm/context.ts';
+import type { ChatControllerOptions } from '../vm/ChatController.ts';
+import { displayPath } from '../vm/projector.ts';
+import { ViewPublisher, type ControllerView } from '../vm/ViewPublisher.ts';
+import { withoutDiagnostics } from '../vm/viewHelpers.ts';
+import { noWorkbench, type EditorSnapshot, type Workbench } from '../vm/workbench.ts';
+import { AcpError } from './connection.ts';
+import { AcpSessionProjection, type AcpConfigOption, type AcpToolCall } from './projection.ts';
+
+/** 和代理通话的接口（测试里用假的）。 */
+export interface AcpLink {
+  request<T = unknown>(method: string, params: unknown): Promise<T>;
+  notify(method: string, params: unknown): void;
+}
+
+/** `initialize` 的结果里用到的部分。 */
+export interface AcpInitialize {
+  readonly protocolVersion?: number;
+  readonly agentInfo?: { readonly name?: string; readonly title?: string; readonly version?: string };
+  readonly authMethods?: readonly { readonly id: string; readonly name?: string }[];
+  readonly agentCapabilities?: {
+    readonly loadSession?: boolean;
+    readonly promptCapabilities?: { readonly image?: boolean; readonly embeddedContext?: boolean };
+    readonly sessionCapabilities?: { readonly list?: unknown };
+  };
+}
+
+/** 本地记住的会话（代理不支持列表时用；标题也存在这里）。 */
+export interface StoredSession {
+  readonly id: string;
+  readonly title: string;
+  readonly updatedAt: number;
+}
+
+export interface AcpControllerOptions
+  extends Pick<
+    ChatControllerOptions,
+    | 'post'
+    | 'log'
+    | 'workbench'
+    | 'includeActiveEditor'
+    | 'openExternal'
+    | 'showLogs'
+    | 'appearance'
+    | 'backends'
+    | 'openSettings'
+    | 'setAppearance'
+    | 'folderLabel'
+    | 'selectFolder'
+    | 'onModelChange'
+    | 'renderDelayMs'
+  > {
+  readonly workspacePath: string;
+  readonly restartRuntime: () => void;
+  readonly loadActiveSessionId: () => string | undefined;
+  readonly saveActiveSessionId: (sessionId: string | undefined) => void;
+  readonly loadSessions: () => readonly StoredSession[] | undefined;
+  readonly saveSessions: (sessions: readonly StoredSession[]) => void;
+}
+
+interface PendingPermission {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly toolCall: AcpToolCall;
+  readonly options: readonly { readonly optionId: string; readonly name?: string; readonly kind?: string }[];
+  readonly resolve: (result: unknown) => void;
+}
+
+interface QueuedPrompt {
+  readonly id: string;
+  readonly text: string;
+  readonly images: readonly PromptImage[];
+}
+
+const MAX_TITLE = 60;
+
+export class AcpController implements ChatBackendController {
+  private link: AcpLink | undefined;
+  private init: AcpInitialize | undefined;
+  private runtime: RuntimeStatus = { kind: 'idle' };
+  private connection: ConnectionState = 'idle';
+  private activeId: string | undefined;
+  /** 新对话：已经建好但还没发过消息的会话。 */
+  private draftId: string | undefined;
+  private creatingDraft: Promise<string | undefined> | undefined;
+  private readonly projections = new Map<string, AcpSessionProjection>();
+  private readonly loading = new Set<string>();
+  private listed: { id: string; updatedAt: number; title?: string }[] = [];
+  private stored: StoredSession[];
+  private readonly queues = new Map<string, QueuedPrompt[]>();
+  private readonly permissions = new Map<string, PendingPermission>();
+  private permissionCounter = 0;
+  private queueCounter = 0;
+  private pinned: (ContextAttachment & { id: string })[] = [];
+  private pinCounter = 0;
+  private workspacePath: string;
+  private renderTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly publisher: ViewPublisher;
+
+  constructor(private readonly options: AcpControllerOptions) {
+    this.workspacePath = options.workspacePath;
+    this.activeId = options.loadActiveSessionId();
+    this.stored = [...(options.loadSessions() ?? [])];
+    this.publisher = new ViewPublisher(options.post, options.onModelChange);
+  }
+
+  private get workbench(): Workbench {
+    return this.options.workbench ?? noWorkbench;
+  }
+
+  // ---------------------------------------------------------------- 连接
+
+  /** 代理进程初始化完成（或断开，传 undefined）。 */
+  setLink(link: AcpLink | undefined, init?: AcpInitialize): void {
+    this.link = link;
+    this.init = init;
+    this.connection = link ? 'connected' : 'idle';
+    this.options.post({ type: 'connection', payload: this.connection });
+    // 新进程里会话要重新加载；草稿会话作废
+    this.projections.clear();
+    this.loading.clear();
+    this.draftId = undefined;
+    this.creatingDraft = undefined;
+    for (const pending of this.permissions.values()) pending.resolve({ outcome: { outcome: 'cancelled' } });
+    this.permissions.clear();
+    if (link) {
+      void this.refreshList();
+      if (this.activeId) void this.load(this.activeId);
+      else void this.ensureDraft();
+    }
+    this.scheduleRender();
+  }
+
+  setRuntimeStatus(status: RuntimeStatus): void {
+    this.runtime = status;
+    this.options.post({ type: 'runtimeStatus', payload: status });
+    this.scheduleRender();
+  }
+
+  /** 代理推送的 `session/update`。 */
+  onSessionUpdate(params: unknown): void {
+    const { sessionId, update } = (params ?? {}) as { sessionId?: string; update?: Record<string, unknown> };
+    if (!sessionId || !update) return;
+    const projection = this.projectionFor(sessionId);
+    projection.apply(update);
+    if (update.sessionUpdate === 'session_info_update' && projection.title) this.remember(sessionId, projection.title);
+    this.scheduleRender();
+  }
+
+  /** 代理发来的请求。 */
+  async onAgentRequest(method: string, params: unknown): Promise<unknown> {
+    if (method === 'session/request_permission') return this.askPermission(params);
+    throw new AcpError(method, -32601, `${method} is not supported by this client`);
+  }
+
+  // ---------------------------------------------------------------- 接口
+
+  dispose(): void {
+    if (this.renderTimer) clearTimeout(this.renderTimer);
+    for (const pending of this.permissions.values()) pending.resolve({ outcome: { outcome: 'cancelled' } });
+    this.permissions.clear();
+  }
+
+  snapshot(): HostSnapshot {
+    const view = this.compute();
+    this.publisher.reset(view);
+    return {
+      runtime: this.runtime,
+      connection: this.connection,
+      sessions: view.sessions,
+      tabs: view.tabs,
+      session: view.session,
+      items: view.items,
+      models: view.models,
+      interactions: view.interactions,
+      permissions: view.permissions,
+      workspace: view.workspace,
+      context: view.context,
+      commands: view.commands,
+      locale: getLocale(),
+      appearance: this.options.appearance?.() ?? {},
+      backends: this.backends(),
+    };
+  }
+
+  modelState(): ModelState {
+    return this.modelsOf(this.currentProjection());
+  }
+
+  workspaceChanged(): void {
+    this.scheduleRender();
+  }
+
+  localeChanged(): void {
+    this.options.post({ type: 'locale', payload: getLocale() });
+    this.scheduleRender();
+  }
+
+  appearanceChanged(): void {
+    this.options.post({ type: 'appearance', payload: this.options.appearance?.() ?? {} });
+  }
+
+  backendsChanged(): void {
+    this.options.post({ type: 'backends', payload: this.backends() });
+  }
+
+  setWorkspace(path: string): void {
+    if (path === this.workspacePath) return;
+    this.workspacePath = path;
+    this.pinned = [];
+    this.activeId = this.options.loadActiveSessionId();
+    this.draftId = undefined;
+    this.projections.clear();
+    if (this.link) {
+      void this.refreshList();
+      if (this.activeId) void this.load(this.activeId);
+      else void this.ensureDraft();
+    }
+    this.scheduleRender();
+  }
+
+  async askAboutSelection(template: TemplateName): Promise<void> {
+    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    if (!attachment) {
+      this.toast('info', t('context.none'));
+      return;
+    }
+    await this.send(templatePrompt(template, ''), { includeActive: false, extra: [attachment], diagnostics: template === 'fix' });
+  }
+
+  pinActiveEditor(): void {
+    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    if (!attachment) {
+      this.toast('info', t('context.none'));
+      return;
+    }
+    this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
+    this.scheduleRender();
+    this.options.post({ type: 'focusComposer', payload: {} });
+  }
+
+  async renameSession(): Promise<void> {
+    const sessionId = this.activeId;
+    if (!sessionId) return;
+    const title = await this.workbench.input({ title: t('rename.title'), value: this.titleOf(sessionId) });
+    if (!title?.trim()) return;
+    this.remember(sessionId, title.trim(), true);
+    this.scheduleRender();
+  }
+
+  async configureApiKey(): Promise<void> {
+    this.toast('info', t('acp.apiKey', this.agentName()));
+  }
+
+  async handle(message: WebviewToHost): Promise<void> {
+    switch (message.type) {
+      case 'ready':
+        this.options.post({ type: 'snapshot', payload: this.snapshot() });
+        return;
+      case 'sendMessage':
+        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, images: message.payload.images ?? [] });
+      case 'searchFiles': {
+        let items: { path: string; kind: 'file' | 'directory' }[] = [];
+        try {
+          items = await this.workbench.findFiles(message.payload.query);
+        } catch (error) {
+          this.options.log(`文件搜索失败：${describe(error)}`);
+        }
+        this.options.post({ type: 'fileCandidates', payload: { requestId: message.payload.requestId, items: items.slice(0, 50) } });
+        return;
+      }
+      case 'removeAttachment':
+        this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
+        this.scheduleRender();
+        return;
+      case 'queueAction':
+        return this.queueAction(message.payload);
+      case 'renameSession':
+        return this.renameSession();
+      case 'configureApiKey':
+        return this.configureApiKey();
+      case 'selectFolder':
+        this.options.selectFolder?.();
+        return;
+      case 'interrupt':
+        return this.interrupt();
+      case 'newSession':
+      case 'closeTab':
+        this.setActive(undefined);
+        return;
+      case 'switchSession':
+        this.setActive(message.payload.sessionId);
+        return;
+      case 'activateTab':
+      case 'loadOlder':
+      case 'retryPending':
+      case 'discardPending':
+      case 'previewApproval':
+        return;
+      case 'selectModel':
+        return this.selectModel(message.payload.model, message.payload.reasoningEffort);
+      case 'openExternal':
+        this.options.openExternal(message.payload.url);
+        return;
+      case 'restartRuntime':
+        this.options.restartRuntime();
+        return;
+      case 'showLogs':
+        this.options.showLogs();
+        return;
+      case 'openWebUI':
+        this.toast('info', t('acp.noWebUI', this.agentName()));
+        return;
+      case 'respondApproval':
+        this.respondApproval(message.payload.id, message.payload.decision === 'allow');
+        return;
+      case 'answerQuestion':
+        this.toast('info', t('question.ended'));
+        return;
+      case 'openDiff':
+        try {
+          await this.openDiff(message.payload.ref);
+        } finally {
+          if (message.payload.token !== undefined) this.options.post({ type: 'diffOpened', payload: { token: message.payload.token } });
+        }
+        return;
+      case 'openFile': {
+        const { path, startLine, endLine } = message.payload;
+        return this.workbench.openFile(this.absolute(path), startLine ? { startLine, ...(endLine ? { endLine } : {}) } : undefined);
+      }
+      case 'selectPermission':
+        return this.setMode(message.payload.preset);
+      case 'saveAll':
+        return this.workbench.saveAll();
+      case 'openSettings':
+        this.options.openSettings?.();
+        return;
+      case 'setAppearance':
+        try {
+          await this.options.setAppearance?.(message.payload);
+        } catch (error) {
+          this.toast('error', t('appearance.failed', describe(error)));
+          this.appearanceChanged();
+        }
+        return;
+      case 'loadImage':
+        // 历史消息里的图片：ACP 没有读取附件的方法
+        this.options.post({ type: 'imageData', payload: { attachmentId: message.payload.attachmentId } });
+        return;
+      case 'selectBackend':
+        return;
+    }
+  }
+
+  // ---------------------------------------------------------------- 会话
+
+  private setActive(sessionId: string | undefined): void {
+    if (sessionId === this.activeId && (sessionId !== undefined || this.draftId !== undefined)) return;
+    this.activeId = sessionId;
+    this.options.saveActiveSessionId(sessionId);
+    if (sessionId) void this.load(sessionId);
+    else void this.ensureDraft();
+    this.scheduleRender();
+  }
+
+  /** 打开会话：同一个进程里已经加载过的直接显示，否则用 session/load 回放历史。 */
+  private async load(sessionId: string): Promise<void> {
+    const link = this.link;
+    if (!link || this.projections.has(sessionId) || this.loading.has(sessionId)) return;
+    if (!this.init?.agentCapabilities?.loadSession) {
+      this.toast('info', t('acp.noLoad', this.agentName()));
+      return;
+    }
+    this.loading.add(sessionId);
+    const projection = this.projectionFor(sessionId);
+    projection.reset();
+    this.scheduleRender();
+    try {
+      const result = await link.request<{ configOptions?: AcpConfigOption[] } | null>('session/load', { sessionId, cwd: this.workspacePath, mcpServers: [] });
+      projection.setConfigOptions(result?.configOptions);
+    } catch (error) {
+      this.options.log(`打开会话 ${sessionId} 失败：${describe(error)}`);
+      this.toast('error', t('acp.loadFailed', describe(error)));
+      this.projections.delete(sessionId);
+      if (this.activeId === sessionId) this.setActive(undefined);
+    } finally {
+      this.loading.delete(sessionId);
+      this.scheduleRender();
+    }
+  }
+
+  /** 新对话的草稿会话：建好后模型、模式和斜杠命令就能用了。 */
+  private ensureDraft(): Promise<string | undefined> {
+    if (this.draftId) return Promise.resolve(this.draftId);
+    if (this.creatingDraft) return this.creatingDraft;
+    const link = this.link;
+    if (!link) return Promise.resolve(undefined);
+    this.creatingDraft = this.newSession(link)
+      .then(
+        (id) => {
+          if (this.link === link) this.draftId = id;
+          return id;
+        },
+        (error: unknown) => {
+          this.options.log(`新建会话失败：${describe(error)}`);
+          this.toast('error', t('acp.newFailed', describe(error)));
+          return undefined;
+        },
+      )
+      .finally(() => {
+        this.creatingDraft = undefined;
+        this.scheduleRender();
+      });
+    return this.creatingDraft;
+  }
+
+  /** `session/new`；代理要求认证时用它提供的第一种方式（通常是「用已有的本地凭据」）再试一次。 */
+  private async newSession(link: AcpLink): Promise<string> {
+    const params = { cwd: this.workspacePath, mcpServers: [] };
+    let result: { sessionId: string; configOptions?: AcpConfigOption[] };
+    try {
+      result = await link.request('session/new', params);
+    } catch (error) {
+      const method = this.init?.authMethods?.[0]?.id;
+      if (!(error instanceof AcpError) || error.code !== -32000 || !method) throw error;
+      await link.request('authenticate', { methodId: method });
+      result = await link.request('session/new', params);
+    }
+    this.projectionFor(result.sessionId).setConfigOptions(result.configOptions);
+    return result.sessionId;
+  }
+
+  private async refreshList(): Promise<void> {
+    const link = this.link;
+    if (!link || this.init?.agentCapabilities?.sessionCapabilities?.list === undefined) return;
+    try {
+      const result = await link.request<{ sessions?: { sessionId: string; cwd?: string; updatedAt?: string; title?: string | null }[] }>('session/list', { cwd: this.workspacePath });
+      this.listed = (result?.sessions ?? [])
+        .filter((s) => !s.cwd || s.cwd === this.workspacePath)
+        .map((s) => ({ id: s.sessionId, updatedAt: s.updatedAt ? Date.parse(s.updatedAt) || 0 : 0, ...(s.title ? { title: s.title } : {}) }));
+      this.scheduleRender();
+    } catch (error) {
+      this.options.log(`读取会话列表失败：${describe(error)}`);
+    }
+  }
+
+  private projectionFor(sessionId: string): AcpSessionProjection {
+    let projection = this.projections.get(sessionId);
+    if (!projection) {
+      projection = new AcpSessionProjection(this.workspacePath);
+      this.projections.set(sessionId, projection);
+    }
+    return projection;
+  }
+
+  /** 当前显示的会话 id（新对话时是草稿会话）。 */
+  private currentId(): string | undefined {
+    return this.activeId ?? this.draftId;
+  }
+
+  private currentProjection(): AcpSessionProjection | undefined {
+    const id = this.currentId();
+    return id ? this.projections.get(id) : undefined;
+  }
+
+  /** 记住会话标题（第一条消息或代理给的标题）；`force` 用于手动重命名。 */
+  private remember(sessionId: string, title: string, force = false): void {
+    const existing = this.stored.find((s) => s.id === sessionId);
+    if (existing && !force && existing.title) {
+      this.stored = this.stored.map((s) => (s.id === sessionId ? { ...s, updatedAt: Date.now() } : s));
+    } else {
+      const clean = title.replace(/\s+/gu, ' ').trim().slice(0, MAX_TITLE);
+      this.stored = [{ id: sessionId, title: clean, updatedAt: Date.now() }, ...this.stored.filter((s) => s.id !== sessionId)];
+    }
+    this.options.saveSessions(this.stored.slice(0, 200));
+  }
+
+  private titleOf(sessionId: string | undefined): string {
+    if (!sessionId) return t('session.new');
+    return this.stored.find((s) => s.id === sessionId)?.title || this.projections.get(sessionId)?.title || this.listed.find((s) => s.id === sessionId)?.title || t('acp.untitled');
+  }
+
+  // ---------------------------------------------------------------- 发送
+
+  async send(text: string, options: { includeActive?: boolean; extra?: readonly ContextAttachment[]; diagnostics?: boolean; images?: readonly PromptImage[] } = {}): Promise<void> {
+    const slash = parseSlash(text);
+    if (slash?.name === 'new') {
+      this.setActive(undefined);
+      if (slash.args.trim()) await this.send(slash.args, options);
+      return;
+    }
+    // 计划模式的标记点击后发 /plan off；代理有 plan 模式时切换模式
+    if (slash?.name === 'plan' && this.modeOption()?.options?.some((o) => o.value === 'plan')) {
+      await this.setMode(slash.args.trim() === 'off' ? (this.modeOption()?.options?.find((o) => o.value !== 'plan')?.value ?? 'default') : 'plan');
+      if (slash.args.trim() && slash.args.trim() !== 'off') await this.send(slash.args, options);
+      return;
+    }
+    let prompt = text;
+    let attachments: ContextAttachment[];
+    if (slash && isTemplate(slash.name)) {
+      attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
+      if (attachments.length === 0 && !slash.args.trim()) {
+        this.toast('info', t('template.needsContext', slash.name));
+        return;
+      }
+      prompt = templatePrompt(slash.name, slash.args);
+    } else {
+      // 代理自己的斜杠命令照原样发送（ACP 里命令就是以 / 开头的消息）
+      attachments = slash ? [] : this.gatherContext(options);
+    }
+    const full = withContext(prompt, attachments, this.workspacePath);
+    if (this.pinned.length) this.pinned = [];
+    const link = this.link;
+    if (!link) {
+      this.toast('error', t('notConnected'));
+      return;
+    }
+    const sessionId = this.activeId ?? (await this.ensureDraft());
+    if (!sessionId) return;
+    if (!this.activeId) {
+      // 草稿会话收到第一条消息：成为正式会话
+      this.activeId = sessionId;
+      this.draftId = undefined;
+      this.options.saveActiveSessionId(sessionId);
+      this.remember(sessionId, prompt || t('acp.image'));
+    }
+    const projection = this.projectionFor(sessionId);
+    const images = options.images ?? [];
+    if (projection.running) {
+      const queue = this.queues.get(sessionId) ?? [];
+      queue.push({ id: `q${++this.queueCounter}`, text: full, images });
+      this.queues.set(sessionId, queue);
+      this.scheduleRender();
+      return;
+    }
+    await this.prompt(link, sessionId, full, images);
+  }
+
+  private async prompt(link: AcpLink, sessionId: string, text: string, images: readonly PromptImage[]): Promise<void> {
+    const projection = this.projectionFor(sessionId);
+    const allowImages = this.init?.agentCapabilities?.promptCapabilities?.image === true;
+    if (images.length && !allowImages) this.toast('info', t('acp.noImages', this.agentName()));
+    const sent = allowImages ? images : [];
+    projection.addUserMessage(
+      text,
+      sent.map((image): ImageView => ({ localId: image.localId, mediaType: image.mediaType, ...(image.name ? { name: image.name } : {}) })),
+    );
+    projection.startTurn(Date.now());
+    this.scheduleRender();
+    const content = [
+      ...(text.trim() ? [{ type: 'text', text }] : []),
+      ...sent.map((image) => ({ type: 'image', mimeType: image.mediaType, data: image.data })),
+    ];
+    try {
+      const result = await link.request<{ stopReason?: string } | null>('session/prompt', { sessionId, prompt: content });
+      projection.endTurn(Date.now(), result?.stopReason ?? 'end_turn');
+    } catch (error) {
+      projection.endTurn(Date.now(), undefined, describe(error));
+    }
+    this.remember(sessionId, this.titleOf(sessionId));
+    void this.refreshList();
+    this.scheduleRender();
+    // 本地排队的消息：上一轮结束后依次发送
+    const next = this.queues.get(sessionId)?.shift();
+    if (next && this.link) await this.prompt(this.link, sessionId, next.text, next.images);
+  }
+
+  private async interrupt(): Promise<void> {
+    const sessionId = this.currentId();
+    if (!sessionId || !this.link) return;
+    for (const [id, pending] of this.permissions) {
+      if (pending.sessionId !== sessionId) continue;
+      pending.resolve({ outcome: { outcome: 'cancelled' } });
+      this.permissions.delete(id);
+    }
+    this.link.notify('session/cancel', { sessionId });
+    this.scheduleRender();
+  }
+
+  private queueAction(payload: Extract<WebviewToHost, { type: 'queueAction' }>['payload']): void {
+    const sessionId = this.currentId();
+    const queue = sessionId ? this.queues.get(sessionId) : undefined;
+    if (!sessionId || !queue) return;
+    const index = queue.findIndex((q) => q.id === payload.itemId);
+    if (index < 0) return;
+    if (payload.action === 'remove') queue.splice(index, 1);
+    else if (payload.action === 'edit') queue[index] = { ...queue[index]!, text: payload.text };
+    else if (payload.action === 'send' || payload.action === 'steer') {
+      // 没有插队：移到队首，当前回复结束后最先发送
+      const [item] = queue.splice(index, 1);
+      queue.unshift(item!);
+    }
+    this.scheduleRender();
+  }
+
+  // ---------------------------------------------------------------- 模型、模式
+
+  private modelOption(projection = this.currentProjection()): AcpConfigOption | undefined {
+    return projection?.configOptions.find((o) => o.category === 'model' || o.id === 'model');
+  }
+
+  private effortOption(projection = this.currentProjection()): AcpConfigOption | undefined {
+    return projection?.configOptions.find((o) => o.category === 'thought_level' || o.id === 'thought_level' || o.id === 'reasoning_effort');
+  }
+
+  private modeOption(projection = this.currentProjection()): AcpConfigOption | undefined {
+    return projection?.configOptions.find((o) => o.category === 'mode' || o.id === 'mode');
+  }
+
+  private modelsOf(projection: AcpSessionProjection | undefined): ModelState {
+    const model = this.modelOption(projection);
+    if (!model?.options?.length) return { options: [] };
+    const effort = this.effortOption(projection);
+    const efforts = (effort?.options ?? []).map((o) => ({ id: o.value, name: o.name ?? o.value }));
+    return {
+      options: model.options.map((o) => ({
+        provider: 'acp',
+        model: o.value,
+        name: o.name ?? o.value,
+        group: o.value.includes('/') ? o.value.slice(0, o.value.indexOf('/')) : this.agentName(),
+        ...(o.description && o.description !== o.value ? { description: o.description } : {}),
+        // 思考等级是会话级的设置：挂在当前模型下
+        efforts: o.value === model.currentValue ? efforts : [],
+        ...(o.value === model.currentValue && effort?.currentValue ? { defaultEffort: effort.currentValue } : {}),
+      })),
+      ...(model.currentValue ? { current: { provider: 'acp', model: model.currentValue, ...(effort?.currentValue ? { reasoningEffort: effort.currentValue } : {}) } } : {}),
+    };
+  }
+
+  private async selectModel(model: string, effort?: string): Promise<void> {
+    const sessionId = this.currentId() ?? (await this.ensureDraft());
+    const option = this.modelOption();
+    if (!sessionId || !option) return;
+    try {
+      if (model !== option.currentValue) await this.setOption(sessionId, option.id, model);
+      const effortOption = this.effortOption();
+      if (effort && effortOption && effort !== effortOption.currentValue) await this.setOption(sessionId, effortOption.id, effort);
+    } catch (error) {
+      this.toast('error', t('model.failed', describe(error)));
+    }
+  }
+
+  private async setMode(mode: string): Promise<void> {
+    const sessionId = this.currentId() ?? (await this.ensureDraft());
+    const option = this.modeOption();
+    if (!sessionId || !option || option.currentValue === mode) return;
+    try {
+      await this.setOption(sessionId, option.id, mode);
+    } catch (error) {
+      this.toast('error', t('permission.failed', describe(error)));
+    }
+  }
+
+  private async setOption(sessionId: string, configId: string, value: string): Promise<void> {
+    const result = await this.link?.request<{ configOptions?: AcpConfigOption[] } | null>('session/set_config_option', { sessionId, configId, value });
+    this.projectionFor(sessionId).setConfigOptions(result?.configOptions);
+    this.scheduleRender();
+  }
+
+  // ---------------------------------------------------------------- 审批
+
+  private askPermission(params: unknown): Promise<unknown> {
+    const { sessionId, toolCall, options } = (params ?? {}) as { sessionId?: string; toolCall?: AcpToolCall; options?: PendingPermission['options'] };
+    if (!sessionId || !toolCall || !options?.length) return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+    return new Promise((resolvePermission) => {
+      const id = `perm-${++this.permissionCounter}`;
+      this.permissions.set(id, { id, sessionId, toolCall, options, resolve: resolvePermission });
+      this.scheduleRender();
+    });
+  }
+
+  private respondApproval(id: string, allow: boolean): void {
+    const pending = this.permissions.get(id);
+    if (!pending) {
+      this.toast('info', t('request.ended'));
+      return;
+    }
+    const pick = (prefix: string) => pending.options.find((o) => o.kind === `${prefix}_once`) ?? pending.options.find((o) => o.kind?.startsWith(prefix));
+    const option = allow ? pick('allow') : pick('reject');
+    this.permissions.delete(id);
+    pending.resolve(option ? { outcome: { outcome: 'selected', optionId: option.optionId } } : { outcome: { outcome: 'cancelled' } });
+    this.scheduleRender();
+  }
+
+  private interactionOf(pending: PendingPermission): PendingInteraction {
+    const call = pending.toolCall;
+    const args = (call.rawInput ?? {}) as { command?: unknown };
+    const path = call.locations?.[0]?.path;
+    const subject =
+      typeof args.command === 'string' && args.command.trim()
+        ? { subject: args.command.trim(), subjectKind: 'command' as const }
+        : path
+          ? { subject: displayPath(path, this.workspacePath), subjectKind: 'file' as const }
+          : undefined;
+    return {
+      kind: 'approval',
+      id: pending.id,
+      toolName: call.name ?? call.kind ?? 'tool',
+      reason: call.title ?? '',
+      ...(subject ?? {}),
+      previewable: false,
+      dirtyFiles: [],
+    };
+  }
+
+  // ---------------------------------------------------------------- Diff
+
+  private async openDiff(ref: DiffRef): Promise<void> {
+    if (ref.kind !== 'tool') return;
+    const diffs = this.currentProjection()?.diffsOf(ref.callId) ?? [];
+    const diff = diffs[0];
+    if (!diff) {
+      this.toast('info', t('diff.noRecord'));
+      return;
+    }
+    const path = this.absolute(diff.path);
+    // 磁盘上的文件就是修改后的内容时右侧用真实文件（可以继续编辑）
+    const current = await this.workbench.readFile(path);
+    const created = diff.oldText === null;
+    await this.workbench.openDiff({
+      kind: 'contents',
+      path,
+      before: diff.oldText ?? '',
+      ...(current === diff.newText ? {} : { after: diff.newText }),
+      created,
+      scope: 'turn',
+    });
+  }
+
+  // ---------------------------------------------------------------- 视图
+
+  private scheduleRender(): void {
+    if (this.renderTimer) return;
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = undefined;
+      this.render();
+    }, this.options.renderDelayMs ?? 30);
+  }
+
+  render(): void {
+    this.publisher.publish(this.compute());
+  }
+
+  private compute(): ControllerView {
+    const sessionId = this.currentId();
+    const projection = this.currentProjection();
+    const running = projection?.running ?? false;
+    const queue = sessionId ? (this.queues.get(sessionId) ?? []) : [];
+    const items: Item[] = [
+      ...(projection?.snapshotItems() ?? []),
+      ...queue.map((q): Item => ({ kind: 'user', id: `q:${q.id}`, text: q.text.replace(/\n*<ide_context[\s\S]*$/u, ''), pending: 'queued', queue: { itemId: q.id, target: 'next-turn' } })),
+    ];
+    const usage = projection?.usage;
+    const mode = this.modeOption(projection);
+    const session: SessionHeader = {
+      ...(this.activeId ? { id: this.activeId } : {}),
+      title: this.titleOf(this.activeId),
+      running,
+      hasOlder: false,
+      loadingOlder: false,
+      sync: !this.activeId ? 'idle' : this.loading.has(this.activeId) || !this.link ? 'opening' : 'live',
+      ...(usage ? { contextUsage: Math.min(1, usage.used / usage.size), contextTokens: { used: usage.used, window: usage.size } } : {}),
+      ...(mode?.currentValue === 'plan' ? { planMode: true } : {}),
+      ...(projection?.todos?.length ? { todos: projection.todos } : {}),
+      ...(running && projection?.runningSince !== undefined ? { runningSince: projection.runningSince } : {}),
+      ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
+    };
+    const known = new Map<string, SessionListItem>();
+    for (const s of this.listed) known.set(s.id, { id: s.id, title: this.titleOf(s.id), updatedAt: s.updatedAt, running: this.projections.get(s.id)?.running ?? false });
+    for (const s of this.stored) {
+      if (!known.has(s.id) && (this.init?.agentCapabilities?.sessionCapabilities?.list === undefined || this.projections.has(s.id))) {
+        known.set(s.id, { id: s.id, title: s.title, updatedAt: s.updatedAt, running: this.projections.get(s.id)?.running ?? false });
+      }
+    }
+    const sessions = [...known.values()].filter((s) => s.id !== this.draftId).sort((a, b) => b.updatedAt - a.updatedAt);
+    const interactions = [...this.permissions.values()].filter((p) => p.sessionId === sessionId).map((p) => this.interactionOf(p));
+    const permissions: PermissionState = {
+      options: (mode?.options ?? []).map((o) => o.value),
+      ...(mode?.currentValue ? { current: mode.currentValue } : {}),
+      labels: Object.fromEntries((mode?.options ?? []).map((o) => [o.value, { name: o.name ?? o.value, ...(o.description ? { description: o.description } : {}) }])),
+    };
+    const commands: CommandView[] = [
+      ...pluginCommands().map((c) => ({ ...c, source: 'plugin' as const })),
+      ...(projection?.commands ?? []).map((c) => ({
+        name: c.name,
+        description: c.description ?? '',
+        ...(c.input?.hint ? { hint: c.input.hint } : {}),
+        source: 'dsh' as const,
+      })),
+    ];
+    return {
+      sessionKey: this.activeId ?? '',
+      sessions,
+      tabs: { items: [{ key: 'acp', ...(this.activeId ? { sessionId: this.activeId } : {}), title: session.title, running }], active: 'acp' },
+      session,
+      items,
+      models: this.modelsOf(projection),
+      interactions,
+      permissions,
+      workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
+      context: this.contextState(),
+      commands,
+    };
+  }
+
+  // ---------------------------------------------------------------- 上下文
+
+  private snapshotAttachment(editor: EditorSnapshot | undefined): ContextAttachment | undefined {
+    if (!editor) return undefined;
+    if (!editor.selection) return { kind: 'file', path: editor.path };
+    const { startLine, endLine, text, diagnostics } = editor.selection;
+    return { kind: 'selection', path: editor.path, startLine, endLine, languageId: editor.languageId, text, ...(diagnostics.length ? { diagnostics } : {}) };
+  }
+
+  private gatherContext(options: { includeActive?: boolean; extra?: readonly ContextAttachment[]; diagnostics?: boolean }): ContextAttachment[] {
+    const active = options.includeActive !== false ? this.snapshotAttachment(this.workbench.activeEditor()) : undefined;
+    const all = [...this.pinned.map(({ id: _id, ...rest }) => rest as ContextAttachment), ...(options.extra ?? []), ...(active ? [active] : [])];
+    return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
+  }
+
+  private contextState(): ContextState {
+    const view = (a: ContextAttachment) => ({
+      kind: a.kind,
+      path: displayPath(a.path, this.workspacePath),
+      ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
+    });
+    const active = this.snapshotAttachment(this.workbench.activeEditor());
+    return {
+      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
+      includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
+      pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
+    };
+  }
+
+  private absolute(path: string): string {
+    return isAbsolute(path) ? path : resolve(this.workspacePath, path);
+  }
+
+  private backends(): BackendsState {
+    return this.options.backends?.() ?? { items: [], active: '' };
+  }
+
+  private agentName(): string {
+    const state = this.backends();
+    return state.items.find((b) => b.id === state.active)?.name ?? this.init?.agentInfo?.title ?? this.init?.agentInfo?.name ?? 'ACP';
+  }
+
+  private toast(level: 'info' | 'error', text: string): void {
+    this.options.post({ type: 'toast', payload: { level, text } });
+  }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
