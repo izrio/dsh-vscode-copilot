@@ -80,7 +80,7 @@ pnpm build
 pnpm package
 ```
 
-`pnpm package` 产出 `packages/extension/dsh-copilot-<版本>.vsix`。调试时先执行 `pnpm dev`（监听并重新构建），再用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。
+`pnpm package` 产出 `packages/extension/harness-deck-<版本>.vsix`。调试时先执行 `pnpm dev`（监听并重新构建），再用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。
 
 ### 用真实 dsh 测试
 
