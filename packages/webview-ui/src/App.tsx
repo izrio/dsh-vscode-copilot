@@ -4,13 +4,14 @@ import { applyHostMessage, requestPrefill, useView } from './store.ts';
 import { postToHost } from './vscode.ts';
 import { BackendChooser } from './components/BackendChooser.tsx';
 import { BackendLogo } from './components/BackendLogo.tsx';
+import { HarnessDeckLogo } from './components/HarnessDeckLogo.tsx';
 import { Composer } from './components/Composer.tsx';
 import { Header } from './components/Header.tsx';
 import { RuntimeBanner } from './components/RuntimeBanner.tsx';
 import { TabBar } from './components/TabBar.tsx';
 import { Thread } from './components/Thread.tsx';
 import { Toasts } from './components/Toasts.tsx';
-import { BeakerIcon, BookIcon, BugIcon, ChevronDownIcon, DiffIcon, FolderIcon, GlobeIcon, KeyIcon, SparkleIcon, SpinnerIcon } from './components/icons.tsx';
+import { BeakerIcon, BookIcon, BugIcon, ChevronDownIcon, DiffIcon, FolderIcon, GlobeIcon, KeyIcon, SpinnerIcon } from './components/icons.tsx';
 import type { MessageKey } from './i18n.ts';
 import { useT } from './i18n.ts';
 
@@ -110,7 +111,7 @@ function Home() {
     <div className="empty home">
       <div className="home__hero">
         <div className="home__logo" aria-hidden="true">
-          <SparkleIcon />
+          <HarnessDeckLogo />
         </div>
         <p className="empty__title">{t('empty.title')}</p>
         <p className="empty__hint">{t('empty.hint')}</p>

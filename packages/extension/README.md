@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/izrio/dsh-vscode-copilot/HEAD/packages/extension/media/icon.png" width="96" alt="Harness Deck"></p>
+
 # Harness Deck
 
 编程代理（coding agent）的 VS Code 对话面板：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。

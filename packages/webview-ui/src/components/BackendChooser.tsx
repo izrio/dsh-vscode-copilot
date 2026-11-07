@@ -9,7 +9,8 @@ import { useT } from '../i18n.ts';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { BackendLogo } from './BackendLogo.tsx';
-import { ArrowLeftIcon, CheckIcon, CopyIcon, SparkleIcon, SpinnerIcon } from './icons.tsx';
+import { HarnessDeckLogo } from './HarnessDeckLogo.tsx';
+import { ArrowLeftIcon, CheckIcon, CopyIcon, SpinnerIcon } from './icons.tsx';
 
 /** 内置底层的说明；自定义的 ACP 代理显示启动命令。 */
 const DESCRIPTIONS: Readonly<Record<string, MessageKey>> = {
@@ -30,7 +31,7 @@ export function BackendChooser({ welcome, onClose }: { readonly welcome: boolean
       <div className="chooser__head">
         {welcome ? (
           <div className="home__logo home__logo--small" aria-hidden="true">
-            <SparkleIcon />
+            <HarnessDeckLogo />
           </div>
         ) : null}
         <p className="chooser__title">{welcome ? t('backend.choose.welcome') : t('backend.choose.title')}</p>

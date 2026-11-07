@@ -4,6 +4,7 @@
   "description": "%extension.description%",
   "version": "0.2.3",
   "publisher": "izrio",
+  "icon": "media/icon.png",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -36,7 +37,7 @@
         {
           "id": "harnessDeck",
           "title": "%container.title%",
-          "icon": "media/dsh.svg"
+          "icon": "media/harness-deck.svg"
         }
       ]
     },

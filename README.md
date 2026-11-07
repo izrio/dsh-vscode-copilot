@@ -1,3 +1,5 @@
+<p align="center"><img src="packages/extension/media/logo.svg" width="96" alt="Harness Deck"></p>
+
 # Harness Deck（原 DSH Copilot）
 
 编程代理的 VS Code 对话面板，交互参考 Codex：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。

@@ -2263,50 +2263,61 @@ body.resizing {
   align-items: center;
 }
 
-/* 强调色到紫色的渐变方块，带柔和的光晕 */
+/* 标志自带渐变的圆角方块；外层负责尺寸、投影和外圈的呼吸光晕 */
 .home__logo {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
+  width: 60px;
+  height: 60px;
   margin: 0 auto 14px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 80%, var(--accent)));
-  color: #ffffff;
-  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 14px;
+  box-shadow: 0 8px 26px color-mix(in srgb, #6a45f5 40%, transparent);
+}
+
+.home__logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .home__logo::after {
   content: '';
   position: absolute;
   inset: -6px;
-  border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 19px;
+  border: 1px solid color-mix(in srgb, #6a45f5 45%, transparent);
   animation: home-halo 3.2s ease-in-out infinite;
   pointer-events: none;
 }
 
-.home__logo svg {
-  width: 26px;
-  height: 26px;
+/* 中间的节点轻轻闪烁 */
+.home__logo .hd-logo__glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hd-node 2.4s ease-in-out infinite;
+}
+
+@keyframes hd-node {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
 }
 
 .home__logo--small {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   margin-bottom: 10px;
 }
 
 .home__logo--small::after {
-  border-radius: 16px;
-}
-
-.home__logo--small svg {
-  width: 20px;
-  height: 20px;
+  inset: -5px;
+  border-radius: 14px;
 }
 
 @keyframes home-halo {
@@ -2775,7 +2786,8 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home__logo::after {
+  .home__logo::after,
+  .home__logo .hd-logo__glow {
     animation: none;
   }
 
