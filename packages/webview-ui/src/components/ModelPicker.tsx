@@ -3,7 +3,7 @@
  * 先点模型，再在第二级里选推理强度（当前强度预先标出）。当前选中的项带勾和强调色底色。
  */
 import { useCallback, useState } from 'react';
-import type { ModelOption } from '@dsh-copilot/shared';
+import type { ModelOption } from '@harness-deck/shared';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, SparkleIcon, SpinnerIcon } from './icons.tsx';

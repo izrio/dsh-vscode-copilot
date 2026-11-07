@@ -16,7 +16,7 @@
  * 显示时把这个块从正文里去掉，解析成附件标签（`splitContext`）。格式改动要保持能解析旧消息。
  */
 import { displayPath } from './projector.ts';
-import type { AttachmentView } from '@dsh-copilot/shared';
+import type { AttachmentView } from '@harness-deck/shared';
 import { t } from '../i18n.ts';
 
 export interface SelectionContext {

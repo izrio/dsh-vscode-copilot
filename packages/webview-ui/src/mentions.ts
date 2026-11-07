@@ -2,7 +2,7 @@
  * `@路径` 引用的语法，与 dsh 的 `@deepseek-ai/dsh-file-reference/grammar` 保持一致：
  * `@path` 或 `@"带空格的 path"`；目录以 `/` 结尾；邮箱地址里的 `@` 不算。
  */
-import type { FileCandidate } from '@dsh-copilot/shared';
+import type { FileCandidate } from '@harness-deck/shared';
 
 export interface ActiveAtToken {
   /** 接受补全时要替换掉的整段（含 `@`）。 */

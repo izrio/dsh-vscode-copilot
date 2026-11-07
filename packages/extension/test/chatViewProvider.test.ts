@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { HostToWebview } from '@dsh-copilot/shared';
+import type { HostToWebview } from '@harness-deck/shared';
 
 vi.mock('vscode', () => import('./fakes/vscode.ts'));
 

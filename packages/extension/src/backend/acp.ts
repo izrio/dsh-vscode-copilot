@@ -3,7 +3,7 @@
  * 代理意外退出时显示失败和最后几行错误输出，可以从横幅里重试。
  */
 import * as vscode from 'vscode';
-import type { RuntimeStatus } from '@dsh-copilot/shared';
+import type { RuntimeStatus } from '@harness-deck/shared';
 import { AcpController, type AcpInitialize, type AuthMethod, type StoredSession } from '../acp/AcpController.ts';
 import { AcpConnection } from '../acp/connection.ts';
 import { locateExecutable } from '../runtime/locate.ts';

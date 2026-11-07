@@ -22,7 +22,7 @@ import type {
   SessionListItem,
   TabsState,
   WebviewToHost,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
 import { InteractionService } from '../dsh/InteractionService.ts';

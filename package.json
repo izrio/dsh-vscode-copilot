@@ -1,17 +1,17 @@
 {
-  "name": "dsh-vscode-copilot-workspace",
+  "name": "harness-deck-workspace",
   "private": true,
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=20.19"
   },
   "scripts": {
-    "build": "pnpm --filter @dsh-copilot/webview-ui run build && pnpm --filter harness-deck run build",
+    "build": "pnpm --filter @harness-deck/webview-ui run build && pnpm --filter harness-deck run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
     "smoke": "pnpm --filter harness-deck run smoke",
     "package": "pnpm run build && pnpm --filter harness-deck run package",
-    "dev": "pnpm --parallel --filter @dsh-copilot/webview-ui --filter harness-deck run watch"
+    "dev": "pnpm --parallel --filter @harness-deck/webview-ui --filter harness-deck run watch"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import type { HostToWebview } from '@dsh-copilot/shared';
+import type { HostToWebview } from '@harness-deck/shared';
 
 const posted: unknown[] = [];
 let AppearancePanel: typeof import('../src/components/AppearancePanel.tsx').AppearancePanel;

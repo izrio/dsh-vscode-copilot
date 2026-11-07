@@ -3,7 +3,7 @@
  * 设置里和内置项 id 相同的一项覆盖内置项（例如改成完整路径），其余追加在后面。
  * 纯函数，便于测试；extension.ts 负责读设置。
  */
-import type { BackendView } from '@dsh-copilot/shared';
+import type { BackendView } from '@harness-deck/shared';
 import type { BackendProfile } from './types.ts';
 
 /** 设置里一项 ACP 底层的原始值（用户手写，逐项校验）。 */

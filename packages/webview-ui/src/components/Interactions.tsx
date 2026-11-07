@@ -3,7 +3,7 @@
  * 回答后由 Host 回传给 dsh，卡片随 Host 推送的列表消失。
  */
 import { useEffect, useRef, useState } from 'react';
-import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
+import type { PendingInteraction, QuestionView } from '@harness-deck/shared';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';

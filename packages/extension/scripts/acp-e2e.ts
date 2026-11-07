@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { basename, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview } from '@harness-deck/shared';
 import { AcpController, type AcpInitialize, type StoredSession } from '../src/acp/AcpController.ts';
 import { AcpConnection } from '../src/acp/connection.ts';
 import { setLocale } from '../src/i18n.ts';
@@ -58,7 +58,9 @@ function check(name: string, ok: boolean, detail?: string): void {
 
 // ---- 假模型和代理的配置 ----
 const home = await mkdtemp(join(tmpdir(), 'acp-e2e-home-'));
-const workspace = await mkdtemp(join(tmpdir(), 'acp-e2e-ws-'));
+// 工作区放在临时目录下的 my-project 里：首页的工作区标签和截图里显示这个名字
+const workspace = join(await mkdtemp(join(tmpdir(), 'acp-e2e-ws-')), 'my-project');
+await mkdir(workspace);
 await writeFile(join(workspace, 'README.md'), '# demo\n');
 /** Claude Code 会自动放行 echo、ls 这类只读命令：用一个要写入的命令，审批才会出现。 */
 const bashCommand = agent === 'claude' ? 'mkdir -p out && ls' : 'echo hi && ls';

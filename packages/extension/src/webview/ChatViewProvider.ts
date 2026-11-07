@@ -4,7 +4,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@harness-deck/shared';
 
 export interface ChatViewHost {
   /** 已校验的 Webview 消息。 */

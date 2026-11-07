@@ -26,7 +26,7 @@ import type {
   SessionHeader,
   SessionListItem,
   WebviewToHost,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 import { isAbsolute, resolve } from 'node:path';
 import type { ChatBackendController } from '../backend/types.ts';
 import { getLocale, t } from '../i18n.ts';

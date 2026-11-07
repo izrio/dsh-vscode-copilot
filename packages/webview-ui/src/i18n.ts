@@ -2,7 +2,7 @@
  * 界面文字。语言由 Host 决定（VS Code 的显示语言或设置 `harnessDeck.ui.language`），随快照下发。
  * 新增文字时两种语言都要写：`en` 的类型来自 `zh`，漏写会在类型检查时报错。
  */
-import type { Locale } from '@dsh-copilot/shared';
+import type { Locale } from '@harness-deck/shared';
 import { useView } from './store.ts';
 
 const zh = {

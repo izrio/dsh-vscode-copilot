@@ -1,7 +1,7 @@
 /**
  * 控制器用到的纯函数：标题、上下文用量、待办、目标、模型状态、错误提示等。从投影值计算视图，不保存状态。
  */
-import type { Item, ModelOption, ModelState, SessionHeader } from '@dsh-copilot/shared';
+import type { Item, ModelOption, ModelState, SessionHeader } from '@harness-deck/shared';
 import type { ModelCatalog, ModelSelection } from '../dsh/DshClient.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { t } from '../i18n.ts';

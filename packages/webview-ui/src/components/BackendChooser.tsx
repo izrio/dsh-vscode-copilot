@@ -3,7 +3,7 @@
  * 每个底层显示说明、本机是否已安装；没装时给出安装命令，可以复制。
  */
 import { useState } from 'react';
-import type { BackendView } from '@dsh-copilot/shared';
+import type { BackendView } from '@harness-deck/shared';
 import type { MessageKey } from '../i18n.ts';
 import { useT } from '../i18n.ts';
 import { useView } from '../store.ts';

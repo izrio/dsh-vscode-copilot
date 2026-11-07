@@ -10,9 +10,9 @@
  * 图片：粘贴（截图、复制的图片）或拖进输入框，显示成缩略图，随消息一起发送；可以只发图片不写文字。
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import type { PromptImage } from '@dsh-copilot/shared';
+import type { PromptImage } from '@harness-deck/shared';
 // 只引入常量模块：包入口会把 zod 打进 Webview（zod 探测 new Function 会触发 CSP 违规）
-import { IMAGE_MEDIA_TYPES, MAX_IMAGES, type ImageMediaType } from '@dsh-copilot/shared/limits';
+import { IMAGE_MEDIA_TYPES, MAX_IMAGES, type ImageMediaType } from '@harness-deck/shared/limits';
 import { registerLocalImage, showToast, useView } from '../store.ts';
 import { ImageThumb } from './Images.tsx';
 import { activeAtToken, formatFileMention, type ActiveAtToken } from '../mentions.ts';

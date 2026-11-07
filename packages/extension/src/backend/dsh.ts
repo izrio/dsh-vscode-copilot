@@ -4,7 +4,7 @@
  *   RuntimeManager ──endpoint──▶ DshConnection ──client──▶ ChatController ◀──messages──▶ Webview
  */
 import * as vscode from 'vscode';
-import type { RuntimeStatus } from '@dsh-copilot/shared';
+import type { RuntimeStatus } from '@harness-deck/shared';
 import { DshConnection } from '../dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from '../runtime/RuntimeManager.ts';
 import { ChatController, type ChatControllerOptions } from '../vm/ChatController.ts';

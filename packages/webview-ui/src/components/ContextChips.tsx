@@ -1,7 +1,7 @@
 /**
  * 输入框里的上下文标签：当前编辑器（有选区时是选区，否则是文件；点击切换是否附带）和用「添加到对话」固定的选区。
  */
-import type { AttachmentView } from '@dsh-copilot/shared';
+import type { AttachmentView } from '@harness-deck/shared';
 import { postToHost } from '../vscode.ts';
 import { CloseIcon, FileIcon, SelectionIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';

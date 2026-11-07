@@ -1,4 +1,4 @@
-import type { WebviewToHost } from '@dsh-copilot/shared';
+import type { WebviewToHost } from '@harness-deck/shared';
 
 /** Webview 本地保存的状态（输入框草稿等），刷新和隐藏后仍在。 */
 export interface PersistedState {

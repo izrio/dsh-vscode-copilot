@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-copilot/shared",
+  "name": "@harness-deck/shared",
   "version": "0.0.0",
   "private": true,
   "type": "module",

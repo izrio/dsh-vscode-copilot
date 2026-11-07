@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HostToWebview, ItemsPatch } from '@dsh-copilot/shared';
+import type { HostToWebview, ItemsPatch } from '@harness-deck/shared';
 import type { DshClient, SessionSummaryWire } from '../src/dsh/DshClient.ts';
 import { AsyncQueue } from '../src/dsh/remote/asyncQueue.ts';
 import type { WaterfallHandler, WaterfallOutcome } from '../src/dsh/remote/events.ts';

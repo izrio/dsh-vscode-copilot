@@ -1,5 +1,5 @@
 /**
- * 不依赖 zod 的常量，Webview 直接从 `@dsh-copilot/shared/limits` 引入。
+ * 不依赖 zod 的常量，Webview 直接从 `@harness-deck/shared/limits` 引入。
  * 从包入口引入会把 bridge.ts 的 zod 模式一起打进 Webview，zod 启动时探测 `new Function` 会触发 CSP 违规。
  */
 

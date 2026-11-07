@@ -1,7 +1,7 @@
 /**
  * 控制器需要的编辑器能力（打开 Diff、未保存文件、确认框）。由 extension.ts 用 vscode API 实现，测试里用假的。
  */
-import type { FileCandidate } from '@dsh-copilot/shared';
+import type { FileCandidate } from '@harness-deck/shared';
 import type { Hunk, ToolDiff } from './diffs.ts';
 
 /** 要打开的 Diff。路径都是绝对路径。 */

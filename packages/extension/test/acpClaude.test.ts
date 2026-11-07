@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { Item } from '@dsh-copilot/shared';
+import type { Item } from '@harness-deck/shared';
 import { AcpController, type AcpLink } from '../src/acp/AcpController.ts';
 import { AcpError } from '../src/acp/connection.ts';
 import { AcpSessionProjection } from '../src/acp/projection.ts';

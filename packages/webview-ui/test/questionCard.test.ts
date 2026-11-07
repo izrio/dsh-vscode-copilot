@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import type { PendingInteraction } from '@dsh-copilot/shared';
+import type { PendingInteraction } from '@harness-deck/shared';
 
 const posted: unknown[] = [];
 let InteractionCard: typeof import('../src/components/Interactions.tsx').InteractionCard;

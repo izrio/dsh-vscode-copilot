@@ -1,6 +1,6 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
 import { memo, useState, type ReactNode } from 'react';
-import type { ChangedFileView, DiffRef, Item, LineStats } from '@dsh-copilot/shared';
+import type { ChangedFileView, DiffRef, Item, LineStats } from '@harness-deck/shared';
 import { splitMentions } from '../mentions.ts';
 import { diffKey, openDiff as trackDiff, requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';

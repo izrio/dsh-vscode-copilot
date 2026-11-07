@@ -3,7 +3,7 @@
  * 一轮结束后由 `turnDone` 条目显示总用时。
  */
 import { useEffect, useState } from 'react';
-import type { Item } from '@dsh-copilot/shared';
+import type { Item } from '@harness-deck/shared';
 import { useView } from '../store.ts';
 import { CheckIcon, SpinnerIcon } from './icons.tsx';
 import { useT, type Translate } from '../i18n.ts';

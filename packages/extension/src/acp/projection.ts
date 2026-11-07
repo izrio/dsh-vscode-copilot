@@ -9,7 +9,7 @@
  * - plan → 待办，usage_update → 上下文用量，available_commands_update → 斜杠命令，
  *   config_option_update / current_mode_update → 模型和模式，session_info_update → 标题。
  */
-import type { Item, LineStats } from '@dsh-copilot/shared';
+import type { Item, LineStats } from '@harness-deck/shared';
 import { splitContext } from '../vm/context.ts';
 import { countLines, lineStats, sumStats } from '../vm/diffs.ts';
 import { activityLabel, displayPath, toolVariant } from '../vm/projector.ts';

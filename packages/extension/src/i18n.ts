@@ -3,7 +3,7 @@
  * 语言在激活时按 VS Code 的显示语言（或设置 `harnessDeck.ui.language`）设定，之后随设置变化；测试默认中文。
  * 日志不翻译。新增文字时两种语言都要写：`en` 的类型来自 `zh`。
  */
-import type { Locale } from '@dsh-copilot/shared';
+import type { Locale } from '@harness-deck/shared';
 
 const zh = {
   'session.new': '新对话',

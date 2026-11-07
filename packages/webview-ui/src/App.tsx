@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { HostToWebview } from '@dsh-copilot/shared';
+import type { HostToWebview } from '@harness-deck/shared';
 import { applyHostMessage, requestPrefill, useView } from './store.ts';
 import { postToHost } from './vscode.ts';
 import { BackendChooser } from './components/BackendChooser.tsx';

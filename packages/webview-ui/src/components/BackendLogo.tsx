@@ -1,7 +1,7 @@
 /**
  * 底层的图标：内置底层用各自的官方图标（来源见 assets/backends/README.md），设置里加的 ACP 代理用名称首字母。
  */
-import type { BackendView } from '@dsh-copilot/shared';
+import type { BackendView } from '@harness-deck/shared';
 import claude from '../assets/backends/claude.svg?inline';
 import codebuddy from '../assets/backends/codebuddy.png?inline';
 import deepseek from '../assets/backends/deepseek.svg?inline';

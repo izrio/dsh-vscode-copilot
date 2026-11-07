@@ -14,7 +14,7 @@ import type {
   SessionListItem,
   TabsState,
   WorkspaceState,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 
 export interface ControllerView {
   readonly sessionKey: string;

@@ -7,7 +7,7 @@
  */
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
-import type { FileCandidate } from '@dsh-copilot/shared';
+import type { FileCandidate } from '@harness-deck/shared';
 import { SELECTION_LIMIT } from '../vm/context.ts';
 import { proposedContent, reverseHunks, reverseToolDiffs, unifiedFromHunks, unifiedFromToolDiffs } from '../vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../vm/workbench.ts';

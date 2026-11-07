@@ -1,5 +1,5 @@
 /** dsh 运行时和连接状态提示。连接正常时不显示。 */
-import type { ConnectionState, RuntimeStatus } from '@dsh-copilot/shared';
+import type { ConnectionState, RuntimeStatus } from '@harness-deck/shared';
 import { postToHost } from '../vscode.ts';
 import { ErrorIcon, LogIcon, RefreshIcon, SpinnerIcon } from './icons.tsx';
 import { useT, type Translate } from '../i18n.ts';

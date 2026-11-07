@@ -8,7 +8,7 @@
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
-import type { AppearanceState, BackendsState, RuntimeStatus } from '@dsh-copilot/shared';
+import type { AppearanceState, BackendsState, RuntimeStatus } from '@harness-deck/shared';
 import { createAcpBackend } from './backend/acp.ts';
 import { createDshBackend, processEnvWithProxy, type BackendHost } from './backend/dsh.ts';
 import { locateDsh, locateExecutable } from './runtime/locate.ts';

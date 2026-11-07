@@ -3,7 +3,7 @@
  * 「查看对话」在标签里打开子代理自己的会话（只读）。
  */
 import { useEffect, useState } from 'react';
-import type { Item } from '@dsh-copilot/shared';
+import type { Item } from '@harness-deck/shared';
 import { useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';

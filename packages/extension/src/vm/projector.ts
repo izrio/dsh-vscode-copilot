@@ -7,7 +7,7 @@
  * - 工具调用按类型渲染：命令一行、文件修改带增删行数、连续的只读操作合并成一行「浏览」；
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
-import type { ChangedFileView, ImageView, Item, LineStats, SessionChangesView } from '@dsh-copilot/shared';
+import type { ChangedFileView, ImageView, Item, LineStats, SessionChangesView } from '@harness-deck/shared';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';

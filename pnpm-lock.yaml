@@ -29,7 +29,7 @@ importers:
 
   packages/extension:
     dependencies:
-      '@dsh-copilot/shared':
+      '@harness-deck/shared':
         specifier: workspace:*
         version: link:../shared
       diff:
@@ -63,7 +63,7 @@ importers:
 
   packages/webview-ui:
     dependencies:
-      '@dsh-copilot/shared':
+      '@harness-deck/shared':
         specifier: workspace:*
         version: link:../shared
       react:

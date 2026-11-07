@@ -13,7 +13,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { mkdir } from 'node:fs/promises';
-import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview } from '@harness-deck/shared';
 import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { setLocale } from '../src/i18n.ts';

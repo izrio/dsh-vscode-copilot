@@ -23,7 +23,7 @@ import type {
   BackendsState,
   TabsState,
   WorkspaceState,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 
 export interface Toast {
   readonly id: number;

@@ -3,7 +3,7 @@
  * 图片内容不放进视图模型：本地图片按 localId、dsh 保存的图片按 attachmentId 缓存在 store 里，按需向 Host 读取。
  */
 import { useEffect, useState } from 'react';
-import type { ImageView } from '@dsh-copilot/shared';
+import type { ImageView } from '@harness-deck/shared';
 import { imageKey, requestImage, useView } from '../store.ts';
 import { CloseIcon, ErrorIcon, ImageIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';

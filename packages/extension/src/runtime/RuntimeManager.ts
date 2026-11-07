@@ -5,7 +5,7 @@
  * 设计见 docs/DESIGN.md 第 6 节。
  */
 import type { ChildProcess } from 'node:child_process';
-import type { RuntimeStatus } from '@dsh-copilot/shared';
+import type { RuntimeStatus } from '@harness-deck/shared';
 import { launchRuntime, LaunchError, probeVersion, stopRuntime, type LaunchedRuntime } from './launch.ts';
 import { locateDsh } from './locate.ts';
 import { checkVersionSupport, MINIMUM_DSH_VERSION } from './version.ts';

@@ -5,7 +5,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { RuntimeStatus } from '@dsh-copilot/shared';
+import type { RuntimeStatus } from '@harness-deck/shared';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 
 const FAKE_DSH = `#!/usr/bin/env node

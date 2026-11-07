@@ -3,7 +3,7 @@
  * 改动先在本地生效（不等设置写完），留空或「恢复默认」时跟随 VS Code。
  */
 import { useState } from 'react';
-import type { AppearanceState } from '@dsh-copilot/shared';
+import type { AppearanceState } from '@harness-deck/shared';
 import { setAppearanceLocal, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { useT } from '../i18n.ts';

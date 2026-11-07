@@ -4,7 +4,7 @@
  * 每种底层有自己的控制器，负责把底层的会话数据投影成界面视图模型（shared/viewModel），并处理 Webview 的消息；
  * 界面本身不区分底层。extension.ts 同一时间只运行一个底层，切换时停掉旧的、启动新的，Webview 重新取快照。
  */
-import type { HostSnapshot, ModelState, RuntimeStatus, WebviewToHost } from '@dsh-copilot/shared';
+import type { HostSnapshot, ModelState, RuntimeStatus, WebviewToHost } from '@harness-deck/shared';
 import type { TemplateName } from '../vm/context.ts';
 
 /** 控制器对外的接口：extension.ts 和命令只通过它和当前底层打交道。 */
