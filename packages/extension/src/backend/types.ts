@@ -40,6 +40,11 @@ export type BackendProfile =
       readonly env: Readonly<Record<string, string>>;
       /** 找不到命令时给用户的安装提示。 */
       readonly installHint?: string;
+      /**
+       * 一个进程只给一个会话推送实时更新（CodeBuddy：最近 session/new 的会话，或新进程里第一个 session/load 的会话）。
+       * 在别的会话里发消息前要重启代理再加载那个会话。
+       */
+      readonly singleSession?: boolean;
     };
 
 /** 正在运行的底层。 */

@@ -38,7 +38,7 @@
 | v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
 | v0.7 | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
 | **v0.8** | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
-| **v0.9** | 多底层：插件改名 Harness Deck；dsh 成为底层之一，另可接入 ACP（Agent Client Protocol）代理，默认配置 oh-my-pi。结构见第 15 节；设置从 `dsh.*` 改为 `harnessDeck.*`（第 8 节的旧名自动迁移） |
+| **v0.9** | 多底层：插件改名 Harness Deck；dsh 成为底层之一，另可接入 ACP（Agent Client Protocol）代理，内置 oh-my-pi 和 CodeBuddy。结构见第 15 节，CodeBuddy 的适配见 15.1；设置从 `dsh.*` 改为 `harnessDeck.*`（第 8 节的旧名自动迁移） |
 
 ---
 
@@ -995,7 +995,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 插件改名为 Harness Deck 后，对话面板背后的「底层」可以切换。界面和视图模型（`shared/viewModel`）与底层无关；每种底层有自己的控制器，实现同一个接口 `ChatBackendController`（`backend/types.ts`），把底层的数据投影成视图模型、处理 Webview 消息。
 
 ```
-extension.ts ── 底层列表（dsh + 设置 harnessDeck.backends）── 当前底层 RunningBackend
+extension.ts ── 底层列表（dsh + 内置 ACP 代理 + 设置 harnessDeck.backends）── 当前底层 RunningBackend
                                                          ├─ dsh：RuntimeManager → DshConnection → ChatController
                                                          └─ ACP：AcpConnection（stdio JSON-RPC）→ AcpController
 ```
@@ -1003,7 +1003,7 @@ extension.ts ── 底层列表（dsh + 设置 harnessDeck.backends）── �
 | 模块 | 职责 |
 | --- | --- |
 | `backend/types.ts` | 控制器接口、底层配置、正在运行的底层 |
-| `backend/profiles.ts` | 解析设置里的 ACP 底层（校验、去重、默认 id） |
+| `backend/profiles.ts` | 内置的 ACP 代理（oh-my-pi、CodeBuddy），解析设置里的 ACP 底层（校验、去重、默认 id、同 id 覆盖内置项） |
 | `backend/dsh.ts` / `backend/acp.ts` | 两种底层的生命周期：启动、状态、重启、停止 |
 | `acp/connection.ts` | 启动代理进程，按行分隔的 JSON-RPC 2.0；回答代理的请求、转发 `session/update` |
 | `acp/projection.ts` | 一个 ACP 会话的投影：回复和推理按 messageId 拼接，工具调用按 kind / 工具名渲染（读和搜索合并成「浏览」、命令带输出、修改带增删行数和 diff），plan → 待办，usage、命令、config option、标题 |
@@ -1016,5 +1016,23 @@ extension.ts ── 底层列表（dsh + 设置 harnessDeck.backends）── �
 - 代理的 config option 按 category 对应界面：model → 模型选择，thought_level → 思考等级（挂在当前模型下），mode → 权限选择（显示代理给的名称）；mode 为 plan 时显示计划模式标记。
 - 文案里的「dsh」换成当前底层的名称（Webview 文案的 `{agent}` 占位）；只对 dsh 成立的内容（沙箱说明、API Key、浏览器打开）在其他底层不显示。
 - ACP 没有的能力（每轮改动汇总、会话改动栏、插队、子代理、提问卡片、多开标签）在界面上自然不出现。
+- 内置的 ACP 代理写在代码里而不是设置的默认值里：用户改过 `harnessDeck.backends` 后默认值不再生效，新加的内置项会看不到。设置里 id 相同的一项替换内置项。
+- 代理要求登录（`session/new` 返回 -32000）：只有一种方式时直接 `authenticate`；有多种时让用户选，`authenticate` 等浏览器登录完成，期间显示可以取消的进度。
 
-测试：`acp/projection` 的单元测试用真实 oh-my-pi 的帧；`scripts/acp-e2e.ts` 用真实的 `omp acp` + 本地假模型 + Chromium 里的 Webview 跑通对话、审批、工具行、会话列表和回放、模式、停止；CI（`acp-compat.yml`）每天对 oh-my-pi 的固定版本和最新版本各跑一次。
+### 15.1 CodeBuddy 的差异
+
+CodeBuddy（`codebuddy --acp`，2.181 测试）基本遵守 ACP，但有几处要适配（实测，帧见 `test/fixtures/codebuddy/tools.json`）：
+
+| 现象 | 处理 |
+| --- | --- |
+| 工具名不在 `name`，在 `_meta['codebuddy.ai/toolName']`；第一帧 `kind` 是 other，之后同一个 id 再发一次完整的 `tool_call` | 工具名从 `_meta` 取；类型后来才知道是读 / 搜索时，把这一行改成「浏览」 |
+| 参数生成完时，`tool_call_update` 的内容是参数 JSON 原样；完成时的内容只是「已写入」这样的文字 | 回显参数的内容不当输出；合并时保留之前的 diff |
+| 命令结果在 `rawOutput.text`，格式 `Stdout: …\n\nStderr: …\nExit Code: N` | 只显示输出，非 0 退出码附在末尾 |
+| 待办是 TaskCreate / TaskUpdate 工具，没有 `plan` 更新；完成帧的 `_meta['codebuddy.ai/rawResponse'].todos` 是整张表 | 待办工具不显示成行，整张表进状态条 |
+| Edit 的 diff 是 old_string → new_string 片段 | 片段在磁盘文件里只出现一次时还原整个文件的修改前内容，Diff 显示整个文件 |
+| 审批请求的 toolCall 只有 id 和参数 | 用已收到的工具调用补上标题、类型和路径 |
+| 当前模型可以不在模型选项里（第三方模型、`--model`） | 补在选项最前面 |
+| 不支持 `session/list` | 用本地记住的会话列表 |
+| **一个进程只给一个会话推送实时更新**：最近 `session/new` 的会话，或新进程里第一个 `session/load` 的会话。之后再 load 别的会话只回放历史，回复、工具和审批都收不到（`takeWriter`、`session/resume` 都不能改变） | 底层配置 `singleSession`（CodeBuddy 内置为 true）。控制器记住绑定的会话：在没有绑定的会话里发消息时重启代理，新进程第一个加载这个会话后再发送；绑定的会话正在回复时不新建草稿会话（等这一轮结束再建），也不在别的会话里发送（提示等它结束或先停止） |
+
+测试：`acp/projection` 的单元测试用真实 oh-my-pi 和 CodeBuddy 的帧；`scripts/acp-e2e.ts` 用真实的 `omp acp` / `codebuddy --acp` + 本地假模型（oh-my-pi 走 Anthropic Messages，CodeBuddy 用 `CODEBUDDY_BASE_URL` 走 OpenAI Chat Completions，都不需要账号）+ Chromium 里的 Webview 跑通对话、审批、工具行、待办、会话列表和回放、模式、停止，CodeBuddy 还覆盖切回旧会话时的重启和重新加载；CI（`acp-compat.yml`）每天对两者的固定版本和最新版本各跑一次。

@@ -4,7 +4,7 @@
  */
 import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@dsh-copilot/shared';
-import { AcpController, type AcpInitialize, type StoredSession } from '../acp/AcpController.ts';
+import { AcpController, type AcpInitialize, type AuthMethod, type StoredSession } from '../acp/AcpController.ts';
 import { AcpConnection } from '../acp/connection.ts';
 import { locateExecutable } from '../runtime/locate.ts';
 import { t } from '../i18n.ts';
@@ -30,6 +30,8 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
     saveActiveSessionId: (sessionId) => void state.update(key('activeSessionId'), sessionId),
     loadSessions: () => state.get<StoredSession[]>(key('sessions')),
     saveSessions: (sessions) => void state.update(key('sessions'), [...sessions]),
+    authenticate: (methods, run) => signIn(profile.name, methods, run, host.log),
+    singleSession: profile.singleSession === true,
   });
 
   const setStatus = (next: RuntimeStatus): void => {
@@ -123,4 +125,33 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
       controller.dispose();
     },
   };
+}
+
+/**
+ * 代理要求登录：只有一种方式时直接用，多种时让用户选（CodeBuddy：iOA、Google/GitHub、微信、企业域名）。
+ * 登录请求要等用户在浏览器里完成，期间显示可以取消的进度；取消只是不再等待，代理那边的登录页仍然有效。
+ */
+async function signIn(agent: string, methods: readonly AuthMethod[], run: (methodId: string) => Promise<unknown>, log: (line: string) => void): Promise<boolean> {
+  let method = methods[0];
+  if (methods.length > 1) {
+    const picked = await vscode.window.showQuickPick(
+      methods.map((m) => ({ label: m.name || m.id, ...(m.description ? { detail: m.description } : {}), id: m.id })),
+      { placeHolder: t('acp.signInPick', agent), ignoreFocusOut: true },
+    );
+    method = picked ? methods.find((m) => m.id === picked.id) : undefined;
+  }
+  if (!method) return false;
+  const chosen = method;
+  log(`登录 ${agent}：${chosen.id}`);
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t('acp.signingIn', agent), cancellable: true },
+    (_progress, token) =>
+      new Promise<boolean>((resolve, reject) => {
+        const cancel = token.onCancellationRequested(() => resolve(false));
+        run(chosen.id).then(
+          () => resolve(true),
+          (error: unknown) => reject(error instanceof Error ? error : new Error(String(error))),
+        ).finally(() => cancel.dispose());
+      }),
+  );
 }

@@ -1,10 +1,14 @@
 /**
- * ACP 底层的界面端到端测试：真实的 oh-my-pi（`omp acp`）+ 本地假模型 + Chromium 里的真实 Webview。
+ * ACP 底层的界面端到端测试：真实的代理 + 本地假模型 + Chromium 里的真实 Webview。
  *
  *   pnpm --filter harness-deck acp-e2e -- --omp <omp 的 cli.js 或可执行文件> [--bun <bun>] [--out <截图目录>]
+ *   pnpm --filter harness-deck acp-e2e -- --codebuddy <codebuddy 可执行文件> [--out <截图目录>]
  *
- * 覆盖：启动和 initialize、草稿会话带来的模型和模式、流式回复、工具行（写文件、命令）、审批、会话列表、
- * 重新打开会话（session/load 回放）、切换模式、停止生成。
+ * oh-my-pi 用自定义提供方（Anthropic Messages）指向假模型；CodeBuddy 用 CODEBUDDY_API_KEY + CODEBUDDY_BASE_URL
+ * （OpenAI Chat Completions），都不需要真实账号。
+ *
+ * 覆盖：启动和 initialize、草稿会话带来的模型和模式、流式回复、工具行（读文件、写文件、命令）、审批、待办、
+ * 会话列表、重新打开会话（session/load 回放）、切换模式、停止生成。
  */
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -24,17 +28,24 @@ import { DARK_THEME, VSCODE_DEFAULT_STYLES } from './theme-vars.ts';
 
 const { values: cli } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== '--'),
-  options: { omp: { type: 'string' }, bun: { type: 'string' }, out: { type: 'string' }, headed: { type: 'boolean', default: false } },
+  options: {
+    omp: { type: 'string' },
+    bun: { type: 'string' },
+    codebuddy: { type: 'string' },
+    out: { type: 'string' },
+    headed: { type: 'boolean', default: false },
+  },
 });
-if (!cli.omp) {
-  console.error('需要 --omp <omp 可执行文件，或 @oh-my-pi/pi-coding-agent 的 dist/cli.js（配合 --bun）>');
+if (!cli.omp && !cli.codebuddy) {
+  console.error('需要 --omp <omp 可执行文件，或 @oh-my-pi/pi-coding-agent 的 dist/cli.js（配合 --bun）>，或 --codebuddy <codebuddy 可执行文件>');
   process.exit(2);
 }
+const agent = cli.codebuddy ? 'codebuddy' : 'omp';
 setLocale('zh');
 const playwright = loadPlaywright();
 const here = fileURLToPath(new URL('.', import.meta.url));
 const webviewDist = resolve(here, '../dist/webview');
-const outDir = resolve(cli.out ?? join(here, '../../../.e2e-screenshots/acp'));
+const outDir = resolve(cli.out ?? join(here, `../../../.e2e-screenshots/acp-${agent}`));
 await mkdir(outDir, { recursive: true });
 
 const results: { name: string; ok: boolean }[] = [];
@@ -43,30 +54,58 @@ function check(name: string, ok: boolean, detail?: string): void {
   console.log(`${ok ? '✔' : '✘'} ${name}${detail && !ok ? `  (${detail})` : ''}`);
 }
 
-// ---- 假模型和 omp 的配置：自定义提供方指向假模型 ----
+// ---- 假模型和代理的配置 ----
+const home = await mkdtemp(join(tmpdir(), 'acp-e2e-home-'));
+const workspace = await mkdtemp(join(tmpdir(), 'acp-e2e-ws-'));
+await writeFile(join(workspace, 'README.md'), '# demo\n');
+/** 两种代理的工具名和参数不同：omp 是 `write { path }`，CodeBuddy 是 `Write { file_path }`（绝对路径）。 */
+const tools =
+  agent === 'omp'
+    ? { read: { name: 'read', input: { path: 'README.md' } }, write: { name: 'write', input: { path: 'notes.md', content: '# 笔记\n\n第一条\n' } }, bash: { name: 'bash', input: { command: 'echo hi && ls' } } }
+    : {
+        read: { name: 'Read', input: { file_path: join(workspace, 'README.md') } },
+        write: { name: 'Write', input: { file_path: join(workspace, 'notes.md'), content: '# 笔记\n\n第一条\n' } },
+        bash: { name: 'Bash', input: { command: 'echo hi && ls', description: 'List files' } },
+      };
 const model = await startMockModel({
-  HELLO: { kind: 'text', chunks: ['你好，', '我是 omp。'], delayMs: 60 },
-  WORK: {
+  HELLO: { kind: 'text', chunks: ['你好，', `我是 ${agent}。`], delayMs: 60 },
+  WORK: { kind: 'tools', tools: [tools.read, tools.write, tools.bash], after: '写好了笔记，也看过目录了。' },
+  TODO: {
     kind: 'tools',
     tools: [
-      { name: 'write', input: { path: 'notes.md', content: '# 笔记\n\n第一条\n' } },
-      { name: 'bash', input: { command: 'echo hi && ls' } },
+      { name: 'TaskCreate', input: { subject: '读代码', description: '先读', activeForm: '正在读代码' } },
+      { name: 'TaskCreate', input: { subject: '改代码', description: '再改' } },
+      { name: 'TaskUpdate', input: { taskId: '1', status: 'completed' } },
+      { name: 'TaskUpdate', input: { taskId: '2', status: 'in_progress' } },
     ],
-    after: '写好了笔记，也看过目录了。',
+    after: '列好计划了。',
   },
   SLOW: { kind: 'hold', chunks: ['正在', '慢慢', '想'] },
   default: { kind: 'text', chunks: ['好的。'] },
 } as never);
-const home = await mkdtemp(join(tmpdir(), 'acp-e2e-home-'));
-const workspace = await mkdtemp(join(tmpdir(), 'acp-e2e-ws-'));
-await writeFile(join(workspace, 'README.md'), '# demo\n');
-await mkdir(join(home, '.omp', 'agent'), { recursive: true });
-await writeFile(
-  join(home, '.omp', 'agent', 'models.yml'),
-  `providers:\n  mock:\n    baseUrl: ${model.url}\n    api: anthropic-messages\n    apiKey: dummy\n    models:\n      - id: mock-model\n        name: Mock Model\n      - id: mock-big\n        name: Mock Big\n`,
-);
-const command = cli.bun ?? cli.omp;
-const args = cli.bun ? [cli.omp, 'acp', '--model', 'mock/mock-model'] : ['acp', '--model', 'mock/mock-model'];
+let command: string;
+let args: string[];
+let agentEnv: Record<string, string> = {};
+/** 新对话里模型选择应该显示的名字、默认模式的名字。 */
+let modelLabel: string;
+let defaultModeLabel: string;
+if (agent === 'omp') {
+  await mkdir(join(home, '.omp', 'agent'), { recursive: true });
+  await writeFile(
+    join(home, '.omp', 'agent', 'models.yml'),
+    `providers:\n  mock:\n    baseUrl: ${model.url}\n    api: anthropic-messages\n    apiKey: dummy\n    models:\n      - id: mock-model\n        name: Mock Model\n      - id: mock-big\n        name: Mock Big\n`,
+  );
+  command = cli.bun ?? cli.omp!;
+  args = cli.bun ? [cli.omp!, 'acp', '--model', 'mock/mock-model'] : ['acp', '--model', 'mock/mock-model'];
+  modelLabel = 'Mock Model';
+  defaultModeLabel = 'Default';
+} else {
+  command = cli.codebuddy!;
+  args = ['--acp', '--model', 'mock-model'];
+  agentEnv = { CODEBUDDY_API_KEY: 'dummy', CODEBUDDY_BASE_URL: `${model.url}/v1` };
+  modelLabel = 'mock-model';
+  defaultModeLabel = 'Always Ask';
+}
 
 // ---- 控制器和代理进程 ----
 let page: Page | undefined;
@@ -82,24 +121,53 @@ const controller = new AcpController({
   log: (line) => console.log(`  [acp] ${line}`),
   openExternal: () => undefined,
   showLogs: () => undefined,
-  restartRuntime: () => undefined,
-  backends: () => ({ items: [{ id: 'dsh', name: 'dsh', kind: 'dsh' }, { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp' }], active: 'oh-my-pi' }),
+  // 和 backend/acp.ts 一样：停掉进程再启动、initialize、setLink（单会话代理切换会话时会用到）
+  restartRuntime: () => void restartAgent(),
+  singleSession: agent === 'codebuddy',
+  backends: () => ({ items: [{ id: 'dsh', name: 'dsh', kind: 'dsh' }, { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp' }, { id: 'codebuddy', name: 'CodeBuddy', kind: 'acp' }], active: agent === 'omp' ? 'oh-my-pi' : 'codebuddy' }),
   loadActiveSessionId: () => activeSessionId,
   saveActiveSessionId: (id) => void (activeSessionId = id),
   loadSessions: () => stored,
   saveSessions: (list) => void (stored = [...list]),
 });
-const connection = new AcpConnection({
-  command,
-  args,
-  cwd: workspace,
-  env: { ...process.env, HOME: home },
-  log: (line) => console.log(`  [conn] ${line}`),
-  onStderr: (line) => console.log(`  [omp] ${line}`),
-  onNotification: (method, params) => method === 'session/update' && controller.onSessionUpdate(params),
-  onRequest: (method, params) => controller.onAgentRequest(method, params),
-  onExit: (code) => console.log(`  [omp] exited ${code}`),
-});
+const newConnection = () =>
+  new AcpConnection({
+    command,
+    args,
+    cwd: workspace,
+    env: { ...process.env, HOME: home, USERPROFILE: home, ...agentEnv },
+    log: (line) => console.log(`  [conn] ${line}`),
+    onStderr: (line) => console.log(`  [${agent}] ${line}`),
+    onNotification: (method, params) => {
+      if (process.env.ACP_E2E_TRACE) console.log(`  [trace] ${method} ${JSON.stringify(params).slice(0, 240)}`);
+      if (method === 'session/update') controller.onSessionUpdate(params);
+    },
+    onRequest: (method, params) => controller.onAgentRequest(method, params),
+    onExit: (code) => console.log(`  [${agent}] exited ${code}`),
+  });
+let connection = newConnection();
+let starts = 0;
+
+async function connect(): Promise<AcpInitialize> {
+  starts++;
+  controller.setRuntimeStatus({ kind: 'starting' });
+  await connection.start();
+  const init = await connection.request<AcpInitialize>('initialize', {
+    protocolVersion: 1,
+    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    clientInfo: { name: 'harness-deck', version: 'e2e' },
+  });
+  controller.setRuntimeStatus({ kind: 'connected', version: init.agentInfo?.version ?? '', newerThanTested: false });
+  controller.setLink(connection, init);
+  return init;
+}
+
+async function restartAgent(): Promise<void> {
+  controller.setLink(undefined);
+  await connection.dispose();
+  connection = newConnection();
+  await connect();
+}
 
 // ---- 页面 ----
 const NONCE = 'e2e-nonce';
@@ -143,38 +211,41 @@ try {
     await composer.press('Enter');
   };
 
-  // 1. 启动 omp，initialize
-  controller.setRuntimeStatus({ kind: 'starting' });
-  await connection.start();
-  const init = await connection.request<AcpInitialize>('initialize', {
-    protocolVersion: 1,
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-    clientInfo: { name: 'harness-deck', version: 'e2e' },
-  });
-  check('omp 启动，initialize 返回代理信息', init.agentInfo?.name === 'omp', JSON.stringify(init.agentInfo));
-  controller.setRuntimeStatus({ kind: 'connected', version: init.agentInfo?.version ?? '', newerThanTested: false });
-  controller.setLink(connection, init);
+  // 1. 启动代理，initialize
+  const init = await connect();
+  if (agent === 'omp') check('omp 启动，initialize 返回代理信息', init.agentInfo?.name === 'omp', JSON.stringify(init.agentInfo));
+  // CodeBuddy 的 initialize 没有 agentInfo，有登录方式
+  else check('CodeBuddy 启动，initialize 返回登录方式', (init.authMethods?.length ?? 0) > 1, JSON.stringify(init.authMethods));
 
   // 2. 草稿会话：发消息前模型和模式就能用
-  await page.getByTestId('model-picker').locator('.toolbar-button__text', { hasText: 'Mock Model' }).waitFor({ timeout: 30_000 }).then(
-    () => check('新对话里模型选择显示 omp 的当前模型', true),
-    async () => check('新对话里模型选择显示 omp 的当前模型', false, await page!.getByTestId('model-picker').innerText()),
+  await page.getByTestId('model-picker').locator('.toolbar-button__text', { hasText: modelLabel }).waitFor({ timeout: 60_000 }).then(
+    () => check(`新对话里模型选择显示代理的当前模型（${modelLabel}）`, true),
+    async () => check(`新对话里模型选择显示代理的当前模型（${modelLabel}）`, false, await page!.getByTestId('model-picker').innerText()),
   );
-  check('权限选择显示 omp 的模式（Default）', ((await page.getByTestId('permission-picker').getAttribute('title')) ?? '').includes('Default'));
+  check(`权限选择显示代理的模式（${defaultModeLabel}）`, ((await page.getByTestId('permission-picker').getAttribute('title')) ?? '').includes(defaultModeLabel));
   await shot('01-empty');
 
   // 3. 流式回复
   await send('HELLO 打个招呼');
-  await page.locator('.assistant', { hasText: '我是 omp' }).waitFor({ timeout: 30_000 }).then(
+  await page.locator('.assistant', { hasText: `我是 ${agent}` }).waitFor({ timeout: 30_000 }).then(
     () => check('流式回复显示在对话里', true),
     () => check('流式回复显示在对话里', false),
   );
   check('用户消息显示', (await page.locator('.user', { hasText: 'HELLO 打个招呼' }).count()) === 1);
 
-  // 4. 工具：写文件（无需审批）、命令（需要审批）
+  // 4. 工具：读文件、写文件（omp 无需审批，CodeBuddy 默认模式要审批）、命令（需要审批）
   await send('WORK 写个笔记再看看目录');
   const approval = page.getByTestId('approval-card');
-  await approval.waitFor({ timeout: 30_000 }).then(
+  if (agent === 'codebuddy') {
+    await approval.waitFor({ timeout: 30_000 }).then(
+      () => check('写文件需要审批时显示审批卡片', true),
+      () => check('写文件需要审批时显示审批卡片', false),
+    );
+    check('写文件的审批卡片显示文件（从已收到的工具调用补上）', (await approval.innerText()).includes('notes.md'), await approval.innerText().catch(() => ''));
+    await approval.getByRole('button', { name: /允许本次/u }).click();
+    await page.waitForFunction(() => !document.querySelector('[data-testid="approval-card"]') || document.querySelector('[data-testid="approval-card"]')?.textContent?.includes('echo hi'), undefined, { timeout: 30_000 });
+  }
+  await approval.filter({ hasText: 'echo hi' }).waitFor({ timeout: 30_000 }).then(
     () => check('命令需要审批时显示审批卡片', true),
     () => check('命令需要审批时显示审批卡片', false),
   );
@@ -182,14 +253,30 @@ try {
   await shot('02-approval');
   await approval.getByRole('button', { name: /允许本次/u }).click();
   await page.locator('.assistant', { hasText: '写好了笔记' }).waitFor({ timeout: 30_000 });
+  const explore = page.locator('.activity', { hasText: '已浏览' });
+  check('读文件显示成「浏览」行', (await explore.count()) === 1 && (await explore.innerText()).includes('读取 1 个文件'), await explore.first().innerText().catch(() => ''));
   const edit = page.locator('.activity--edit', { hasText: 'notes.md' });
   check('写文件显示成修改行和增加的行数', (await edit.count()) === 1 && (await edit.innerText()).includes('+3'), await edit.innerText().catch(() => ''));
   const commandRow = page.locator('.activity--command', { hasText: 'echo hi' });
   check('命令显示成「已运行」行', (await commandRow.count()) === 1 && (await commandRow.innerText()).includes('已运行'), await commandRow.innerText().catch(() => ''));
   await commandRow.locator('.activity__row').click();
   check('点开命令看到输出', (await commandRow.innerText()).includes('notes.md'), await commandRow.innerText());
+  check('命令输出里没有代理的包装格式', !(await commandRow.innerText()).includes('Stdout:'), await commandRow.innerText());
   check('笔记真的写到了工作区', (await readFile(join(workspace, 'notes.md'), 'utf8').catch(() => '')).includes('第一条'));
   await shot('03-tools');
+
+  // 待办：omp 用 plan 更新；CodeBuddy 的 TaskCreate / TaskUpdate 完成时带上整张待办表
+  if (agent === 'codebuddy') {
+    await send('TODO 列个计划');
+    await page.locator('.assistant', { hasText: '列好计划了' }).waitFor({ timeout: 30_000 });
+    const todo = page.locator('.todo-card');
+    await todo.waitFor({ timeout: 10_000 }).then(
+      async () => check('待办显示在输入框上方的状态条', (await todo.innerText()).includes('改代码') && (await todo.innerText()).includes('1/2'), await todo.innerText()),
+      () => check('待办显示在输入框上方的状态条', false),
+    );
+    check('待办工具不显示成对话里的工具行', (await page.locator('.activity', { hasText: 'TaskCreate' }).count()) === 0);
+    await shot('03b-todos');
+  }
 
   // 5. 会话列表、新对话、重新打开会话（session/load 回放）
   await page.locator('.header__title').click();
@@ -207,8 +294,8 @@ try {
   await page.locator('.header__title').click();
   await page.locator('.sessions-menu .menu-item', { hasText: 'HELLO 打个招呼' }).click();
   await page.locator('.user', { hasText: 'HELLO 打个招呼' }).waitFor({ timeout: 30_000 }).then(
-    () => check('重新打开会话：历史从 omp 回放', true),
-    () => check('重新打开会话：历史从 omp 回放', false),
+    () => check('重新打开会话：历史从代理回放', true),
+    () => check('重新打开会话：历史从代理回放', false),
   );
   check('回放的历史里有工具行', (await page.locator('.activity--command', { hasText: 'echo hi' }).count()) === 1);
 
@@ -216,8 +303,8 @@ try {
   await page.getByTestId('permission-picker').click();
   await page.getByRole('menuitem', { name: /Plan/u }).click();
   await page.getByTestId('plan-badge').waitFor({ timeout: 10_000 }).then(
-    () => check('切换到 omp 的 Plan 模式后显示计划模式标记', true),
-    () => check('切换到 omp 的 Plan 模式后显示计划模式标记', false),
+    () => check('切换到代理的 Plan 模式后显示计划模式标记', true),
+    () => check('切换到代理的 Plan 模式后显示计划模式标记', false),
   );
   await page.getByTestId('plan-badge').click();
   await page.waitForFunction(() => !document.querySelector('[data-testid="plan-badge"]'), undefined, { timeout: 10_000 }).then(
@@ -225,9 +312,15 @@ try {
     () => check('点击标记退出计划模式', false),
   );
 
-  // 7. 停止生成
+  // 7. 停止生成。CodeBuddy：上面点过新对话（新建了会话），回到旧会话发消息时要重启代理、重新加载这个会话才收得到回复
   await send('SLOW 慢慢想');
   await page.locator('.assistant', { hasText: '正在慢慢想' }).waitFor({ timeout: 30_000 });
+  if (agent === 'codebuddy') {
+    check('回到旧会话发消息：重启 CodeBuddy 并重新加载这个会话后收到流式回复', starts === 2, `启动了 ${starts} 次`);
+    check('重新加载后历史还在', (await page.locator('.user', { hasText: 'HELLO 打个招呼' }).count()) === 1);
+  } else {
+    check('不需要重启代理', starts === 1, `启动了 ${starts} 次`);
+  }
   check('运行中显示运行状态', (await page.getByTestId('run-status').count()) === 1);
   await page.getByRole('button', { name: '停止生成' }).click();
   await page.locator('.notice', { hasText: '已停止生成' }).waitFor({ timeout: 30_000 }).then(
@@ -236,6 +329,11 @@ try {
   );
   await shot('04-stopped');
   check('页面没有脚本错误', errors.length === 0, errors.join(' | '));
+} catch (error) {
+  // 某一步等不到时保留现场
+  await page?.screenshot({ path: join(outDir, 'failure.png') }).catch(() => undefined);
+  console.log('模型收到的请求：', JSON.stringify(model.requests.map((r) => ({ path: r.path, marker: r.marker, user: r.userText?.slice(-60) }))));
+  throw error;
 } finally {
   await browser.close();
   await connection.dispose();

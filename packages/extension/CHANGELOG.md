@@ -4,10 +4,12 @@
 
 **改名为 Harness Deck，支持多个底层。** / **Renamed to Harness Deck, with switchable backends.**
 
-- 底层可以切换：内置的 dsh，或设置 `harnessDeck.backends` 里的 ACP（Agent Client Protocol）代理，默认配好了 oh-my-pi（`omp acp`）。「…」→「底层」或命令「切换底层」里切换；每个底层的会话分开保存。
-  Switchable backends: the built-in dsh, or ACP agents from `harnessDeck.backends` (oh-my-pi preconfigured). Switch from "…" → Backend or the Switch Backend command; sessions are kept per backend.
-- ACP 底层支持流式回复和推理、工具行（读文件和搜索合并、命令输出、修改的增删行数和 Diff）、审批、待办、用量、斜杠命令、模型和思考等级、模式（计划模式）、会话列表和重新打开、停止、图片；用真实的 oh-my-pi 做端到端测试，并每天在 CI 里对 oh-my-pi 的固定版本和最新版本各跑一次。
-  ACP backends cover streaming replies and reasoning, tool rows (grouped reads/searches, command output, edit line counts and diffs), approvals, to-dos, usage, slash commands, model and thought level, modes (plan), session list and reload, stop and images; tested end to end against real oh-my-pi, nightly in CI.
+- 底层可以切换：dsh，以及内置的 ACP（Agent Client Protocol）代理 oh-my-pi（`omp acp`）和 CodeBuddy（`codebuddy --acp`），也可以在设置 `harnessDeck.backends` 里加别的 ACP 代理。「…」→「底层」或命令「切换底层」里切换；每个底层的会话分开保存。
+  Switchable backends: dsh, the built-in ACP (Agent Client Protocol) agents oh-my-pi (`omp acp`) and CodeBuddy (`codebuddy --acp`), and any ACP agent added in `harnessDeck.backends`. Switch from "…" → Backend or the Switch Backend command; sessions are kept per backend.
+- CodeBuddy：需要登录时选择登录方式（iOA、Google/GitHub、微信、企业域名），在浏览器里完成；也可以用 `CODEBUDDY_API_KEY`。待办（TaskCreate / TaskUpdate）进入输入框上方的状态条，命令输出去掉包装格式，Edit 的 Diff 显示整个文件。CodeBuddy 的一个进程只给一个会话推送回复，切回别的会话发消息时插件会重启 CodeBuddy 并重新加载那个会话（约 2 秒）。
+  CodeBuddy: pick a sign-in method (iOA, Google/GitHub, WeChat, enterprise domain) and finish in the browser, or use `CODEBUDDY_API_KEY`. To-dos (TaskCreate / TaskUpdate) go to the status strip, command output is unwrapped, Edit diffs show the whole file. A CodeBuddy process streams to one session only, so sending in another session restarts CodeBuddy and reloads that session (about 2 s).
+- ACP 底层支持流式回复和推理、工具行（读文件和搜索合并、命令输出、修改的增删行数和 Diff）、审批、待办、用量、斜杠命令、模型和思考等级、模式（计划模式）、会话列表和重新打开、停止、图片；用真实的 oh-my-pi 和 CodeBuddy 做端到端测试，并每天在 CI 里对它们的固定版本和最新版本各跑一次。
+  ACP backends cover streaming replies and reasoning, tool rows (grouped reads/searches, command output, edit line counts and diffs), approvals, to-dos, usage, slash commands, model and thought level, modes (plan), session list and reload, stop and images; tested end to end against real oh-my-pi and CodeBuddy, nightly in CI.
 - 插件改名为 Harness Deck：命令、视图和设置从 `dsh.*` 改为 `harnessDeck.*`（原来的设置第一次启动时自动迁移），安装包改名为 `harness-deck-<版本>.vsix`。这是新的扩展 id，升级后可以卸载 DSH Copilot。
   Renamed to Harness Deck: commands, views and settings moved from `dsh.*` to `harnessDeck.*` (old settings are migrated on first start); the package is `harness-deck-<version>.vsix`. It is a new extension id, so DSH Copilot can be uninstalled afterwards.
 - 子代理：dsh 派出的子代理显示成一张卡片（任务描述、状态、用时，点开看任务和回答），可以打开子代理自己的对话（只读）。

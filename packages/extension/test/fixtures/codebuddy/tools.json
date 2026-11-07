@@ -1,0 +1,1488 @@
+{
+ "note": "Real frames from codebuddy --acp 2.181.0 with a local mock model (paths shortened to /w, tracing _meta removed).",
+ "live": [
+  {
+   "prompt": "READ 一下"
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "先看看文件。"
+   },
+   "messageId": "01a1b477-609a-7396-a9dd-73521e3124b9"
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "title": "Read",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Read"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "rawInput": {
+    "file_path": "/w/notes.txt"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"file_path\":\"/w/notes.txt\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Read"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/notes.txt"
+   },
+   "title": "Read /w/notes.txt",
+   "kind": "read",
+   "content": [],
+   "locations": [
+    {
+     "path": "/w/notes.txt",
+     "line": 0
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Read",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "   1→line one\n   2→line two"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "   1→line one\n   2→line two"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Read"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "文件有两行。"
+   },
+   "messageId": "01a1b477-612d-7f1c-aaae-ec97b967c1f7"
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "READ 一下"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "WRITE 文件"
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "title": "Write",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Write"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "rawInput": {
+    "file_path": "/w/hello.txt",
+    "content": "hello\nworld\n"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"file_path\":\"/w/hello.txt\",\"content\":\"hello\\nworld\\n\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Write"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/hello.txt",
+    "content": "hello\nworld\n"
+   },
+   "title": "Write /w/hello.txt",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/hello.txt",
+     "oldText": null,
+     "newText": "hello\nworld\n"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/hello.txt"
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Write",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "permission": {
+    "sessionId": "01a1b477-5ebf-76cd-8f9f-5b84a6f72413",
+    "options": [
+     {
+      "kind": "allow_always",
+      "name": "Always Allow",
+      "optionId": "allow_always"
+     },
+     {
+      "kind": "allow_once",
+      "name": "Allow",
+      "optionId": "allow"
+     },
+     {
+      "kind": "reject_once",
+      "name": "Reject",
+      "optionId": "reject"
+     }
+    ],
+    "toolCall": {
+     "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+     "rawInput": {
+      "file_path": "/w/hello.txt",
+      "content": "hello\nworld\n"
+     },
+     "_meta": {
+      "codebuddy.ai/toolName": "Write"
+     }
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Successfully created and wrote to new file: /w/hello.txt"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Successfully created and wrote to new file: /w/hello.txt"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Write"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "title": "Edit",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "rawInput": {
+    "file_path": "/w/notes.txt",
+    "old_string": "line two",
+    "new_string": "line 2\nline three"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"file_path\":\"/w/notes.txt\",\"old_string\":\"line two\",\"new_string\":\"line 2\\nline three\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/notes.txt",
+    "old_string": "line two",
+    "new_string": "line 2\nline three"
+   },
+   "title": "Edit `/w/notes.txt`",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/notes.txt",
+     "oldText": "line two",
+     "newText": "line 2\nline three"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/notes.txt"
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "permission": {
+    "sessionId": "01a1b477-5ebf-76cd-8f9f-5b84a6f72413",
+    "options": [
+     {
+      "kind": "allow_always",
+      "name": "Always Allow",
+      "optionId": "allow_always"
+     },
+     {
+      "kind": "allow_once",
+      "name": "Allow",
+      "optionId": "allow"
+     },
+     {
+      "kind": "reject_once",
+      "name": "Reject",
+      "optionId": "reject"
+     }
+    ],
+    "toolCall": {
+     "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+     "rawInput": {
+      "file_path": "/w/notes.txt",
+      "old_string": "line two",
+      "new_string": "line 2\nline three"
+     },
+     "_meta": {
+      "codebuddy.ai/toolName": "Edit"
+     }
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Successfully edited file: /w/notes.txt"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Successfully edited file: /w/notes.txt"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "写好了。"
+   },
+   "messageId": "01a1b477-6571-71d2-a0ca-502ef8879341"
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "READ 一下"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "BASH 跑一下"
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "title": "Bash",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "rawInput": {
+    "command": "ls",
+    "description": "List files"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"command\":\"ls\",\"description\":\"List files\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "status": "pending",
+   "rawInput": {
+    "command": "ls",
+    "description": "List files"
+   },
+   "title": "`ls`",
+   "kind": "execute",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "List files"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "permission": {
+    "sessionId": "01a1b477-5ebf-76cd-8f9f-5b84a6f72413",
+    "options": [
+     {
+      "kind": "allow_always",
+      "name": "Always Allow",
+      "optionId": "allow_always"
+     },
+     {
+      "kind": "allow_once",
+      "name": "Allow",
+      "optionId": "allow"
+     },
+     {
+      "kind": "reject_once",
+      "name": "Reject",
+      "optionId": "reject"
+     }
+    ],
+    "toolCall": {
+     "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+     "rawInput": {
+      "command": "ls",
+      "description": "List files"
+     },
+     "_meta": {
+      "codebuddy.ai/toolName": "Bash"
+     }
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "status": "completed",
+   "rawOutput": {
+    "type": "text",
+    "text": "Stdout: hello.txt  notes.txt\r\n\nStderr: (empty)\nExit Code: 0\nSignal: (none)"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash",
+    "codebuddy.ai/rawResponse": {
+     "exitCode": 0,
+     "signal": null,
+     "interrupted": false,
+     "sandboxDenied": false,
+     "stderrBytesTruncated": 0,
+     "stdoutBytesTruncated": 0,
+     "stdout_bytes": 22,
+     "stderr_bytes": 0,
+     "tool_error_code": "0"
+    }
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "列出来了。"
+   },
+   "messageId": "01a1b477-688b-7fa1-9c66-6e931cb0d052"
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "READ 一下"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "GREP 搜"
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "title": "Grep",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "rawInput": {
+    "pattern": "line",
+    "path": "/w"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"pattern\":\"line\",\"path\":\"/w\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "status": "pending",
+   "rawInput": {
+    "pattern": "line",
+    "path": "/w"
+   },
+   "title": "grep \"line\" /w",
+   "kind": "search",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "[\"/w/notes.txt\"]"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "[\"/w/notes.txt\"]"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "title": "Glob",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "rawInput": {
+    "pattern": "*.txt"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"pattern\":\"*.txt\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "status": "pending",
+   "rawInput": {
+    "pattern": "*.txt"
+   },
+   "title": "Find `*.txt`",
+   "kind": "search",
+   "content": [],
+   "locations": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "[\"/w/hello.txt\",\"/w/notes.txt\"]"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "[\"/w/hello.txt\",\"/w/notes.txt\"]"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "找到了。"
+   },
+   "messageId": "01a1b477-6a4a-772c-aada-46a79281f080"
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "READ 一下"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "prompt": "TODO 计划"
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "title": "TaskCreate",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "rawInput": {
+    "subject": "第一步",
+    "description": "a",
+    "activeForm": "做第一步"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"subject\":\"第一步\",\"description\":\"a\",\"activeForm\":\"做第一步\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "status": "pending",
+   "rawInput": {
+    "subject": "第一步",
+    "description": "a",
+    "activeForm": "做第一步"
+   },
+   "title": "TaskCreate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Task #1 created successfully: 第一步"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Task #1 created successfully: 第一步"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第一步",
+      "description": "a",
+      "activeForm": "做第一步",
+      "status": "pending",
+      "id": "1",
+      "createdAt": 1794029087674,
+      "updatedAt": 1794029087674
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "pending",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087674
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "title": "TaskCreate",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "rawInput": {
+    "subject": "第二步",
+    "description": "b"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"subject\":\"第二步\",\"description\":\"b\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "status": "pending",
+   "rawInput": {
+    "subject": "第二步",
+    "description": "b"
+   },
+   "title": "TaskCreate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Task #2 created successfully: 第二步"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Task #2 created successfully: 第二步"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第二步",
+      "description": "b",
+      "activeForm": "第二步",
+      "status": "pending",
+      "id": "2",
+      "createdAt": 1794029087751,
+      "updatedAt": 1794029087751
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "pending",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087674
+      },
+      {
+       "id": "2",
+       "content": "第二步",
+       "activeForm": "第二步",
+       "status": "pending",
+       "createdAt": 1794029087751,
+       "updatedAt": 1794029087751
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "title": "TaskUpdate",
+   "kind": "other",
+   "status": "in_progress",
+   "input": {},
+   "rawInput": {},
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "rawInput": {
+    "taskId": "1",
+    "status": "in_progress"
+   },
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "{\"taskId\":\"1\",\"status\":\"in_progress\"}"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "status": "pending",
+   "rawInput": {
+    "taskId": "1",
+    "status": "in_progress"
+   },
+   "title": "TaskUpdate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Updated task #1 status"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Updated task #1 status"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第一步",
+      "description": "a",
+      "activeForm": "做第一步",
+      "status": "in_progress",
+      "id": "1",
+      "createdAt": 1794029087674,
+      "updatedAt": 1794029087832
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "in_progress",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087832
+      },
+      {
+       "id": "2",
+       "content": "第二步",
+       "activeForm": "第二步",
+       "status": "pending",
+       "createdAt": 1794029087751,
+       "updatedAt": 1794029087751
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "content": {
+    "type": "text",
+    "text": "计划好了。"
+   },
+   "messageId": "01a1b477-6c7f-7c0e-8bfe-3770f5004e48"
+  },
+  {
+   "sessionUpdate": "session_info_update",
+   "title": "READ 一下"
+  },
+  {
+   "stopReason": "end_turn"
+  },
+  {
+   "sessionUpdate": "current_mode_update",
+   "currentModeId": "plan"
+  }
+ ],
+ "load": [
+  {
+   "sessionUpdate": "user_message_chunk",
+   "messageId": "01a1b477-5f50-7563-9d46-434d9d8dc470",
+   "content": {
+    "type": "text",
+    "text": "READ 一下"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-609a-7396-a9dd-73521e3124b9",
+   "content": {
+    "type": "text",
+    "text": "先看看文件。"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/notes.txt"
+   },
+   "title": "Read /w/notes.txt",
+   "kind": "read",
+   "content": [],
+   "locations": [
+    {
+     "path": "/w/notes.txt",
+     "line": 0
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Read",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_90c4c76281ee46a487fb613e69a87b73",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "   1→line one\n   2→line two"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "   1→line one\n   2→line two"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Read"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-612d-7f1c-aaae-ec97b967c1f7",
+   "content": {
+    "type": "text",
+    "text": "文件有两行。"
+   }
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "messageId": "01a1b477-6268-7cb4-a4d6-d622d585c0f8",
+   "content": {
+    "type": "text",
+    "text": "WRITE 文件"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/hello.txt",
+    "content": "hello\nworld\n"
+   },
+   "title": "Write /w/hello.txt",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/hello.txt",
+     "oldText": null,
+     "newText": "hello\nworld\n"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/hello.txt"
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Write",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_b5891e4d363f4196b4615d8ab9fc9e18",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Successfully created and wrote to new file: /w/hello.txt"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Successfully created and wrote to new file: /w/hello.txt"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Write"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "status": "pending",
+   "rawInput": {
+    "file_path": "/w/notes.txt",
+    "old_string": "line two",
+    "new_string": "line 2\nline three"
+   },
+   "title": "Edit `/w/notes.txt`",
+   "kind": "edit",
+   "content": [
+    {
+     "type": "diff",
+     "path": "/w/notes.txt",
+     "oldText": "line two",
+     "newText": "line 2\nline three"
+    }
+   ],
+   "locations": [
+    {
+     "path": "/w/notes.txt"
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_6ab8cd502f824775977eb4cbfbb2caa4",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Successfully edited file: /w/notes.txt"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Successfully edited file: /w/notes.txt"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Edit"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-6571-71d2-a0ca-502ef8879341",
+   "content": {
+    "type": "text",
+    "text": "写好了。"
+   }
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "messageId": "01a1b477-66a7-7791-af05-d648d099cf8e",
+   "content": {
+    "type": "text",
+    "text": "BASH 跑一下"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "status": "pending",
+   "rawInput": {
+    "command": "ls",
+    "description": "List files"
+   },
+   "title": "`ls`",
+   "kind": "execute",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "List files"
+     }
+    }
+   ],
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_9d2cd608c254455a9a97456713f835cd",
+   "status": "completed",
+   "rawOutput": {
+    "type": "text",
+    "text": "Stdout: hello.txt  notes.txt\r\n\nStderr: (empty)\nExit Code: 0\nSignal: (none)"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Bash",
+    "codebuddy.ai/rawResponse": {
+     "exitCode": 0,
+     "signal": null,
+     "interrupted": false,
+     "sandboxDenied": false,
+     "stderrBytesTruncated": 0,
+     "stdoutBytesTruncated": 0,
+     "stdout_bytes": 22,
+     "stderr_bytes": 0,
+     "tool_error_code": "0"
+    }
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-688b-7fa1-9c66-6e931cb0d052",
+   "content": {
+    "type": "text",
+    "text": "列出来了。"
+   }
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "messageId": "01a1b477-693e-797c-9815-000e39b30dcb",
+   "content": {
+    "type": "text",
+    "text": "GREP 搜"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "status": "pending",
+   "rawInput": {
+    "pattern": "line",
+    "path": "/w"
+   },
+   "title": "grep \"line\" /w",
+   "kind": "search",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_98d0dad21ae04c6ca7ceeb104814609f",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "[\"/w/notes.txt\"]"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "[\"/w/notes.txt\"]"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Grep"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "status": "pending",
+   "rawInput": {
+    "pattern": "*.txt"
+   },
+   "title": "Find `*.txt`",
+   "kind": "search",
+   "content": [],
+   "locations": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_bd94a25c7cd74c60bd99c7ac4b3fe471",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "[\"/w/hello.txt\",\"/w/notes.txt\"]"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "[\"/w/hello.txt\",\"/w/notes.txt\"]"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "Glob"
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-6a4a-772c-aada-46a79281f080",
+   "content": {
+    "type": "text",
+    "text": "找到了。"
+   }
+  },
+  {
+   "sessionUpdate": "user_message_chunk",
+   "messageId": "01a1b477-6b58-716a-b916-3dd08785ec1a",
+   "content": {
+    "type": "text",
+    "text": "TODO 计划"
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "status": "pending",
+   "rawInput": {
+    "subject": "第一步",
+    "description": "a",
+    "activeForm": "做第一步"
+   },
+   "title": "TaskCreate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_db97048c0f45405986b4e6e8c4fe4054",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Task #1 created successfully: 第一步"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Task #1 created successfully: 第一步"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第一步",
+      "description": "a",
+      "activeForm": "做第一步",
+      "status": "pending",
+      "id": "1",
+      "createdAt": 1794029087674,
+      "updatedAt": 1794029087674
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "pending",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087674
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "status": "pending",
+   "rawInput": {
+    "subject": "第二步",
+    "description": "b"
+   },
+   "title": "TaskCreate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_be6b91349c5b484a82592826c762fb54",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Task #2 created successfully: 第二步"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Task #2 created successfully: 第二步"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskCreate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第二步",
+      "description": "b",
+      "activeForm": "第二步",
+      "status": "pending",
+      "id": "2",
+      "createdAt": 1794029087751,
+      "updatedAt": 1794029087751
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "pending",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087674
+      },
+      {
+       "id": "2",
+       "content": "第二步",
+       "activeForm": "第二步",
+       "status": "pending",
+       "createdAt": 1794029087751,
+       "updatedAt": 1794029087751
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "tool_call",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "status": "pending",
+   "rawInput": {
+    "taskId": "1",
+    "status": "in_progress"
+   },
+   "title": "TaskUpdate",
+   "kind": "other",
+   "content": [],
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate",
+    "codebuddy.ai/toolArgumentsComplete": true
+   }
+  },
+  {
+   "sessionUpdate": "tool_call_update",
+   "toolCallId": "call_28f93921260441048f883d75a968aa8e",
+   "status": "completed",
+   "content": [
+    {
+     "type": "content",
+     "content": {
+      "type": "text",
+      "text": "Updated task #1 status"
+     }
+    }
+   ],
+   "rawOutput": {
+    "type": "text",
+    "text": "Updated task #1 status"
+   },
+   "_meta": {
+    "codebuddy.ai/toolName": "TaskUpdate",
+    "codebuddy.ai/rawResponse": {
+     "task": {
+      "subject": "第一步",
+      "description": "a",
+      "activeForm": "做第一步",
+      "status": "in_progress",
+      "id": "1",
+      "createdAt": 1794029087674,
+      "updatedAt": 1794029087832
+     },
+     "todos": [
+      {
+       "id": "1",
+       "content": "第一步",
+       "activeForm": "做第一步",
+       "status": "in_progress",
+       "createdAt": 1794029087674,
+       "updatedAt": 1794029087832
+      },
+      {
+       "id": "2",
+       "content": "第二步",
+       "activeForm": "第二步",
+       "status": "pending",
+       "createdAt": 1794029087751,
+       "updatedAt": 1794029087751
+      }
+     ]
+    }
+   }
+  },
+  {
+   "sessionUpdate": "agent_message_chunk",
+   "messageId": "01a1b477-6c7f-7c0e-8bfe-3770f5004e48",
+   "content": {
+    "type": "text",
+    "text": "计划好了。"
+   }
+  }
+ ]
+}

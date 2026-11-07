@@ -45,7 +45,7 @@ import { ViewPublisher, type ControllerView } from '../vm/ViewPublisher.ts';
 import { withoutDiagnostics } from '../vm/viewHelpers.ts';
 import { noWorkbench, type EditorSnapshot, type Workbench } from '../vm/workbench.ts';
 import { AcpError } from './connection.ts';
-import { AcpSessionProjection, type AcpConfigOption, type AcpToolCall } from './projection.ts';
+import { AcpSessionProjection, type AcpConfigOption, type AcpDiff, type AcpToolCall } from './projection.ts';
 
 /** 和代理通话的接口（测试里用假的）。 */
 export interface AcpLink {
@@ -57,7 +57,7 @@ export interface AcpLink {
 export interface AcpInitialize {
   readonly protocolVersion?: number;
   readonly agentInfo?: { readonly name?: string; readonly title?: string; readonly version?: string };
-  readonly authMethods?: readonly { readonly id: string; readonly name?: string }[];
+  readonly authMethods?: readonly AuthMethod[];
   readonly agentCapabilities?: {
     readonly loadSession?: boolean;
     readonly promptCapabilities?: { readonly image?: boolean; readonly embeddedContext?: boolean };
@@ -96,6 +96,22 @@ export interface AcpControllerOptions
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
   readonly loadSessions: () => readonly StoredSession[] | undefined;
   readonly saveSessions: (sessions: readonly StoredSession[]) => void;
+  /**
+   * 代理要求登录时由宿主完成：有多种方式时让用户选，登录期间显示进度。
+   * 返回 false 表示用户取消。没有提供时直接用第一种方式。
+   */
+  readonly authenticate?: (methods: readonly AuthMethod[], run: (methodId: string) => Promise<unknown>) => Promise<boolean>;
+  /**
+   * 代理一个进程只给一个会话推送实时更新（见 BackendProfile.singleSession）：
+   * 在别的会话里发消息前用 restartRuntime 重启代理并加载那个会话；绑定的会话正在回复时不新建会话。
+   */
+  readonly singleSession?: boolean;
+}
+
+export interface AuthMethod {
+  readonly id: string;
+  readonly name?: string;
+  readonly description?: string | null;
 }
 
 interface PendingPermission {
@@ -132,6 +148,10 @@ export class AcpController implements ChatBackendController {
   private permissionCounter = 0;
   private queueCounter = 0;
   private pinned: (ContextAttachment & { id: string })[] = [];
+  /** 单会话代理：当前进程推送实时更新的会话。 */
+  private bound: string | undefined;
+  /** 单会话代理：正在重启代理、等待绑定到这个会话。 */
+  private rebinding: { readonly sessionId: string; readonly done: (ok: boolean) => void } | undefined;
   private pinCounter = 0;
   private workspacePath: string;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
@@ -161,6 +181,7 @@ export class AcpController implements ChatBackendController {
     this.loading.clear();
     this.draftId = undefined;
     this.creatingDraft = undefined;
+    this.bound = undefined;
     for (const pending of this.permissions.values()) pending.resolve({ outcome: { outcome: 'cancelled' } });
     this.permissions.clear();
     if (link) {
@@ -173,6 +194,7 @@ export class AcpController implements ChatBackendController {
 
   setRuntimeStatus(status: RuntimeStatus): void {
     this.runtime = status;
+    if (status.kind === 'failed' || status.kind === 'notInstalled') this.finishRebind(false);
     this.options.post({ type: 'runtimeStatus', payload: status });
     this.scheduleRender();
   }
@@ -418,7 +440,11 @@ export class AcpController implements ChatBackendController {
     try {
       const result = await link.request<{ configOptions?: AcpConfigOption[] } | null>('session/load', { sessionId, cwd: this.workspacePath, mcpServers: [] });
       projection.setConfigOptions(result?.configOptions);
+      // 新进程里第一个加载的会话收到实时更新
+      if (this.options.singleSession && this.link === link && this.bound === undefined) this.bound = sessionId;
+      if (this.rebinding?.sessionId === sessionId) this.finishRebind(this.bound === sessionId);
     } catch (error) {
+      if (this.rebinding?.sessionId === sessionId) this.finishRebind(false);
       this.options.log(`打开会话 ${sessionId} 失败：${describe(error)}`);
       this.toast('error', t('acp.loadFailed', describe(error)));
       this.projections.delete(sessionId);
@@ -431,6 +457,8 @@ export class AcpController implements ChatBackendController {
 
   /** 新对话的草稿会话：建好后模型、模式和斜杠命令就能用了。 */
   private ensureDraft(): Promise<string | undefined> {
+    // 单会话代理：新建会话会把实时更新从正在回复的会话抢走，等这一轮结束再建（prompt 结束时补上）
+    if (this.boundBusy()) return Promise.resolve(undefined);
     if (this.draftId) return Promise.resolve(this.draftId);
     if (this.creatingDraft) return this.creatingDraft;
     const link = this.link;
@@ -454,19 +482,28 @@ export class AcpController implements ChatBackendController {
     return this.creatingDraft;
   }
 
-  /** `session/new`；代理要求认证时用它提供的第一种方式（通常是「用已有的本地凭据」）再试一次。 */
+  /**
+   * `session/new`；代理要求认证（-32000）时登录后再试一次。
+   * 只有一种方式时直接用（omp：用已有的本地凭据）；有多种时由宿主让用户选（CodeBuddy：浏览器登录，可能要几分钟）。
+   */
   private async newSession(link: AcpLink): Promise<string> {
     const params = { cwd: this.workspacePath, mcpServers: [] };
     let result: { sessionId: string; configOptions?: AcpConfigOption[] };
     try {
       result = await link.request('session/new', params);
     } catch (error) {
-      const method = this.init?.authMethods?.[0]?.id;
-      if (!(error instanceof AcpError) || error.code !== -32000 || !method) throw error;
-      await link.request('authenticate', { methodId: method });
+      const methods = this.init?.authMethods ?? [];
+      if (!(error instanceof AcpError) || error.code !== -32000 || methods.length === 0) throw error;
+      const run = (methodId: string) => link.request('authenticate', { methodId });
+      if (this.options.authenticate) {
+        if (!(await this.options.authenticate(methods, run))) throw new Error(t('acp.signInCancelled'));
+      } else {
+        await run(methods[0]!.id);
+      }
       result = await link.request('session/new', params);
     }
     this.projectionFor(result.sessionId).setConfigOptions(result.configOptions);
+    if (this.options.singleSession && this.link === link) this.bound = result.sessionId;
     return result.sessionId;
   }
 
@@ -555,6 +592,12 @@ export class AcpController implements ChatBackendController {
       this.toast('error', t('notConnected'));
       return;
     }
+    if (this.options.singleSession && this.boundBusy() && this.activeId !== this.bound) {
+      // 另一个会话正在回复：这个代理同一时间只能进行一个会话
+      this.toast('info', t('acp.singleSessionBusy', this.agentName()));
+      return;
+    }
+    if (this.activeId && !(await this.bindTo(this.activeId))) return;
     const sessionId = this.activeId ?? (await this.ensureDraft());
     if (!sessionId) return;
     if (!this.activeId) {
@@ -573,7 +616,44 @@ export class AcpController implements ChatBackendController {
       this.scheduleRender();
       return;
     }
-    await this.prompt(link, sessionId, full, images);
+    await this.prompt(this.link ?? link, sessionId, full, images);
+  }
+
+  // ---------------------------------------------------------------- 单会话代理
+
+  /** 绑定的会话正在回复。 */
+  private boundBusy(): boolean {
+    return this.options.singleSession === true && this.bound !== undefined && (this.projections.get(this.bound)?.running ?? false);
+  }
+
+  /**
+   * 单会话代理：要在没有绑定的会话里发消息时，重启代理，新进程第一个加载这个会话，于是收得到实时更新。
+   * 其他代理直接返回 true。
+   */
+  private async bindTo(sessionId: string): Promise<boolean> {
+    if (!this.options.singleSession || this.bound === sessionId || this.bound === undefined) return true;
+    this.options.log(`${this.agentName()} 只给一个会话推送更新：重启后加载会话 ${sessionId}`);
+    this.finishRebind(false);
+    const bound = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => this.finishRebind(false), 60_000);
+      this.rebinding = {
+        sessionId,
+        done: (ok) => {
+          clearTimeout(timer);
+          resolve(ok);
+        },
+      };
+    });
+    this.options.restartRuntime();
+    const ok = await bound;
+    if (!ok) this.toast('error', t('acp.rebindFailed', this.agentName()));
+    return ok;
+  }
+
+  private finishRebind(ok: boolean): void {
+    const pending = this.rebinding;
+    this.rebinding = undefined;
+    pending?.done(ok);
   }
 
   private async prompt(link: AcpLink, sessionId: string, text: string, images: readonly PromptImage[]): Promise<void> {
@@ -603,6 +683,8 @@ export class AcpController implements ChatBackendController {
     // 本地排队的消息：上一轮结束后依次发送
     const next = this.queues.get(sessionId)?.shift();
     if (next && this.link) await this.prompt(this.link, sessionId, next.text, next.images);
+    // 单会话代理：回复期间点了新对话，草稿会话这时才建
+    else if (this.options.singleSession && this.link && this.activeId === undefined && this.draftId === undefined) void this.ensureDraft();
   }
 
   private async interrupt(): Promise<void> {
@@ -652,8 +734,11 @@ export class AcpController implements ChatBackendController {
     if (!model?.options?.length) return { options: [] };
     const effort = this.effortOption(projection);
     const efforts = (effort?.options ?? []).map((o) => ({ id: o.value, name: o.name ?? o.value }));
+    // 当前模型不在代理给的选项里（CodeBuddy 接第三方模型、命令行 --model 指定）：补在最前面，选择器才显示得出来
+    const current = model.currentValue;
+    const options = current && !model.options.some((o) => o.value === current) ? [{ value: current, name: current }, ...model.options] : model.options;
     return {
-      options: model.options.map((o) => ({
+      options: options.map((o: { value: string; name?: string; description?: string }) => ({
         provider: 'acp',
         model: o.value,
         name: o.name ?? o.value,
@@ -702,9 +787,12 @@ export class AcpController implements ChatBackendController {
   private askPermission(params: unknown): Promise<unknown> {
     const { sessionId, toolCall, options } = (params ?? {}) as { sessionId?: string; toolCall?: AcpToolCall; options?: PendingPermission['options'] };
     if (!sessionId || !toolCall || !options?.length) return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+    // 请求里可能只有 toolCallId 和参数（CodeBuddy）：用已经收到的工具调用补上标题、类型和位置
+    const known = this.projections.get(sessionId)?.toolCall(toolCall.toolCallId);
+    const call: AcpToolCall = known ? { ...known, ...Object.fromEntries(Object.entries(toolCall).filter(([, v]) => v !== undefined && v !== null)) } : toolCall;
     return new Promise((resolvePermission) => {
       const id = `perm-${++this.permissionCounter}`;
-      this.permissions.set(id, { id, sessionId, toolCall, options, resolve: resolvePermission });
+      this.permissions.set(id, { id, sessionId, toolCall: call, options, resolve: resolvePermission });
       this.scheduleRender();
     });
   }
@@ -724,8 +812,8 @@ export class AcpController implements ChatBackendController {
 
   private interactionOf(pending: PendingPermission): PendingInteraction {
     const call = pending.toolCall;
-    const args = (call.rawInput ?? {}) as { command?: unknown };
-    const path = call.locations?.[0]?.path;
+    const args = (call.rawInput ?? {}) as { command?: unknown; file_path?: unknown; path?: unknown };
+    const path = call.locations?.[0]?.path ?? (typeof args.file_path === 'string' ? args.file_path : typeof args.path === 'string' ? args.path : undefined);
     const subject =
       typeof args.command === 'string' && args.command.trim()
         ? { subject: args.command.trim(), subjectKind: 'command' as const }
@@ -757,11 +845,12 @@ export class AcpController implements ChatBackendController {
     // 磁盘上的文件就是修改后的内容时右侧用真实文件（可以继续编辑）
     const current = await this.workbench.readFile(path);
     const created = diff.oldText === null;
+    const whole = wholeFile(diff, current);
     await this.workbench.openDiff({
       kind: 'contents',
       path,
-      before: diff.oldText ?? '',
-      ...(current === diff.newText ? {} : { after: diff.newText }),
+      before: whole ?? diff.oldText ?? '',
+      ...(whole !== undefined || current === diff.newText ? {} : { after: diff.newText }),
       created,
       scope: 'turn',
     });
@@ -892,4 +981,15 @@ export class AcpController implements ChatBackendController {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 代理只给了替换的片段（CodeBuddy 的 Edit：old_string → new_string）时，用磁盘上的文件还原整个文件的修改前内容，
+ * 这样 Diff 显示整个文件、右侧是真实文件。片段在文件里不是正好出现一次（之后又改过）时返回 undefined，只显示片段。
+ */
+export function wholeFile(diff: AcpDiff, current: string | undefined): string | undefined {
+  if (current === undefined || diff.oldText === null || current === diff.newText || !diff.newText) return undefined;
+  const at = current.indexOf(diff.newText);
+  if (at < 0 || current.indexOf(diff.newText, at + 1) >= 0) return undefined;
+  return current.slice(0, at) + diff.oldText + current.slice(at + diff.newText.length);
 }

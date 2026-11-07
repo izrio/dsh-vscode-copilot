@@ -5,6 +5,7 @@
  * - 回复和推理：agent_message_chunk / agent_thought_chunk 按 messageId 拼接；
  * - 工具调用：tool_call 建立、tool_call_update 合并字段，按工具类型渲染（连续的读文件和搜索合并成一行「浏览」）；
  *   修改的 diff 内容（`{ type: 'diff', path, oldText, newText }`）用于增删行数和打开 Diff；
+ *   工具名取 `name` 或 `_meta` 里的 `…/toolName`（CodeBuddy），待办工具不显示成一行，完成时带的待办表进入状态条；
  * - plan → 待办，usage_update → 上下文用量，available_commands_update → 斜杠命令，
  *   config_option_update / current_mode_update → 模型和模式，session_info_update → 标题。
  */
@@ -12,6 +13,7 @@ import type { Item, LineStats } from '@dsh-copilot/shared';
 import { splitContext } from '../vm/context.ts';
 import { countLines, lineStats, sumStats } from '../vm/diffs.ts';
 import { activityLabel, displayPath, toolVariant } from '../vm/projector.ts';
+import { canonicalTool } from '../vm/toolNames.ts';
 import { t } from '../i18n.ts';
 
 const OUTPUT_LIMIT = 4_000;
@@ -39,9 +41,12 @@ export interface AcpToolCall {
   readonly rawOutput?: unknown;
   readonly content?: readonly AcpToolContent[];
   readonly locations?: readonly { readonly path: string; readonly line?: number }[];
-  /** 不在规范里，但 omp 等代理会带上工具名。 */
+  /** 不在规范里，但 omp 等代理会带上工具名（CodeBuddy 放在 `_meta['codebuddy.ai/toolName']`）。 */
   readonly name?: string;
+  readonly _meta?: Readonly<Record<string, unknown>>;
 }
+
+type Todo = { readonly content: string; readonly status: 'pending' | 'in_progress' | 'completed' };
 
 export interface AcpConfigOption {
   readonly id: string;
@@ -90,7 +95,7 @@ export class AcpSessionProjection {
   version = 0;
 
   title?: string;
-  todos?: readonly { readonly content: string; readonly status: 'pending' | 'in_progress' | 'completed' }[];
+  todos?: readonly Todo[];
   usage?: { readonly used: number; readonly size: number };
   commands: readonly AcpCommand[] = [];
   configOptions: readonly AcpConfigOption[] = [];
@@ -176,11 +181,15 @@ export class AcpSessionProjection {
         this.appendAssistant(update, 'reasoning');
         break;
       case 'tool_call':
-        this.addTool(update as unknown as AcpToolCall);
+        this.addTool(withName(update as unknown as AcpToolCall));
         break;
-      case 'tool_call_update':
-        this.mergeTool(update as unknown as AcpToolCall);
+      case 'tool_call_update': {
+        const call = withName(update as unknown as AcpToolCall);
+        const todos = todosOf(call);
+        if (todos) this.todos = todos;
+        this.mergeTool(call);
         break;
+      }
       case 'plan': {
         const entries = Array.isArray(update.entries) ? (update.entries as { content?: unknown; status?: unknown }[]) : [];
         this.todos = entries.map((e) => ({
@@ -269,22 +278,27 @@ export class AcpSessionProjection {
       return;
     }
     this.tools.set(call.toolCallId, call);
-    const variant = this.variantOf(call);
-    if (variant === 'explore') {
-      const entry = { id: call.toolCallId, label: this.label(call), status: statusOf(call.status) };
-      const last = this.items.length - 1;
-      if (this.items[last]?.kind === 'explore') {
-        const group = this.items[last] as Explore;
-        this.toolIndex.set(call.toolCallId, { index: last, entry: group.entries.length });
-        this.items[last] = summarize({ ...group, entries: [...group.entries, entry] });
-      } else {
-        this.toolIndex.set(call.toolCallId, { index: this.items.length, entry: 0 });
-        this.items.push(summarize({ kind: 'explore', id: `x:${call.toolCallId}`, summary: '', status: 'running', entries: [entry] }));
-      }
+    // 待办由输入框上方的状态条显示，不在对话流里重复
+    if (isTodoTool(call)) return;
+    if (this.variantOf(call) === 'explore') {
+      this.addExplore(call);
       return;
     }
     this.toolIndex.set(call.toolCallId, { index: this.items.length });
     this.items.push(this.activity(call));
+  }
+
+  private addExplore(call: AcpToolCall): void {
+    const entry = { id: call.toolCallId, label: this.label(call), status: statusOf(call.status) };
+    const last = this.items.length - 1;
+    if (this.items[last]?.kind === 'explore') {
+      const group = this.items[last] as Explore;
+      this.toolIndex.set(call.toolCallId, { index: last, entry: group.entries.length });
+      this.items[last] = summarize({ ...group, entries: [...group.entries, entry] });
+    } else {
+      this.toolIndex.set(call.toolCallId, { index: this.items.length, entry: 0 });
+      this.items.push(summarize({ kind: 'explore', id: `x:${call.toolCallId}`, summary: '', status: 'running', entries: [entry] }));
+    }
   }
 
   private mergeTool(update: AcpToolCall): void {
@@ -296,11 +310,23 @@ export class AcpSessionProjection {
     const merged: AcpToolCall = {
       ...previous,
       ...Object.fromEntries(Object.entries(update).filter(([, v]) => v !== undefined && v !== null)),
+      ...keepDiffs(previous.content, update.content),
     } as AcpToolCall;
     this.tools.set(update.toolCallId, merged);
     const at = this.toolIndex.get(update.toolCallId);
     if (!at) return;
     const item = this.items[at.index];
+    // 先只发了工具调用、后面才知道是读文件或搜索（CodeBuddy 第一帧的 kind 是 other）：改成「浏览」
+    if (item?.kind === 'activity' && this.variantOf(merged) === 'explore') {
+      if (at.index === this.items.length - 1) {
+        this.items.pop();
+        this.addExplore(merged);
+      } else {
+        this.items[at.index] = summarize({ kind: 'explore', id: `x:${merged.toolCallId}`, summary: '', status: 'running', entries: [{ id: merged.toolCallId, label: this.label(merged), status: statusOf(merged.status) }] });
+        this.toolIndex.set(merged.toolCallId, { index: at.index, entry: 0 });
+      }
+      return;
+    }
     if (item?.kind === 'explore' && at.entry !== undefined) {
       const entries = item.entries.map((e, i) => (i === at.entry ? { ...e, label: this.label(merged), status: statusOf(merged.status) } : e));
       this.items[at.index] = summarize({ ...item, entries });
@@ -381,21 +407,85 @@ function blockText(content: unknown): string {
   return '';
 }
 
-/** 工具输出：优先取代理给的原始输出（omp 把命令的标准输出放在 rawOutput.content），否则取内容里的文字。 */
+/** 新内容替换旧内容，但之前的修改内容（diff）保留：CodeBuddy 完成时只发「已写入」这样的文字。 */
+function keepDiffs(previous: readonly AcpToolContent[] | undefined, next: readonly AcpToolContent[] | undefined): { content?: readonly AcpToolContent[] } {
+  if (!next || next.some((c) => c.type === 'diff')) return {};
+  const diffs = (previous ?? []).filter((c) => c.type === 'diff');
+  return diffs.length ? { content: [...diffs, ...next] } : {};
+}
+
+/** 工具名：`name`，或 `_meta` 里以 `toolName` 结尾的键（CodeBuddy：`codebuddy.ai/toolName`）。 */
+function withName(call: AcpToolCall): AcpToolCall {
+  if (call.name || !call._meta) return call;
+  const key = Object.keys(call._meta).find((k) => k === 'toolName' || k.endsWith('/toolName'));
+  const name = key ? call._meta[key] : undefined;
+  return typeof name === 'string' && name ? { ...call, name } : call;
+}
+
+function isTodoTool(call: AcpToolCall): boolean {
+  return call.name !== undefined && canonicalTool(call.name) === 'todo_write';
+}
+
+/** 待办工具完成时带的整张待办表（CodeBuddy：`_meta['codebuddy.ai/rawResponse'].todos`）。 */
+function todosOf(call: AcpToolCall): Todo[] | undefined {
+  if (!call._meta) return undefined;
+  for (const [key, value] of Object.entries(call._meta)) {
+    if (!key.endsWith('rawResponse') || !value || typeof value !== 'object') continue;
+    const todos = (value as { todos?: unknown }).todos;
+    if (!Array.isArray(todos)) continue;
+    return (todos as { content?: unknown; subject?: unknown; status?: unknown }[]).map((e) => ({
+      content: typeof e.content === 'string' ? e.content : typeof e.subject === 'string' ? e.subject : '',
+      status: e.status === 'completed' || e.status === 'in_progress' ? e.status : 'pending',
+    }));
+  }
+  return undefined;
+}
+
+/**
+ * CodeBuddy 的命令结果：`Stdout: …\n\nStderr: …\nExit Code: N\nSignal: …`，只留下输出本身。
+ * 其他格式原样返回。
+ */
+function commandText(text: string): string {
+  const match = /^Stdout: ?([\s\S]*?)\n\nStderr: ?([\s\S]*?)\nExit Code: ?(\S*)(?:\nSignal: ?[\s\S]*)?$/u.exec(text);
+  if (!match) return text;
+  const stdout = match[1]?.replace(/\r\n/gu, '\n') ?? '';
+  const stderr = match[2] === '(empty)' ? '' : (match[2] ?? '');
+  const code = match[3] && match[3] !== '0' && match[3] !== '(none)' ? `\nexit ${match[3]}` : '';
+  return [stdout === '(empty)' ? '' : stdout, stderr].filter(Boolean).join('\n') + code;
+}
+
+/** 内容里的文字只是把参数原样回显（CodeBuddy 参数生成完时会发一次）。 */
+function echoesInput(text: string, input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const args = input as Record<string, unknown>;
+  if (typeof args.description === 'string' && text === args.description) return true;
+  if (!text.startsWith('{')) return false;
+  try {
+    return JSON.stringify(JSON.parse(text)) === JSON.stringify(input);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 工具输出：优先取代理给的原始输出（omp 把命令的标准输出放在 rawOutput.content，CodeBuddy 放在 rawOutput.text），
+ * 否则取内容里的文字。
+ */
 function outputOf(call: AcpToolCall): string | undefined {
-  const raw = call.rawOutput as { content?: unknown; output?: unknown; stdout?: unknown } | string | undefined;
+  const raw = call.rawOutput as { content?: unknown; output?: unknown; stdout?: unknown; text?: unknown } | string | undefined;
   let text = '';
   if (typeof raw === 'string') text = raw;
   else if (raw && Array.isArray(raw.content)) text = (raw.content as AcpContentBlock[]).map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n');
   else if (raw && typeof raw.output === 'string') text = raw.output;
   else if (raw && typeof raw.stdout === 'string') text = raw.stdout;
+  else if (raw && typeof raw.text === 'string') text = raw.text;
   if (!text) {
     text = (call.content ?? [])
       .map((c) => (c.type === 'content' ? blockText(c.content) : ''))
-      .filter((line) => line && !line.startsWith('$ '))
+      .filter((line) => line && !line.startsWith('$ ') && !echoesInput(line, call.rawInput))
       .join('\n');
   }
-  text = text.trim();
+  text = commandText(text).trim();
   if (!text) return undefined;
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n${t('output.truncated')}` : text;
 }

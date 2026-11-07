@@ -143,17 +143,7 @@
         "harnessDeck.backends": {
           "type": "array",
           "markdownDescription": "%config.backends%",
-          "default": [
-            {
-              "id": "oh-my-pi",
-              "name": "oh-my-pi",
-              "command": "omp",
-              "args": [
-                "acp"
-              ],
-              "installHint": "%config.backends.ompHint%"
-            }
-          ],
+          "default": [],
           "items": {
             "type": "object",
             "required": [

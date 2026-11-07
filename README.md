@@ -2,7 +2,7 @@
 
 编程代理的 VS Code 对话面板，交互参考 Codex：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。
 
-面板背后的底层可以切换：内置的 [DeepSeek Harness（dsh）](https://github.com/deepseek-ai/deepseek-harness)，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 的代理——默认配好了 [oh-my-pi](https://github.com/can1357/oh-my-pi)。Agent 能力都由底层提供；插件负责启动和连接底层，把会话数据转换成界面，并补上 VS Code 集成。
+面板背后的底层可以切换：[DeepSeek Harness（dsh）](https://github.com/deepseek-ai/deepseek-harness)，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 的代理——内置了 [oh-my-pi](https://github.com/can1357/oh-my-pi) 和 [CodeBuddy](https://www.codebuddy.ai/cli)。Agent 能力都由底层提供；插件负责启动和连接底层，把会话数据转换成界面，并补上 VS Code 集成。
 
 > 安装包在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases) 下载（`harness-deck-<版本>.vsix`，VS Code 扩展视图「⋯ → 从 VSIX 安装…」）。使用说明和不同底层的差别见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。
 
@@ -102,6 +102,16 @@ pnpm --filter harness-deck e2e -- --dsh "$(command -v dsh)"
 
 ```bash
 pnpm --filter harness-deck vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
+```
+
+ACP 底层的界面端到端测试（真实的 oh-my-pi 或 CodeBuddy + 本地假模型，不需要账号；需要先 `pnpm build`）：
+
+```bash
+pnpm --filter harness-deck acp-e2e -- --omp "$(command -v omp)"
+```
+
+```bash
+pnpm --filter harness-deck acp-e2e -- --codebuddy "$(command -v codebuddy)"
 ```
 
 截图默认保存在仓库根目录的 `.e2e-screenshots/`（已忽略）。

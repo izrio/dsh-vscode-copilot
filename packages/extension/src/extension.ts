@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import type { AppearanceState, BackendsState, RuntimeStatus } from '@dsh-copilot/shared';
 import { createAcpBackend } from './backend/acp.ts';
 import { createDshBackend, type BackendHost } from './backend/dsh.ts';
-import { DSH_PROFILE, parseProfiles, profileView } from './backend/profiles.ts';
+import { DSH_PROFILE, builtinProfiles, parseProfiles, profileView } from './backend/profiles.ts';
 import type { BackendProfile, RunningBackend } from './backend/types.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
@@ -52,7 +52,8 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // ---- 底层列表与切换 ----
-  const profiles = (): BackendProfile[] => parseProfiles(settings().get<unknown>('backends', []), log);
+  const profiles = (): BackendProfile[] =>
+    parseProfiles(settings().get<unknown>('backends', []), log, builtinProfiles((id) => t(id === 'codebuddy' ? 'acp.codebuddyHint' : 'acp.ompHint')));
   const backendsState = (): BackendsState => ({ items: profiles().map(profileView), active: active?.profile.id ?? DSH_PROFILE.id });
   const updateStatusBar = (): void => renderStatusBar(status, active, modelLabel);
 

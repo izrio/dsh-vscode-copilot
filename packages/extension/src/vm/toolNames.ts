@@ -35,6 +35,7 @@ const ALIASES: Readonly<Record<string, string>> = {
   replace_in_file: 'edit',
   search_replace: 'edit',
   notebook_edit: 'notebook_edit',
+  notebookedit: 'notebook_edit',
   write: 'write',
   write_file: 'write',
   write_to_file: 'write',
@@ -70,10 +71,19 @@ const ALIASES: Readonly<Record<string, string>> = {
   task: 'subagent',
   spawn_subagent: 'subagent',
   delegate_task: 'subagent',
+  agent: 'subagent',
   // 其他有专门界面的工具
   todo_write: 'todo_write',
+  todowrite: 'todo_write',
+  // CodeBuddy 的待办工具（完成时带上整张待办表）
+  taskcreate: 'todo_write',
+  taskupdate: 'todo_write',
+  tasklist: 'todo_write',
+  taskget: 'todo_write',
   ask_user_question: 'ask_user_question',
+  askuserquestion: 'ask_user_question',
   exit_plan_mode: 'exit_plan_mode',
+  exitplanmode: 'exit_plan_mode',
 };
 
 /**
