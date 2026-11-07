@@ -3,6 +3,8 @@ export { IMAGE_MEDIA_TYPES, MAX_IMAGE_BASE64, MAX_IMAGES } from './limits.ts';
 export type {
   AppearanceState,
   AttachmentView,
+  BackendsState,
+  BackendView,
   ChangedFileView,
   CommandView,
   ConnectionState,

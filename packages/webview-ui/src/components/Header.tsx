@@ -16,6 +16,7 @@ import {
   RefreshIcon,
   SearchIcon,
   SpinnerIcon,
+  ServerIcon,
   TextSizeIcon,
 } from './icons.tsx';
 import { MenuItem, Popover } from './Popover.tsx';
@@ -25,6 +26,8 @@ import { useT, type Translate } from '../i18n.ts';
 export function Header() {
   const session = useView((s) => s.session);
   const sessions = useView((s) => s.sessions);
+  const backends = useView((s) => s.backends);
+  const isDsh = (backends.items.find((b) => b.id === backends.active)?.kind ?? 'dsh') === 'dsh';
   const [menu, setMenu] = useState<'sessions' | 'more' | 'appearance' | undefined>();
   const [query, setQuery] = useState('');
   const close = useCallback(() => setMenu(undefined), []);
@@ -107,12 +110,16 @@ export function Header() {
                 {t('header.folder')}
               </MenuItem>
             ) : null}
-            <MenuItem icon={<KeyIcon />} onSelect={() => (close(), postToHost({ type: 'configureApiKey', payload: {} }))}>
-              {t('apiKey.configure')}
-            </MenuItem>
-            <MenuItem icon={<GlobeIcon />} onSelect={() => (close(), postToHost({ type: 'openWebUI', payload: {} }))}>
-              {t('header.openWebUI')}
-            </MenuItem>
+            {isDsh ? (
+              <>
+                <MenuItem icon={<KeyIcon />} onSelect={() => (close(), postToHost({ type: 'configureApiKey', payload: {} }))}>
+                  {t('apiKey.configure')}
+                </MenuItem>
+                <MenuItem icon={<GlobeIcon />} onSelect={() => (close(), postToHost({ type: 'openWebUI', payload: {} }))}>
+                  {t('header.openWebUI')}
+                </MenuItem>
+              </>
+            ) : null}
             <MenuItem icon={<RefreshIcon />} onSelect={() => (close(), postToHost({ type: 'restartRuntime', payload: {} }))}>
               {t('header.restart')}
             </MenuItem>
@@ -122,6 +129,27 @@ export function Header() {
             <MenuItem icon={<TextSizeIcon />} onSelect={() => setMenu('appearance')}>
               {t('header.appearance')}
             </MenuItem>
+            {backends.items.length > 1 ? (
+              <>
+                <div className="menu-heading" data-testid="backend-heading">
+                  {t('header.backend')}
+                </div>
+                {backends.items.map((backend) => (
+                  <MenuItem
+                    key={backend.id}
+                    active={backend.id === backends.active}
+                    icon={backend.id === backends.active ? <CheckIcon /> : <ServerIcon />}
+                    hint={backend.kind === 'acp' ? 'ACP' : undefined}
+                    onSelect={() => {
+                      close();
+                      if (backend.id !== backends.active) postToHost({ type: 'selectBackend', payload: { id: backend.id } });
+                    }}
+                  >
+                    {backend.name}
+                  </MenuItem>
+                ))}
+              </>
+            ) : null}
           </div>
         </Popover>
         <Popover open={menu === 'appearance'} onClose={close} className="more-menu appearance-menu" label={t('header.appearance')}>

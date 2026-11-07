@@ -29,5 +29,14 @@
   "config.title": "DSH",
   "container.title": "DSH",
   "extension.description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。",
-  "capabilities.untrusted": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。"
+  "capabilities.untrusted": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。",
+  "command.selectBackend": "切换底层",
+  "config.backends": "通过 ACP（Agent Client Protocol）接入的底层，内置的 dsh 之外再加。每项需要 `name` 和以 ACP 模式启动代理的 `command`（以及 `args`）。在对话面板的「…」菜单或「切换底层」命令里切换。",
+  "config.backends.id": "固定的标识（默认取名称），会话和标签按它分开保存。",
+  "config.backends.name": "面板里显示的名称，例如 `oh-my-pi`。",
+  "config.backends.command": "通过标准输入输出说 ACP 的可执行文件，例如 `omp`。",
+  "config.backends.args": "参数，例如 `[\"acp\"]`。",
+  "config.backends.env": "给代理进程额外加的环境变量。",
+  "config.backends.installHint": "找不到命令时显示的安装提示。",
+  "config.backends.ompHint": "安装 oh-my-pi：bun install -g @oh-my-pi/pi-coding-agent（需要 Bun 1.4.4 以上），再给 omp 配置模型提供方。"
 }

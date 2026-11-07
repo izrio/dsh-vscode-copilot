@@ -119,6 +119,11 @@
         "command": "dsh.selectFolder",
         "title": "%command.selectFolder%",
         "category": "DSH"
+      },
+      {
+        "command": "dsh.selectBackend",
+        "title": "%command.selectBackend%",
+        "category": "DSH"
       }
     ],
     "configuration": {
@@ -134,6 +139,60 @@
           "type": "string",
           "default": "web",
           "markdownDescription": "%config.runtime.profile%"
+        },
+        "dsh.backends": {
+          "type": "array",
+          "markdownDescription": "%config.backends%",
+          "default": [
+            {
+              "id": "oh-my-pi",
+              "name": "oh-my-pi",
+              "command": "omp",
+              "args": [
+                "acp"
+              ],
+              "installHint": "%config.backends.ompHint%"
+            }
+          ],
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "command"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "markdownDescription": "%config.backends.id%"
+              },
+              "name": {
+                "type": "string",
+                "markdownDescription": "%config.backends.name%"
+              },
+              "command": {
+                "type": "string",
+                "markdownDescription": "%config.backends.command%"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "markdownDescription": "%config.backends.args%"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "markdownDescription": "%config.backends.env%"
+              },
+              "installHint": {
+                "type": "string",
+                "markdownDescription": "%config.backends.installHint%"
+              }
+            }
+          }
         },
         "dsh.context.includeActiveEditor": {
           "type": "boolean",

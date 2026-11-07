@@ -20,6 +20,7 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  BackendsState,
   TabsState,
   WorkspaceState,
 } from '@dsh-copilot/shared';
@@ -36,6 +37,8 @@ export interface ViewState {
   readonly connection: ConnectionState;
   readonly sessions: readonly SessionListItem[];
   readonly tabs: TabsState;
+  /** 可选的底层和当前底层。 */
+  readonly backends: BackendsState;
   readonly session: SessionHeader;
   readonly sessionKey: string;
   readonly items: readonly Item[];
@@ -67,6 +70,7 @@ const initialState: ViewState = {
   connection: 'idle',
   sessions: [],
   tabs: { items: [], active: '' },
+  backends: { items: [], active: 'dsh' },
   session: { title: '', running: false, hasOlder: false, loadingOlder: false, sync: 'idle' },
   sessionKey: '',
   items: [],
@@ -172,6 +176,7 @@ export function applyHostMessage(message: HostToWebview): void {
         connection: p.connection,
         sessions: p.sessions,
         tabs: p.tabs ?? { items: [], active: '' },
+        backends: p.backends ?? { items: [], active: 'dsh' },
         session: p.session,
         sessionKey: p.session.id ?? '',
         items: p.items,
@@ -197,6 +202,9 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'tabs':
       set({ tabs: message.payload });
+      return;
+    case 'backends':
+      set({ backends: message.payload });
       return;
     case 'session':
       set({ session: message.payload });

@@ -314,6 +314,21 @@ export interface TabsState {
   readonly active: string;
 }
 
+/**
+ * 底层：dsh（插件内置）或通过 ACP（Agent Client Protocol）接入的编程代理，例如 oh-my-pi。
+ * 设置里可以配多个，界面上随时切换。
+ */
+export interface BackendView {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: 'dsh' | 'acp';
+}
+
+export interface BackendsState {
+  readonly items: readonly BackendView[];
+  readonly active: string;
+}
+
 export interface WorkspaceState {
   /** 工作区里有未保存内容的文件数。 */
   readonly dirtyFiles: number;

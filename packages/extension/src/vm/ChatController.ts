@@ -5,8 +5,10 @@
  * 推送按约 30ms 合并，流式输出时不会产生消息风暴。不依赖 vscode API，便于测试。
  */
 import { isAbsolute, resolve } from 'node:path';
+import type { ChatBackendController } from '../backend/types.ts';
 import type {
   AppearanceState,
+  BackendsState,
   CommandView,
   ConnectionState,
   ContextState,
@@ -89,6 +91,8 @@ export interface ChatControllerOptions {
   readonly appearance?: () => AppearanceState;
   /** 打开插件的界面设置。 */
   readonly openSettings?: () => void;
+  /** 可选的底层和当前底层（随快照下发，Webview 的「…」菜单里切换）。 */
+  readonly backends?: () => BackendsState;
   /** 写入字体设置（dsh.ui.*）；值为 null 时恢复默认。 */
   readonly setAppearance?: (patch: { readonly fontSize?: number | null; readonly fontFamily?: string | null; readonly codeFontFamily?: string | null }) => Promise<void>;
   /**
@@ -124,7 +128,7 @@ export interface SendOptions {
   readonly images?: readonly PendingImage[];
 }
 
-export class ChatController {
+export class ChatController implements ChatBackendController {
   private runtime: RuntimeStatus = { kind: 'idle' };
   private connection: ConnectionState = 'idle';
   private service: SessionService | undefined;
@@ -496,7 +500,12 @@ export class ChatController {
       commands: view.commands,
       locale: getLocale(),
       appearance: this.options.appearance?.() ?? {},
+      backends: this.options.backends?.() ?? { items: [], active: '' },
     };
+  }
+
+  backendsChanged(): void {
+    this.options.post({ type: 'backends', payload: this.options.backends?.() ?? { items: [], active: '' } });
   }
 
   async handle(message: WebviewToHost): Promise<void> {

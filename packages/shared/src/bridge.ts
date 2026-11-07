@@ -14,6 +14,7 @@ import type {
   PermissionState,
   SessionHeader,
   SessionListItem,
+  BackendsState,
   TabsState,
   WorkspaceState,
 } from './viewModel.ts';
@@ -110,6 +111,8 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   /** `token` 由 Webview 生成，Host 打开（或放弃）后用 `diffOpened` 回传，Webview 据此结束加载状态。 */
   z.object({ type: z.literal('openDiff'), payload: z.object({ ref: diffRefSchema, token: z.number().int().optional() }) }),
   z.object({ type: z.literal('openSettings'), payload: empty }),
+  /** 切换底层（设置里配置的 dsh / ACP 代理）。 */
+  z.object({ type: z.literal('selectBackend'), payload: z.object({ id: z.string().min(1).max(100) }) }),
   /** 面板里的字体设置：写入 VS Code 设置 dsh.ui.*；null 表示恢复默认（跟随 VS Code）。 */
   z.object({
     type: z.literal('setAppearance'),
@@ -144,6 +147,7 @@ export interface HostSnapshot {
   readonly commands: readonly CommandView[];
   readonly locale: Locale;
   readonly appearance: AppearanceState;
+  readonly backends: BackendsState;
 }
 
 /**
@@ -172,6 +176,7 @@ export type HostToWebview =
   | { readonly type: 'context'; readonly payload: ContextState }
   | { readonly type: 'locale'; readonly payload: Locale }
   | { readonly type: 'appearance'; readonly payload: AppearanceState }
+  | { readonly type: 'backends'; readonly payload: BackendsState }
   | { readonly type: 'diffOpened'; readonly payload: { readonly token: number } }
   | { readonly type: 'imageData'; readonly payload: { readonly attachmentId: string; readonly dataUrl?: string } }
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }

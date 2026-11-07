@@ -55,7 +55,8 @@ export function describe(status: RuntimeStatus, connection: ConnectionState, t: 
     case 'notInstalled':
       return {
         title: t('runtime.notInstalled'),
-        detail: t('runtime.notInstalledDetail'),
+        // ACP 底层由 Host 给出要安装的命令；dsh 用自带的安装说明
+        detail: status.detail ?? t('runtime.notInstalledDetail'),
         tone: 'warn',
         actions: true,
       };

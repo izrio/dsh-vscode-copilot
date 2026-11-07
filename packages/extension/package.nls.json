@@ -29,5 +29,14 @@
   "config.title": "DSH",
   "container.title": "DSH",
   "extension.description": "Codex-style VS Code front end for DeepSeek Harness (dsh)",
-  "capabilities.untrusted": "dsh reads and writes files and runs commands in the workspace, so the workspace must be trusted."
+  "capabilities.untrusted": "dsh reads and writes files and runs commands in the workspace, so the workspace must be trusted.",
+  "command.selectBackend": "Switch Backend",
+  "config.backends": "Backends reachable over ACP (Agent Client Protocol), in addition to the built-in dsh. Each needs a `name` and the `command` (plus `args`) that starts the agent in ACP mode. Switch between them from the chat panel's \"…\" menu or the \"Switch Backend\" command.",
+  "config.backends.id": "Stable id (defaults to the name). Sessions and tabs are remembered per id.",
+  "config.backends.name": "Name shown in the panel, e.g. `oh-my-pi`.",
+  "config.backends.command": "Executable that speaks ACP over stdio, e.g. `omp`.",
+  "config.backends.args": "Arguments, e.g. `[\"acp\"]`.",
+  "config.backends.env": "Extra environment variables for the agent process.",
+  "config.backends.installHint": "Shown when the command cannot be found.",
+  "config.backends.ompHint": "Install oh-my-pi: bun install -g @oh-my-pi/pi-coding-agent (needs Bun 1.4.4 or later), then configure a model provider for omp."
 }

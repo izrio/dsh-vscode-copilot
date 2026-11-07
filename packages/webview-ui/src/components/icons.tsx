@@ -281,3 +281,10 @@ export const AgentIcon = (p: IconProps) => (
     <path d="M8 2.5V5M6 9h.01M10 9h.01M1.5 9v1.5M14.5 9v1.5" />
   </svg>
 );
+export const ServerIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="2.5" y="2.5" width="11" height="4.5" rx="1.2" />
+    <rect x="2.5" y="9" width="11" height="4.5" rx="1.2" />
+    <path d="M5 4.75h.01M5 11.25h.01" />
+  </svg>
+);
