@@ -324,11 +324,23 @@ export interface BackendView {
   readonly id: string;
   readonly name: string;
   readonly kind: 'dsh' | 'acp';
+  /** ACP 代理的启动命令（自定义代理没有内置说明时显示）。 */
+  readonly command?: string;
+  /** 本机能不能找到这个底层的命令；undefined 表示还在检查。 */
+  readonly available?: boolean;
+  /** 找不到时的安装命令（内置底层），可以复制。 */
+  readonly installCommand?: string;
+  /** 找不到时的安装提示（设置里写的 installHint）。 */
+  readonly installHint?: string;
 }
 
 export interface BackendsState {
   readonly items: readonly BackendView[];
   readonly active: string;
+  /** 第一次使用：先让用户选底层（选过或跳过后不再出现）。 */
+  readonly needsChoice?: boolean;
+  /** 底层工作的文件夹名（首页显示）。 */
+  readonly workspace?: string;
 }
 
 export interface WorkspaceState {

@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
-import { extname, join, normalize, resolve } from 'node:path';
+import { basename, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
@@ -109,6 +109,9 @@ if (agent === 'omp') {
 
 // ---- 控制器和代理进程 ----
 let page: Page | undefined;
+const activeBackend = agent === 'omp' ? 'oh-my-pi' : 'codebuddy';
+let backendChosen = false;
+const backendMessages: string[] = [];
 let stored: StoredSession[] = [];
 let activeSessionId: string | undefined;
 const workbench: Workbench = { ...noWorkbench, readFile: (path) => readFile(path, 'utf8').catch(() => undefined) };
@@ -124,7 +127,17 @@ const controller = new AcpController({
   // 和 backend/acp.ts 一样：停掉进程再启动、initialize、setLink（单会话代理切换会话时会用到）
   restartRuntime: () => void restartAgent(),
   singleSession: agent === 'codebuddy',
-  backends: () => ({ items: [{ id: 'dsh', name: 'dsh', kind: 'dsh' }, { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp' }, { id: 'codebuddy', name: 'CodeBuddy', kind: 'acp' }], active: agent === 'omp' ? 'oh-my-pi' : 'codebuddy' }),
+  // 和 extension.ts 一样：第一次使用时 needsChoice；dsh 假装没装，用来检查安装命令的显示
+  backends: () => ({
+    items: [
+      { id: 'dsh', name: 'dsh', kind: 'dsh', available: false, installCommand: 'npm install -g @deepseek-ai/dsh' },
+      { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp', command: 'omp acp', available: agent === 'omp' },
+      { id: 'codebuddy', name: 'CodeBuddy', kind: 'acp', command: 'codebuddy --acp', available: agent === 'codebuddy' },
+    ],
+    active: activeBackend,
+    workspace: basename(workspace),
+    ...(backendChosen ? {} : { needsChoice: true }),
+  }),
   loadActiveSessionId: () => activeSessionId,
   saveActiveSessionId: (id) => void (activeSessionId = id),
   loadSessions: () => stored,
@@ -201,6 +214,13 @@ try {
   page.on('pageerror', (error) => errors.push(String(error)));
   await page.exposeFunction('__toHost', (json: never) => {
     const message = parseWebviewMessage(JSON.parse(json as string));
+    // 选择底层由 extension.ts 处理：这里只记下来，标记已经选过
+    if (message?.type === 'selectBackend' || message?.type === 'dismissBackendChoice') {
+      backendMessages.push(message.type === 'selectBackend' ? message.payload.id : 'later');
+      backendChosen = true;
+      controller.backendsChanged();
+      return;
+    }
     if (message) void controller.handle(message);
   });
   await page.goto(base);
@@ -216,6 +236,31 @@ try {
   if (agent === 'omp') check('omp 启动，initialize 返回代理信息', init.agentInfo?.name === 'omp', JSON.stringify(init.agentInfo));
   // CodeBuddy 的 initialize 没有 agentInfo，有登录方式
   else check('CodeBuddy 启动，initialize 返回登录方式', (init.authMethods?.length ?? 0) > 1, JSON.stringify(init.authMethods));
+
+  // 1b. 第一次使用：选择底层的卡片
+  const chooser = page.getByTestId('backend-chooser');
+  await chooser.waitFor({ timeout: 10_000 }).then(
+    () => check('第一次打开显示选择底层的卡片', true),
+    () => check('第一次打开显示选择底层的卡片', false),
+  );
+  check('卡片列出 dsh、oh-my-pi、CodeBuddy', (await chooser.locator('.backend-option').count()) === 3);
+  const current = chooser.locator(`[data-testid="backend-option-${activeBackend}"]`);
+  check('当前底层标为「当前」并显示已安装', (await current.getAttribute('aria-checked')) === 'true' && (await current.innerText()).includes('已安装'), await current.innerText());
+  check('没装的底层显示安装命令', (await chooser.locator('.backend-option__install', { hasText: 'npm install -g @deepseek-ai/dsh' }).count()) === 1);
+  await shot('00-welcome');
+  await current.click();
+  await page.locator('.home').waitFor({ timeout: 10_000 }).then(
+    () => check('选好后显示首页', true),
+    () => check('选好后显示首页', false),
+  );
+  check('选择发给了 Host', backendMessages.join(',') === activeBackend, backendMessages.join(','));
+  const homeBackend = page.getByTestId('home-backend');
+  check('首页显示当前底层和工作区', (await homeBackend.innerText()).includes(agent === 'omp' ? 'oh-my-pi' : 'CodeBuddy') && (await page.locator('.home__chip', { hasText: basename(workspace) }).count()) === 1);
+  await homeBackend.click();
+  await chooser.waitFor({ timeout: 5_000 });
+  check('点首页的底层标签打开选择卡片（不是欢迎卡片，可以返回）', (await chooser.locator('[data-testid="backend-later"]').count()) === 0);
+  await chooser.getByRole('button', { name: '返回' }).click();
+  await page.locator('.home').waitFor({ timeout: 5_000 });
 
   // 2. 草稿会话：发消息前模型和模式就能用
   await page.getByTestId('model-picker').locator('.toolbar-button__text', { hasText: modelLabel }).waitFor({ timeout: 60_000 }).then(

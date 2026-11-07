@@ -410,6 +410,7 @@ export class AcpController implements ChatBackendController {
         this.options.post({ type: 'imageData', payload: { attachmentId: message.payload.attachmentId } });
         return;
       case 'selectBackend':
+      case 'dismissBackendChoice':
         return;
     }
   }

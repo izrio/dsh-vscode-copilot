@@ -6,10 +6,12 @@
  * 同一时间只运行一个底层。切换底层时停掉旧的、启动新的，Webview 重新取快照；每个底层的会话和标签分开保存。
  */
 import { homedir } from 'node:os';
+import { basename } from 'node:path';
 import * as vscode from 'vscode';
 import type { AppearanceState, BackendsState, RuntimeStatus } from '@dsh-copilot/shared';
 import { createAcpBackend } from './backend/acp.ts';
-import { createDshBackend, type BackendHost } from './backend/dsh.ts';
+import { createDshBackend, processEnvWithProxy, type BackendHost } from './backend/dsh.ts';
+import { locateDsh, locateExecutable } from './runtime/locate.ts';
 import { DSH_PROFILE, builtinProfiles, parseProfiles, profileView } from './backend/profiles.ts';
 import type { BackendProfile, RunningBackend } from './backend/types.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
@@ -20,6 +22,8 @@ import { command, migrateSettings, SECTION, settings } from './settings.ts';
 
 const FOLDER_KEY = 'dsh.folder';
 const BACKEND_KEY = 'dsh.backend';
+/** 用户已经在选择卡片里选过底层（或跳过）：不再在第一次打开时询问。按用户记，不按工作区。 */
+const CHOSEN_KEY = 'harnessDeck.backendChosen';
 
 let active: RunningBackend | undefined;
 
@@ -54,7 +58,38 @@ export function activate(context: vscode.ExtensionContext): void {
   // ---- 底层列表与切换 ----
   const profiles = (): BackendProfile[] =>
     parseProfiles(settings().get<unknown>('backends', []), log, builtinProfiles((id) => t(id === 'codebuddy' ? 'acp.codebuddyHint' : 'acp.ompHint')));
-  const backendsState = (): BackendsState => ({ items: profiles().map(profileView), active: active?.profile.id ?? DSH_PROFILE.id });
+  /** 每个底层的命令在本机找不找得到（选择卡片显示「已安装」或安装命令）。 */
+  const availability = new Map<string, boolean>();
+  const needsChoice = (): boolean => !context.globalState.get<boolean>(CHOSEN_KEY) && context.workspaceState.get<string>(BACKEND_KEY) === undefined;
+  const backendsState = (): BackendsState => ({
+    items: profiles().map((p) => profileView(p, availability.get(p.id))),
+    active: active?.profile.id ?? DSH_PROFILE.id,
+    ...(needsChoice() ? { needsChoice: true } : {}),
+    workspace: folders().find((f) => f.uri.fsPath === workspacePath)?.name ?? basename(workspacePath),
+  });
+  let checking: Promise<void> | undefined;
+  const checkAvailability = (): Promise<void> =>
+    (checking ??= (async () => {
+      const platform = process.platform;
+      await Promise.all(
+        profiles().map(async (p) => {
+          const located =
+            p.kind === 'dsh'
+              ? await locateDsh({ configuredPath: settings('dsh').get<string>('path', ''), env: processEnvWithProxy(), platform })
+              : await locateExecutable(p.command, { env: processEnvWithProxy(p.env), platform });
+          availability.set(p.id, located.kind === 'found');
+        }),
+      );
+      active?.controller.backendsChanged();
+    })()
+      .catch((error: unknown) => log(`检查底层是否安装失败：${String(error)}`))
+      .finally(() => {
+        checking = undefined;
+      }));
+  const markChosen = async (): Promise<void> => {
+    if (context.globalState.get<boolean>(CHOSEN_KEY)) return;
+    await context.globalState.update(CHOSEN_KEY, true);
+  };
   const updateStatusBar = (): void => renderStatusBar(status, active, modelLabel);
 
   let provider: ChatViewProvider | undefined;
@@ -143,8 +178,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
   provider = new ChatViewProvider(context.extensionUri, {
     onMessage: (message) => {
-      if (message.type === 'selectBackend') void switchBackend(message.payload.id);
-      else void active?.controller.handle(message);
+      if (message.type === 'selectBackend' || message.type === 'dismissBackendChoice') {
+        void (async () => {
+          await markChosen();
+          const id = message.type === 'selectBackend' ? message.payload.id : (active?.profile.id ?? DSH_PROFILE.id);
+          if (id !== active?.profile.id) await switchBackend(id);
+          else {
+            // 选的就是当前底层：记住选择，收起卡片
+            await context.workspaceState.update(BACKEND_KEY, id);
+            active.controller.backendsChanged();
+          }
+        })();
+        return;
+      }
+      // 面板每次打开都重新检查一遍（用户可能刚装好）
+      if (message.type === 'ready') void checkAvailability();
+      void active?.controller.handle(message);
     },
     onViewVisible: startIfTrusted,
     log: log,
@@ -165,7 +214,13 @@ export function activate(context: vscode.ExtensionContext): void {
         profiles().map((p) => ({ label: p.name, description: p.kind === 'dsh' ? 'dsh' : `ACP · ${p.command}`, picked: p.id === active?.profile.id, id: p.id })),
         { placeHolder: t('ext.selectBackend') },
       );
-      if (picked) await switchBackend(picked.id);
+      if (!picked) return;
+      await markChosen();
+      if (picked.id !== active?.profile.id) await switchBackend(picked.id);
+      else {
+        await context.workspaceState.update(BACKEND_KEY, picked.id);
+        active.controller.backendsChanged();
+      }
     }),
     vscode.commands.registerCommand(command('selectModel'), async () => {
       const chat = current().controller;
@@ -230,6 +285,7 @@ export function activate(context: vscode.ExtensionContext): void {
       workspacePath = picked.folder.uri.fsPath;
       await context.workspaceState.update(FOLDER_KEY, workspacePath);
       current().controller.setWorkspace(workspacePath);
+      current().controller.backendsChanged();
     }),
     vscode.commands.registerCommand(command('restartRuntime'), () => current().restart()),
     vscode.commands.registerCommand(command('openWebUI'), () => current().controller.handle({ type: 'openWebUI', payload: {} })),
@@ -242,7 +298,9 @@ export function activate(context: vscode.ExtensionContext): void {
         // 当前底层被删掉时回到 dsh；否则只刷新列表（命令和参数的修改在重启底层后生效）
         if (!profiles().some((p) => p.id === active?.profile.id)) void switchBackend(DSH_PROFILE.id);
         else chat.backendsChanged();
+        void checkAvailability();
       }
+      if (event.affectsConfiguration(`${SECTION}.dsh.path`)) void checkAvailability();
       if (event.affectsConfiguration(`${SECTION}.context`)) chat.workspaceChanged();
       if (event.affectsConfiguration(`${SECTION}.ui.fontSize`) || event.affectsConfiguration(`${SECTION}.ui.fontFamily`) || event.affectsConfiguration(`${SECTION}.ui.codeFontFamily`)) {
         chat.appearanceChanged();

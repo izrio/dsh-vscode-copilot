@@ -94,6 +94,26 @@ function parseSettings(raw: unknown, log: (line: string) => void): AcpProfile[] 
   return profiles;
 }
 
-export function profileView(profile: BackendProfile): BackendView {
-  return { id: profile.id, name: profile.name, kind: profile.kind };
+/** 内置底层的安装命令（选择卡片里可以复制）。 */
+const INSTALL_COMMANDS: Readonly<Record<string, string>> = {
+  dsh: 'npm install -g @deepseek-ai/dsh',
+  'oh-my-pi': 'bun install -g @oh-my-pi/pi-coding-agent',
+  codebuddy: 'npm install -g @tencent-ai/codebuddy-code',
+};
+
+/**
+ * 界面上的一项底层。
+ * @param available - 本机能不能找到命令；还没检查时不传。
+ */
+export function profileView(profile: BackendProfile, available?: boolean): BackendView {
+  const installCommand = INSTALL_COMMANDS[profile.id];
+  return {
+    id: profile.id,
+    name: profile.name,
+    kind: profile.kind,
+    ...(profile.kind === 'acp' ? { command: [profile.command, ...profile.args].join(' ') } : {}),
+    ...(available !== undefined ? { available } : {}),
+    ...(installCommand ? { installCommand } : {}),
+    ...(profile.kind === 'acp' && profile.installHint && !installCommand ? { installHint: profile.installHint } : {}),
+  };
 }

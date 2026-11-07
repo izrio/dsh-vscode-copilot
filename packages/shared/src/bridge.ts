@@ -113,6 +113,8 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('openSettings'), payload: empty }),
   /** 切换底层（设置里配置的 dsh / ACP 代理）。 */
   z.object({ type: z.literal('selectBackend'), payload: z.object({ id: z.string().min(1).max(100) }) }),
+  /** 第一次使用时的底层选择卡片：「稍后再说」，保持当前底层，不再询问。 */
+  z.object({ type: z.literal('dismissBackendChoice'), payload: empty }),
   /** 面板里的字体设置：写入 VS Code 设置 dsh.ui.*；null 表示恢复默认（跟随 VS Code）。 */
   z.object({
     type: z.literal('setAppearance'),
