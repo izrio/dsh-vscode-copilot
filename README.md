@@ -188,7 +188,7 @@ packages/
 | M0–M5（v0.1） | dsh 对接：协议客户端与运行时管理，对话界面，工具行、审批与提问、Diff，VS Code 上下文与右键菜单，排队与计划审阅，中英文界面，多版本兼容 CI |
 | v0.2 | 会话改动栏、多开标签、输入框拖动、主题强调色、浏览器打开 dsh、待办与提问卡片美化、运行状态和用时、粘贴图片、字体设置、子代理 |
 | v0.3 | 改名 Harness Deck，多底层：dsh + ACP（oh-my-pi、CodeBuddy），第一次打开时选底层，新首页和标志 |
-| 未发布 | Claude 底层；ACP 代理发消息时要求登录的处理 |
+| v0.3.1 | Claude 底层；ACP 代理发消息时要求登录的处理；内部包改名 `@harness-deck/*`，README 重写 |
 
 里程碑细节见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)，每个版本的改动见 [CHANGELOG](./packages/extension/CHANGELOG.md)。
 

@@ -1,11 +1,17 @@
 # 更新记录 / Changelog
 
-## 未发布 / Unreleased
+## 0.3.1
+
+**新的内置底层 Claude**；ACP 代理需要登录时的提示；内部包名改为 `@harness-deck/*`，README 重写。
+
+**New built-in backend: Claude**; clearer sign-in handling for ACP agents; internal packages renamed to `@harness-deck/*` and a rewritten README.
 
 - 新的内置底层 **Claude**：通过 Claude Code 的官方 ACP 适配器（`npm install -g @agentclientprotocol/claude-agent-acp`）接入，登录和设置与 Claude Code 共用；选择卡片、首页和菜单里显示 Claude 的图标。
   New built-in backend **Claude**, through Claude Code's official ACP adapter (`npm install -g @agentclientprotocol/claude-agent-acp`); sign-in and settings are shared with Claude Code. The chooser, home and menu show the Claude icon.
 - ACP 底层发消息时才发现需要登录（Claude 没登录或登录过期）：代理有登录方式时先登录再重发这一轮，没有时在对话里说明怎么登录，而不是只显示「Authentication required」。
   When an ACP backend reports that sign-in is needed while sending (Claude signed out or expired), the panel signs in and resends if the agent offers a sign-in method, or explains how to sign in instead of showing "Authentication required".
+- 工作区里的内部包改名为 `@harness-deck/shared`、`@harness-deck/webview-ui`；仓库 README 按 Harness Deck 重写（底层对照表、新截图、架构图、各底层的测试方法）。
+  Workspace packages renamed to `@harness-deck/shared` and `@harness-deck/webview-ui`; the repository README is rewritten for Harness Deck (backend table, new screenshots, architecture, tests for every backend).
 
 ## 0.3.0
 
