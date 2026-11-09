@@ -122,6 +122,7 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
       fontSize: z.number().int().min(8).max(32).nullable().optional(),
       fontFamily: z.string().max(500).nullable().optional(),
       codeFontFamily: z.string().max(500).nullable().optional(),
+      palette: z.enum(['soft', 'theme']).nullable().optional(),
     }),
   }),
   z.object({

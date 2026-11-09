@@ -43,6 +43,11 @@ export const ArrowUpIcon = (p: IconProps) => (
     <path d="M8 13V3.5M4 7.5l4-4 4 4" />
   </svg>
 );
+export const ArrowDownIcon = (p: IconProps) => (
+  <svg {...base(p)} strokeWidth={1.8}>
+    <path d="M8 3v9.5M4 8.5l4 4 4-4" />
+  </svg>
+);
 export const StopIcon = (p: IconProps) => (
   <svg {...base(p)} fill="currentColor" stroke="none">
     <rect x="4" y="4" width="8" height="8" rx="1.5" />

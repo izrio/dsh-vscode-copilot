@@ -482,8 +482,24 @@ try {
   await page.getByRole('button', { name: '增大字号' }).click();
   check('字体面板里加大字号立即生效', (await bodySize()) === sizeBefore + 2, `${sizeBefore} → ${await bodySize()}`);
   await shot('14c-appearance');
+  // 护眼配色：默认打开，正文比主题前景色暗一些；关掉后直接用主题前景色
+  const textColors = () =>
+    page!.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--vscode-foreground)';
+      document.body.append(probe);
+      const theme = getComputedStyle(probe).color;
+      probe.remove();
+      return { palette: document.documentElement.dataset.palette, body: getComputedStyle(document.body).color, theme };
+    });
+  const soft = await textColors();
+  check('默认是护眼配色：正文颜色比主题前景色柔和', soft.palette === 'soft' && soft.body !== soft.theme, JSON.stringify(soft));
+  await page.getByTestId('appearance-soft').click();
+  const themed = await textColors();
+  check('关掉护眼配色后正文用主题前景色', themed.palette === 'theme' && themed.body === themed.theme, JSON.stringify(themed));
   await page.getByRole('button', { name: '恢复默认' }).click();
   check('恢复默认后回到原来的字号', (await bodySize()) === sizeBefore);
+  check('恢复默认后回到护眼配色', (await textColors()).palette === 'soft');
   await page.keyboard.press('Escape');
 
   // 2c. 审批：允许
@@ -845,7 +861,23 @@ try {
   await page.locator('.user', { hasText: '重启之后还能继续吗' }).waitFor({ timeout: 10_000 });
   await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
   await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+  // 翻到上面时出现「滚动到底部」按钮，点一下回到底部
+  const toBottom = page.getByTestId('to-bottom');
+  await toBottom.waitFor({ timeout: 5_000 }).then(
+    () => check('往上翻时出现「滚动到底部」按钮', true),
+    () => check('往上翻时出现「滚动到底部」按钮', false),
+  );
   await shot('12-light');
+  await toBottom.click();
+  await page
+    .waitForFunction(() => {
+      const el = document.querySelector('.thread');
+      return !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 48 && !document.querySelector('[data-testid="to-bottom"]');
+    }, undefined, { timeout: 5_000 })
+    .then(
+      () => check('点按钮回到底部，按钮消失', true),
+      () => check('点按钮回到底部，按钮消失', false),
+    );
 
   // 8. 没有 API Key：引导配置，保存到 dsh 要求的凭据名后立即可用
   withoutKey = true;

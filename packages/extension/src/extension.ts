@@ -311,7 +311,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       if (event.affectsConfiguration(`${SECTION}.dsh.path`)) void checkAvailability();
       if (event.affectsConfiguration(`${SECTION}.context`)) chat.workspaceChanged();
-      if (event.affectsConfiguration(`${SECTION}.ui.fontSize`) || event.affectsConfiguration(`${SECTION}.ui.fontFamily`) || event.affectsConfiguration(`${SECTION}.ui.codeFontFamily`)) {
+      if (event.affectsConfiguration(`${SECTION}.ui.fontSize`) || event.affectsConfiguration(`${SECTION}.ui.fontFamily`) || event.affectsConfiguration(`${SECTION}.ui.codeFontFamily`) || event.affectsConfiguration(`${SECTION}.ui.palette`)) {
         chat.appearanceChanged();
       }
       if (event.affectsConfiguration(`${SECTION}.ui.showTurnChanges`)) chat.workspaceChanged();
@@ -334,7 +334,9 @@ function readAppearance(): AppearanceState {
   const size = config.get<number>('fontSize', 0);
   const family = config.get<string>('fontFamily', '').trim();
   const code = config.get<string>('codeFontFamily', '').trim();
+  const palette = config.get<string>('palette', 'soft');
   return {
+    ...(palette === 'theme' ? { palette: 'theme' as const } : {}),
     ...(Number.isFinite(size) && size > 0 ? { fontSize: Math.min(32, Math.max(8, Math.round(size))) } : {}),
     ...(family ? { fontFamily: family } : {}),
     ...(code ? { codeFontFamily: code } : {}),

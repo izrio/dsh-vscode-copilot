@@ -22,6 +22,34 @@
   --mono: var(--dsh-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
   /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
   --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+  /*
+   * 文字层级。「跟随主题」配色（data-palette="theme"）直接用主题前景色；
+   * 默认的柔和配色把前景色往背景色混一些：深色主题下正文不再接近纯白，对比度仍在 8:1 左右。
+   */
+  --bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
+  --text: var(--vscode-foreground);
+  --text-strong: var(--vscode-foreground);
+}
+
+:root:not([data-palette='theme']) {
+  --text: color-mix(in srgb, var(--vscode-foreground) 82%, var(--bg));
+  --text-strong: color-mix(in srgb, var(--vscode-foreground) 93%, var(--bg));
+  --muted: color-mix(in srgb, var(--vscode-descriptionForeground) 90%, var(--bg));
+  --bubble: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+}
+
+/* 浅色主题本来就不刺眼：只稍微柔和一点，保证对比度 */
+:root:not([data-palette='theme']) body.vscode-light {
+  --text: color-mix(in srgb, var(--vscode-foreground) 90%, var(--bg));
+  --text-strong: var(--vscode-foreground);
+}
+
+/* 高对比度主题保持原色 */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --text: var(--vscode-foreground);
+  --text-strong: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
 }
 
 * {
@@ -37,7 +65,7 @@ body,
 body {
   margin: 0;
   padding: 0;
-  color: var(--vscode-foreground);
+  color: var(--text);
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
   font-family: var(--dsh-font-family, var(--vscode-font-family));
   font-size: var(--dsh-font-size, calc(var(--vscode-font-size, 13px) + 1px));
@@ -95,11 +123,11 @@ button {
 
 .tab:hover {
   background: var(--hover);
-  color: var(--vscode-foreground);
+  color: var(--text);
 }
 
 .tab--active {
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
   cursor: default;
 }
 
@@ -387,7 +415,7 @@ button {
 /* 当前选中项：强调色底色 + 加粗，在任何主题下都看得出来 */
 .menu-item--active {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
   font-weight: 600;
 }
 
@@ -398,7 +426,7 @@ button {
 .menu-item--active:hover,
 .menu-item--active:focus-visible {
   background: color-mix(in srgb, var(--accent) 26%, transparent);
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
 }
 
 .menu-item__label {
@@ -541,6 +569,67 @@ button {
 
 /* ---------- 对话流 ---------- */
 
+/* 对话流和「滚动到底部」按钮的容器：按钮浮在对话流右下角 */
+.thread-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.to-bottom {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--vscode-editorWidget-background, var(--bg));
+  color: var(--text);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 35%, transparent);
+  cursor: pointer;
+  animation: to-bottom-in 0.15s ease-out;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.to-bottom:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.to-bottom svg {
+  width: 16px;
+  height: 16px;
+}
+
+.to-bottom__dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--vscode-editorWidget-background, var(--bg));
+  border-radius: 50%;
+  background: var(--accent);
+  box-sizing: content-box;
+}
+
+@keyframes to-bottom-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 .thread {
   flex: 1;
   min-height: 0;
@@ -664,7 +753,7 @@ button {
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: var(--vscode-foreground);
+  color: var(--text);
   font-size: 0.9em;
 }
 
@@ -758,7 +847,7 @@ button {
 
 .activity__name {
   flex: none;
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
 }
 
 .activity__detail {
@@ -838,7 +927,7 @@ button {
 
 .explore__tool {
   flex: none;
-  color: var(--vscode-foreground);
+  color: var(--text);
 }
 
 .explore__target {
@@ -916,7 +1005,7 @@ button {
 }
 
 .changes__name {
-  color: var(--vscode-foreground);
+  color: var(--text);
 }
 
 .changes__file:hover .changes__name {
@@ -1283,10 +1372,16 @@ button {
   padding-left: 1.4em;
 }
 
+.markdown strong,
+.markdown b {
+  color: var(--text-strong);
+}
+
 .markdown h1,
 .markdown h2,
 .markdown h3,
 .markdown h4 {
+  color: var(--text-strong);
   margin: 0.9em 0 0.4em;
   font-size: 1.05em;
   font-weight: 600;
@@ -1441,7 +1536,7 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--text);
   font-size: 0.85em;
   line-height: 1.6;
 }
@@ -1492,7 +1587,7 @@ button.chip:hover {
 }
 
 .chip__remove:hover svg {
-  color: var(--vscode-foreground);
+  color: var(--text);
 }
 
 .chip--small {
@@ -1693,7 +1788,7 @@ body.resizing {
   border: 0;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
@@ -1768,7 +1863,7 @@ body.resizing {
 
 .status-strip__label {
   flex: none;
-  color: var(--vscode-foreground);
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -1952,7 +2047,7 @@ body.resizing {
 }
 
 .todo--in_progress .todo__text {
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
   font-weight: 600;
 }
 
@@ -2080,7 +2175,7 @@ body.resizing {
 
 .toolbar-button:hover:not(:disabled) {
   background: var(--hover);
-  color: var(--vscode-foreground);
+  color: var(--text);
 }
 
 .toolbar-button--danger,
@@ -2374,7 +2469,7 @@ body.resizing {
 }
 
 .home__chip--backend {
-  color: var(--vscode-foreground);
+  color: var(--text-strong);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -2422,7 +2517,7 @@ body.resizing {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
-  color: var(--vscode-foreground);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
   transition:
@@ -2521,7 +2616,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
-  color: var(--vscode-foreground);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 0.92em;
   line-height: 1.5;
@@ -2603,7 +2698,7 @@ kbd {
   padding: 11px 12px;
   border: none;
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
@@ -2761,7 +2856,7 @@ kbd {
   padding: 0;
   border: none;
   background: none;
-  color: var(--vscode-foreground);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 0.8em;
   overflow-wrap: anywhere;
@@ -3003,7 +3098,7 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--vscode-editorWidget-background, var(--surface));
-  color: var(--vscode-foreground);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -3071,6 +3166,49 @@ kbd {
   min-width: 4.5em;
   color: var(--muted);
   font-size: 0.92em;
+}
+
+.appearance__switch {
+  cursor: pointer;
+}
+
+/* 开关：圆角滑块，打开时是强调色 */
+.appearance__switch input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.appearance__switch input[type='checkbox']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.appearance__switch input[type='checkbox']:checked {
+  background: var(--accent);
+}
+
+.appearance__switch input[type='checkbox']:checked::before {
+  transform: translateX(12px);
+}
+
+.appearance__hint {
+  color: var(--muted);
+  font-size: 0.82em;
 }
 
 .appearance__default {

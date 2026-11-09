@@ -222,6 +222,19 @@
           "default": "",
           "markdownDescription": "%config.ui.codeFontFamily%"
         },
+        "harnessDeck.ui.palette": {
+          "type": "string",
+          "enum": [
+            "soft",
+            "theme"
+          ],
+          "enumDescriptions": [
+            "%config.ui.palette.soft%",
+            "%config.ui.palette.theme%"
+          ],
+          "default": "soft",
+          "markdownDescription": "%config.ui.palette%"
+        },
         "harnessDeck.backendTrace": {
           "type": "boolean",
           "default": false,

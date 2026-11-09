@@ -41,6 +41,8 @@ export function App() {
     apply('--dsh-font-size', appearance.fontSize ? `${appearance.fontSize}px` : undefined);
     apply('--dsh-font-family', appearance.fontFamily);
     apply('--dsh-code-font-family', appearance.codeFontFamily);
+    // 配色：默认柔和，「跟随主题」时直接用主题前景色（见 styles.css 的文字层级变量）
+    document.documentElement.dataset.palette = appearance.palette ?? 'soft';
   }, [appearance]);
 
   return (

@@ -41,7 +41,7 @@ describe('字体与字号面板', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(posted.at(-1)).toEqual({ type: 'setAppearance', payload: { fontFamily: 'Microsoft YaHei UI' } });
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
-    expect(posted.at(-1)).toEqual({ type: 'setAppearance', payload: { fontSize: null, fontFamily: null, codeFontFamily: null } });
+    expect(posted.at(-1)).toEqual({ type: 'setAppearance', payload: { fontSize: null, fontFamily: null, codeFontFamily: null, palette: null } });
     expect(store.getState().appearance).toEqual({});
   });
 });

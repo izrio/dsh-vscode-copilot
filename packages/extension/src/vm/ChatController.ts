@@ -94,7 +94,12 @@ export interface ChatControllerOptions {
   /** 可选的底层和当前底层（随快照下发，Webview 的「…」菜单里切换）。 */
   readonly backends?: () => BackendsState;
   /** 写入字体设置（dsh.ui.*）；值为 null 时恢复默认。 */
-  readonly setAppearance?: (patch: { readonly fontSize?: number | null; readonly fontFamily?: string | null; readonly codeFontFamily?: string | null }) => Promise<void>;
+  readonly setAppearance?: (patch: {
+    readonly fontSize?: number | null;
+    readonly fontFamily?: string | null;
+    readonly codeFontFamily?: string | null;
+    readonly palette?: 'soft' | 'theme' | null;
+  }) => Promise<void>;
   /**
    * 每轮结束时在对话流里显示改动汇总卡片（设置 `dsh.ui.showTurnChanges`）。不传时显示。
    * 关掉时改动只在输入框上方的会话改动栏里显示，汇总仍会读取，用于打开 Diff。

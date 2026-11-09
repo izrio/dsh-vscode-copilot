@@ -11,7 +11,7 @@ import { useT } from '../i18n.ts';
 const MIN_SIZE = 10;
 const MAX_SIZE = 24;
 
-type Patch = { fontSize?: number | null; fontFamily?: string | null; codeFontFamily?: string | null };
+type Patch = { fontSize?: number | null; fontFamily?: string | null; codeFontFamily?: string | null; palette?: 'theme' | null };
 
 function apply(current: AppearanceState, patch: Patch): void {
   const next: Record<string, unknown> = { ...current };
@@ -46,7 +46,7 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
   const reset = () => {
     setFamily('');
     setCodeFamily('');
-    apply(appearance, { fontSize: null, fontFamily: null, codeFontFamily: null });
+    apply(appearance, { fontSize: null, fontFamily: null, codeFontFamily: null, palette: null });
   };
 
   return (
@@ -88,6 +88,17 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
           onBlur={() => commitFamily('codeFontFamily', codeFamily)}
           onKeyDown={(event) => event.key === 'Enter' && commitFamily('codeFontFamily', codeFamily)}
         />
+      </label>
+      <label className="appearance__row appearance__switch">
+        <span className="appearance__label">{t('appearance.soft')}</span>
+        <input
+          type="checkbox"
+          role="switch"
+          data-testid="appearance-soft"
+          checked={appearance.palette !== 'theme'}
+          onChange={(event) => apply(appearance, { palette: event.target.checked ? null : 'theme' })}
+        />
+        <span className="appearance__hint">{t('appearance.softHint')}</span>
       </label>
       <div className="appearance__actions">
         <button type="button" className="link-button" onClick={reset}>

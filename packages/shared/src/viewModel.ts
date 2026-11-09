@@ -40,6 +40,8 @@ export interface AppearanceState {
   readonly fontSize?: number;
   readonly fontFamily?: string;
   readonly codeFontFamily?: string;
+  /** 配色：soft（默认，柔和的文字颜色）或 theme（直接用主题前景色）。 */
+  readonly palette?: 'soft' | 'theme';
 }
 
 /**
