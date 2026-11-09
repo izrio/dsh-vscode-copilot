@@ -43,6 +43,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Harness Deck', { log: true });
   // 所有日志都先脱敏：错误信息里可能带着底层回显的令牌或 API Key
   const log = (line: string): void => output.info(redactSecrets(line));
+  // 旧版本没卸载时，右键菜单里还有「DSH」：提示卸载
+  void offerUninstallOldExtension(log);
   const runtimeOutput = vscode.window.createOutputChannel('Harness Deck: Backend', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
@@ -356,4 +358,21 @@ function renderStatusBar(item: vscode.StatusBarItem, backend: RunningBackend | u
   item.text = text[status.kind];
   item.tooltip = status.kind === 'connected' ? `${name} ${status.version}` : status.kind === 'failed' ? status.message : undefined;
   item.show();
+}
+
+/** 改名前的扩展。它和 Harness Deck 是两个扩展 id，没卸载时编辑器右键菜单里还有「DSH」，侧边栏里也多一个面板。 */
+const OLD_EXTENSION_ID = 'izrio.dsh-copilot';
+
+async function offerUninstallOldExtension(log: (line: string) => void): Promise<void> {
+  if (!vscode.extensions.getExtension(OLD_EXTENSION_ID)) return;
+  log(`旧版扩展 ${OLD_EXTENSION_ID} 还装着`);
+  const uninstall = t('ext.oldUninstall');
+  const choice = await vscode.window.showWarningMessage(t('ext.oldInstalled'), uninstall);
+  if (choice !== uninstall) return;
+  try {
+    await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', OLD_EXTENSION_ID);
+  } catch (error) {
+    log(`卸载旧版扩展失败：${error instanceof Error ? error.message : String(error)}`);
+    void vscode.commands.executeCommand('workbench.extensions.search', OLD_EXTENSION_ID);
+  }
 }

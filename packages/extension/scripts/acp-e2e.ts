@@ -153,7 +153,7 @@ const controller = new AcpController({
   // 和 extension.ts 一样：第一次使用时 needsChoice；dsh 假装没装，用来检查安装命令的显示
   backends: () => ({
     items: [
-      { id: 'dsh', name: 'dsh', kind: 'dsh', available: false, installCommand: 'npm install -g @deepseek-ai/dsh' },
+      { id: 'dsh', name: 'DeepSeek', kind: 'dsh', available: false, installCommand: 'npm install -g @deepseek-ai/dsh' },
       { id: 'oh-my-pi', name: 'oh-my-pi', kind: 'acp', command: 'omp acp', available: agent === 'omp' },
       { id: 'codebuddy', name: 'CodeBuddy', kind: 'acp', command: 'codebuddy --acp', available: agent === 'codebuddy' },
       { id: 'claude', name: 'Claude', kind: 'acp', command: 'claude-agent-acp', available: agent === 'claude' },

@@ -10,7 +10,7 @@ const zh = {
   'empty.title': '有什么可以帮你？',
   'empty.hint': '描述一个任务，{agent} 会阅读代码、修改文件、运行命令，需要你确认时会先询问。',
   'apiKey.title': '先配置 DeepSeek API Key',
-  'apiKey.hint': 'dsh 需要 API Key 才能调用模型。Key 保存在 dsh 的凭据存储里，与 dsh Web UI、桌面版共用，不会写进工作区。',
+  'apiKey.hint': 'DeepSeek 需要 API Key 才能调用模型。Key 保存在 dsh 的凭据存储里，与 dsh 网页、桌面版共用，不会写进工作区。',
   'apiKey.configure': '配置 API Key',
   'apiKey.get': '获取 API Key',
   'code.copy': '复制代码',
@@ -50,7 +50,7 @@ const zh = {
   'header.moreActions': '更多操作',
   'header.rename': '重命名会话',
   'header.folder': '切换文件夹',
-  'header.openWebUI': '在浏览器中打开 dsh',
+  'header.openWebUI': '在浏览器中打开 dsh 网页',
   'header.restart': '重启 {agent}',
   'header.logs': '查看日志',
   'time.now': '刚刚',
@@ -260,7 +260,7 @@ const zh = {
   'backend.missing': '本机还没有安装',
   'backend.copy': '复制安装命令',
   'backend.copied': '已复制',
-  'backend.desc.dsh': 'DeepSeek Harness：功能最全，会话与 dsh 网页、DeepSeek Desktop 共用。',
+  'backend.desc.dsh': 'DeepSeek Harness（dsh）：功能最全，会话与 dsh 网页、DeepSeek Desktop 共用。',
   'backend.desc.omp': '开源编程代理，可以接入多家模型提供方（需要 Bun）。',
   'backend.desc.codebuddy': '腾讯 CodeBuddy：用 CodeBuddy 账号登录，内置多种模型。',
   'backend.desc.claude': 'Anthropic 的 Claude Code（通过 ACP 适配器）：与 Claude Code 共用登录和设置。',
@@ -282,7 +282,7 @@ const en: Record<MessageKey, string> = {
   'empty.title': 'What can I help with?',
   'empty.hint': 'Describe a task. {agent} reads code, edits files and runs commands, and asks before anything that needs your approval.',
   'apiKey.title': 'Set up your DeepSeek API key',
-  'apiKey.hint': 'dsh needs an API key to call the model. The key is stored in dsh’s credential store, shared with the dsh Web UI and desktop app, and never written to the workspace.',
+  'apiKey.hint': 'DeepSeek needs an API key to call the model. The key is stored in dsh’s credential store, shared with the dsh Web UI and desktop app, and never written to the workspace.',
   'apiKey.configure': 'Set API key',
   'apiKey.get': 'Get an API key',
   'code.copy': 'Copy code',
@@ -322,7 +322,7 @@ const en: Record<MessageKey, string> = {
   'header.moreActions': 'More actions',
   'header.rename': 'Rename session',
   'header.folder': 'Switch folder',
-  'header.openWebUI': 'Open dsh in browser',
+  'header.openWebUI': 'Open the dsh web UI in browser',
   'header.restart': 'Restart {agent}',
   'header.logs': 'Show logs',
   'time.now': 'just now',
@@ -532,7 +532,7 @@ const en: Record<MessageKey, string> = {
   'backend.missing': 'Not installed on this machine',
   'backend.copy': 'Copy install command',
   'backend.copied': 'Copied',
-  'backend.desc.dsh': 'DeepSeek Harness: the most complete, sessions shared with the dsh web UI and DeepSeek Desktop.',
+  'backend.desc.dsh': 'DeepSeek Harness (dsh): the most complete, sessions shared with the dsh web UI and DeepSeek Desktop.',
   'backend.desc.omp': 'Open-source coding agent that works with many model providers (needs Bun).',
   'backend.desc.codebuddy': 'Tencent CodeBuddy: sign in with a CodeBuddy account, several models built in.',
   'backend.desc.claude': "Anthropic's Claude Code through its ACP adapter: shares Claude Code's sign-in and settings.",
@@ -552,14 +552,14 @@ const catalogs: Record<Locale, Record<MessageKey, string>> = { zh, en };
 export type Translate = (key: MessageKey, ...args: (string | number)[]) => string;
 
 /**
- * @param agent - 当前底层的名称，填进文案里的 `{agent}`（「dsh 想运行这条命令」「正在启动 oh-my-pi…」）。
+ * @param agent - 当前底层的名称，填进文案里的 `{agent}`（「DeepSeek 想运行这条命令」「正在启动 oh-my-pi…」）。
  */
-export function translator(locale: Locale, agent = 'dsh'): Translate {
+export function translator(locale: Locale, agent = 'DeepSeek'): Translate {
   const catalog = catalogs[locale];
   return (key, ...args) => catalog[key].replace(/\{(\d+)\}/gu, (_, i: string) => String(args[Number(i)] ?? '')).replaceAll('{agent}', agent);
 }
 export function useT(): Translate {
   const locale = useView((s) => s.locale);
-  const agent = useView((s) => s.backends.items.find((b) => b.id === s.backends.active)?.name ?? 'dsh');
+  const agent = useView((s) => s.backends.items.find((b) => b.id === s.backends.active)?.name ?? 'DeepSeek');
   return translator(locale, agent);
 }

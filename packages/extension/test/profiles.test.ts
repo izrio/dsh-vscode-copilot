@@ -14,7 +14,7 @@ describe('底层配置', () => {
       (line) => logs.push(line),
     );
     expect(profiles).toEqual([
-      { id: 'dsh', kind: 'dsh', name: 'dsh' },
+      { id: 'dsh', kind: 'dsh', name: 'DeepSeek' },
       { id: 'oh-my-pi', kind: 'acp', name: 'oh-my-pi', command: 'omp', args: ['acp'], env: { A: '1' }, installHint: 'bun install' },
       { id: 'gemini-cli', kind: 'acp', name: 'Gemini CLI', command: 'gemini', args: ['--experimental-acp'], env: {} },
     ]);

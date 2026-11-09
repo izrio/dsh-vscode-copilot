@@ -6,7 +6,7 @@
 
 面板背后的「底层」可以切换：
 
-- **dsh**（内置）：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。功能最全，会话和 dsh Web UI、DeepSeek Desktop 共用。
+- **DeepSeek**（内置，即 dsh）：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。功能最全，会话和 dsh Web UI、DeepSeek Desktop 共用。
 - **ACP 代理**：任何支持 [Agent Client Protocol](https://agentclientprotocol.com) 的代理。内置了 [oh-my-pi](https://github.com/can1357/oh-my-pi)（`omp acp`）、腾讯 [CodeBuddy](https://www.codebuddy.ai/cli)（`codebuddy --acp`）和 Anthropic 的 [Claude Code](https://github.com/agentclientprotocol/claude-agent-acp)（`claude-agent-acp`），也可以自己加（例如 Gemini CLI）。
 
 Agent 能力（读写文件、执行命令、审批、会话、模型）都由底层提供；插件负责启动和连接底层、显示界面，并补上 VS Code 的集成。这个插件以前叫 **DSH Copilot**。
@@ -15,7 +15,7 @@ Agent 能力（读写文件、执行命令、审批、会话、模型）都由�
 
 ## 准备
 
-**用 dsh**
+**用 DeepSeek（dsh）**
 
 1. 安装 dsh（`0.2.1-rc.5` 及以上，已测试到 `0.2.2-alpha.3`），任选一种：
    - 安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/)，在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令；
@@ -69,7 +69,7 @@ Agent 能力（读写文件、执行命令、审批、会话、模型）都由�
 
 ### 不同底层的差别
 
-| 功能 | dsh | oh-my-pi | CodeBuddy | Claude |
+| 功能 | DeepSeek | oh-my-pi | CodeBuddy | Claude |
 | --- | --- | --- | --- | --- |
 | 流式回复、推理、工具行、审批、待办、停止 | ✅ | ✅ | ✅ | ✅ |
 | 文件修改的增删行数和 Diff | ✅ | ✅ | ✅ | ✅ |
@@ -101,6 +101,7 @@ CodeBuddy 的一个进程只给一个会话推送回复。回到别的会话发�
 
 ## 常见问题
 
+- **右键菜单里还有「DSH」、侧边栏多一个面板**：旧版扩展 DSH Copilot 还装着。Harness Deck 启动时会提示卸载，也可以在扩展视图里搜索 DSH Copilot 卸载。
 - **「找不到 dsh / omp / codebuddy / claude-agent-acp」**：确认终端里能运行；VS Code 从图形界面启动时可能读不到 shell 里设置的 `PATH`，这时写完整路径（`harnessDeck.dsh.path`，或在 `harnessDeck.backends` 里用相同 `id` 覆盖内置项，写上 `command` 的完整路径）。
 - **启动失败**：「…」→「查看日志」看插件日志；底层自己的输出在输出面板的「Harness Deck: Backend」里（令牌和 Key 已脱敏）。
 - **oh-my-pi 回复报错**：多半是模型提供方没配好，在终端里运行 `omp` 先确认能对话。

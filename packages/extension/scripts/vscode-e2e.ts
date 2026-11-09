@@ -159,7 +159,7 @@ try {
     body: getComputedStyle(document.body).color,
   }));
   check('代码高亮在 Webview 的 CSP 下生效', colors.token !== colors.body);
-  const status = await page.locator('.statusbar-item', { hasText: 'dsh' }).first().innerText();
+  const status = await page.locator('.statusbar-item', { hasText: 'DeepSeek' }).first().innerText();
   check(`状态栏显示当前模型（${status.replace(/\s+/gu, ' ').trim()}）`, status.includes('·'));
   await page.screenshot({ path: join(outDir, 'conversation.png') });
 

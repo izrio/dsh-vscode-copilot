@@ -4,7 +4,7 @@
 
 <p align="center">
   编程代理的 VS Code 对话面板：一个界面，换着用不同的底层。<br>
-  dsh · oh-my-pi · CodeBuddy · Claude · 任何支持 ACP 的代理
+  DeepSeek · Claude · oh-my-pi · CodeBuddy · 任何支持 ACP 的代理
 </p>
 
 <p align="center">
@@ -41,19 +41,19 @@
 
 ## 特性
 
-- **底层可以换**：同一个面板背后可以是 dsh、oh-my-pi、CodeBuddy、Claude，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com)的代理；每个底层的会话分开保存。
+- **底层可以换**：同一个面板背后可以是 DeepSeek（dsh）、Claude、oh-my-pi、CodeBuddy，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com)的代理；每个底层的会话分开保存。
 - **侧边栏对话**：逐字流式回复和推理，紧凑的工具活动行（读文件和搜索合并成「浏览」、命令带输出、修改带增删行数），运行状态和用时，停止生成，回复中继续发的消息自动排队。
 - **审批与模式**：需要确认的操作弹出审批卡片；在输入框里切换权限 / 模式（含计划模式），模型和思考等级级联选择。
 - **VS Code 集成**：在 Diff 编辑器里查看每次改动；当前编辑器和选区作为上下文；`@` 引用文件、`/` 命令；编辑器右键「解释 / 修复 / 写测试」；粘贴图片。
 - **多开标签**：每个会话一个标签，后台会话继续回复，切回时内容立即可见；所有底层都支持。
-- **dsh 独有**：会话改动栏、子代理卡片、提问卡片、消息插队、`/goal`、在浏览器中打开 dsh 网页。
+- **DeepSeek（dsh）独有**：会话改动栏、子代理卡片、提问卡片、消息插队、`/goal`、在浏览器中打开 dsh 网页。
 - **细节**：中英文界面，跟随 VS Code 主题，对话字号和字体可调。
 
 ## 支持的底层
 
 | 底层 | 接入方式 | 安装 | 登录 / 模型 |
 | --- | --- | --- | --- |
-| <img src="packages/webview-ui/src/assets/backends/deepseek.svg" width="16"> **dsh**（[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)） | 内置：HTTP + WebSocket | [DeepSeek Desktop](https://www.deepseek.com/en/download/) 菜单「管理 dsh 命令…」，或 `npm install -g @deepseek-ai/dsh` | 第一次使用时引导配置 DeepSeek API Key |
+| <img src="packages/webview-ui/src/assets/backends/deepseek.svg" width="16"> **DeepSeek**（dsh，[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)） | 内置：HTTP + WebSocket | [DeepSeek Desktop](https://www.deepseek.com/en/download/) 菜单「管理 dsh 命令…」，或 `npm install -g @deepseek-ai/dsh` | 第一次使用时引导配置 DeepSeek API Key |
 | <img src="packages/webview-ui/src/assets/backends/oh-my-pi.png" width="16"> **oh-my-pi** | ACP：`omp acp` | `bun install -g @oh-my-pi/pi-coding-agent` | omp 自己的模型提供方配置 |
 | <img src="packages/webview-ui/src/assets/backends/codebuddy.png" width="16"> **CodeBuddy** | ACP：`codebuddy --acp` | `npm install -g @tencent-ai/codebuddy-code` | 浏览器登录，或 `CODEBUDDY_API_KEY` |
 | <img src="packages/webview-ui/src/assets/backends/claude.svg" width="16"> **Claude** | ACP：`claude-agent-acp` | `npm install -g @agentclientprotocol/claude-agent-acp` | `claude` → `/login`，或 `ANTHROPIC_API_KEY` |

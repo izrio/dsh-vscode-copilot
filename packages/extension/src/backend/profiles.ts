@@ -17,7 +17,8 @@ export interface AcpProfileSetting {
   readonly singleSession?: unknown;
 }
 
-export const DSH_PROFILE: BackendProfile = { id: 'dsh', kind: 'dsh', name: 'dsh' };
+/** 内置底层 DeepSeek（dsh，DeepSeek Harness）。id 保持 dsh：会话、标签等按 id 保存。 */
+export const DSH_PROFILE: BackendProfile = { id: 'dsh', kind: 'dsh', name: 'DeepSeek' };
 
 type AcpProfile = Extract<BackendProfile, { kind: 'acp' }>;
 
