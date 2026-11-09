@@ -376,6 +376,13 @@ try {
     () => check('新对话显示空状态', true),
     () => check('新对话显示空状态', false),
   );
+  // 多开标签：新对话开在新标签里，原来的会话留在第一个标签
+  const tabs = page.getByTestId('tabs').locator('.tab');
+  await tabs.nth(1).waitFor({ timeout: 10_000 }).then(
+    async () => check('新对话开在新标签里，原来的会话还在', (await tabs.count()) === 2 && (await tabs.nth(0).innerText()).includes('HELLO') && (await tabs.nth(1).getAttribute('aria-selected')) === 'true'),
+    () => check('新对话开在新标签里，原来的会话还在', false),
+  );
+  await shot('04a-tabs');
   await page.locator('.header__title').click();
   await page.locator('.sessions-menu .menu-item', { hasText: 'HELLO 打个招呼' }).click();
   await page.locator('.user', { hasText: 'HELLO 打个招呼' }).waitFor({ timeout: 30_000 }).then(
@@ -383,6 +390,7 @@ try {
     () => check('重新打开会话：历史从代理回放', false),
   );
   check('回放的历史里有工具行', (await page.locator('.activity--command', { hasText: bashCommand }).count()) === 1);
+  check('从会话列表打开已在标签里的会话：切到那个标签，不重复打开', (await tabs.count()) === 2 && (await tabs.nth(0).getAttribute('aria-selected')) === 'true');
 
   // 6. 模式：切到 Plan，显示计划模式标记
   await page.getByTestId('permission-picker').click();

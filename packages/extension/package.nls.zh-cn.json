@@ -37,5 +37,6 @@
   "config.backends.command": "通过标准输入输出说 ACP 的可执行文件，例如 `omp`。",
   "config.backends.args": "参数，例如 `[\"acp\"]`。",
   "config.backends.env": "给代理进程额外加的环境变量。",
-  "config.backends.installHint": "找不到命令时显示的安装提示。"
+  "config.backends.installHint": "找不到命令时显示的安装提示。",
+  "config.backendTrace": "排查用：把和底层之间收发的每条 ACP 消息（原始 JSON，过长的截断）写到输出面板「Harness Deck: Backend」。可以用来确认代理实际发了什么，例如工具调用之间有没有文字。查完记得关掉：消息里会有文件内容。"
 }

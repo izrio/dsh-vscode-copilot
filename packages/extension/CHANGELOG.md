@@ -1,5 +1,16 @@
 # 更新记录 / Changelog
 
+## 未发布 / Unreleased
+
+- ACP 底层（Claude、oh-my-pi、CodeBuddy 等）也支持多开标签：新对话开在新标签里，从会话列表打开已在标签里的会话时切过去，后台标签显示运行中和等待审批；打开的标签按底层记住。
+  Tabs for ACP backends (Claude, oh-my-pi, CodeBuddy…): a new chat opens a new tab, opening a session that already has a tab switches to it, background tabs show running and waiting-for-approval, and open tabs are remembered per backend.
+- 修复：回复后面开始调用工具时，前面那段文字末尾一直留着蓝色光标。
+  Fixed: the blue cursor stayed after a reply's text once tool calls started.
+- 修复：模型网关每次回复都用同一个消息 id 时，工具调用之后的文字被拼到前面的段落里，看起来像中间没有文字；现在按时间顺序另起一段。
+  Fixed: with model gateways that reuse one message id, text after tool calls was merged into an earlier paragraph and looked missing; it now starts a new paragraph in order.
+- 新设置 `harnessDeck.backendTrace`：把和 ACP 底层收发的消息原文写到「Harness Deck: Backend」输出面板，用来排查代理实际发了什么。
+  New setting `harnessDeck.backendTrace`: writes the raw ACP messages to the "Harness Deck: Backend" output channel for troubleshooting.
+
 ## 0.3.1
 
 **新的内置底层 Claude**；ACP 代理需要登录时的提示；内部包名改为 `@harness-deck/*`，README 重写。

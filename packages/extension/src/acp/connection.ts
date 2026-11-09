@@ -43,6 +43,8 @@ export interface AcpConnectionOptions {
   readonly log?: (line: string) => void;
   /** 代理的 stderr 输出（写到运行时日志）。 */
   readonly onStderr?: (line: string) => void;
+  /** 排查用：收发的每一条消息（原文）。返回 false 或没有提供时不记录。 */
+  readonly trace?: (direction: 'in' | 'out', line: string) => void;
 }
 
 interface Pending {
@@ -133,7 +135,9 @@ export class AcpConnection {
   }
 
   private write(message: unknown): void {
-    this.child?.stdin?.write(`${JSON.stringify(message)}\n`);
+    const line = JSON.stringify(message);
+    this.options.trace?.('out', line);
+    this.child?.stdin?.write(`${line}\n`);
   }
 
   private onData(chunk: string): void {
@@ -143,6 +147,7 @@ export class AcpConnection {
       const line = this.buffer.slice(0, index).trim();
       this.buffer = this.buffer.slice(index + 1);
       if (!line) continue;
+      this.options.trace?.('in', line);
       let message: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: { code?: number; message?: string; data?: unknown } };
       try {
         message = JSON.parse(line) as typeof message;

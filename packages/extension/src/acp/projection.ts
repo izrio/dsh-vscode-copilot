@@ -134,6 +134,7 @@ export class AcpSessionProjection {
 
   /** 发送的消息先在本地显示。 */
   addUserMessage(text: string, images: Extract<Item, { kind: 'user' }>['images'] = []): void {
+    this.settleText();
     const { text: body, attachments } = splitContext(text);
     this.items.push({ kind: 'user', id: `u:${++this.counter}`, text: body, ...(attachments.length ? { attachments } : {}), ...(images.length ? { images } : {}) });
     this.changed();
@@ -260,12 +261,15 @@ export class AcpSessionProjection {
     const messageId = typeof update.messageId === 'string' ? update.messageId : undefined;
     let at = messageId ? this.messageIndex.get(messageId) : undefined;
     const last = this.items.length - 1;
+    // 同一个 messageId 的文字只接在最后一条后面：中间隔了工具调用时另起一条，保持时间顺序。
+    // 有的模型网关每次回复都给同一个消息 id，不这样后面的文字会拼到最上面那条里，看起来像没说话。
+    if (at !== undefined && at !== last) at = undefined;
     // 推理和正文的 messageId 可能不同：紧跟在只有推理的条目后面的正文归到同一条；没有 messageId 的片段接在上一条回复后面
     const lastItem = this.items[last];
     if (at === undefined && lastItem?.kind === 'assistant' && (lastItem.markdown === '' || !messageId)) at = last;
     if (at === undefined) {
       at = this.items.length;
-      this.items.push({ kind: 'assistant', id: `a:${messageId ?? ++this.counter}`, markdown: '', streaming: this.running });
+      this.items.push({ kind: 'assistant', id: `a:${++this.counter}${messageId ? `:${messageId}` : ''}`, markdown: '', streaming: this.running });
     }
     if (messageId) this.messageIndex.set(messageId, at);
     const previous = this.items[at] as Extract<Item, { kind: 'assistant' }>;
@@ -280,12 +284,19 @@ export class AcpSessionProjection {
     this.tools.set(call.toolCallId, call);
     // 待办由输入框上方的状态条显示，不在对话流里重复
     if (isTodoTool(call)) return;
+    this.settleText();
     if (this.variantOf(call) === 'explore') {
       this.addExplore(call);
       return;
     }
     this.toolIndex.set(call.toolCallId, { index: this.items.length });
     this.items.push(this.activity(call));
+  }
+
+  /** 后面出现了工具调用或新消息：前面的回复不再是正在输出的那条（不再显示光标）。 */
+  private settleText(): void {
+    if (!this.items.some((item) => item.kind === 'assistant' && item.streaming)) return;
+    this.items = this.items.map((item) => (item.kind === 'assistant' && item.streaming ? { ...item, streaming: false } : item));
   }
 
   private addExplore(call: AcpToolCall): void {

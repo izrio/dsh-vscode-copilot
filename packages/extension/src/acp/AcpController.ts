@@ -25,6 +25,7 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WebviewToHost,
 } from '@harness-deck/shared';
 import { isAbsolute, resolve } from 'node:path';
@@ -96,6 +97,9 @@ export interface AcpControllerOptions
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
   readonly loadSessions: () => readonly StoredSession[] | undefined;
   readonly saveSessions: (sessions: readonly StoredSession[]) => void;
+  /** 打开的标签（会话 id，按顺序）；新对话的标签不保存。 */
+  readonly loadOpenTabs?: () => readonly string[] | undefined;
+  readonly saveOpenTabs?: (sessionIds: readonly string[]) => void;
   /**
    * 代理要求登录时由宿主完成：有多种方式时让用户选，登录期间显示进度。
    * 返回 false 表示用户取消。没有提供时直接用第一种方式。
@@ -155,6 +159,10 @@ export class AcpController implements ChatBackendController {
   /** 单会话代理：正在重启代理、等待绑定到这个会话。 */
   private rebinding: { readonly sessionId: string; readonly done: (ok: boolean) => void } | undefined;
   private pinCounter = 0;
+  /** 对话面板里打开的标签；当前标签的会话就是 activeId，新对话的标签（没有 sessionId）用草稿会话。 */
+  private tabs: { readonly key: string; sessionId?: string }[] = [];
+  private activeTab = '';
+  private tabCounter = 0;
   private workspacePath: string;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly publisher: ViewPublisher;
@@ -164,6 +172,7 @@ export class AcpController implements ChatBackendController {
     this.activeId = options.loadActiveSessionId();
     this.stored = [...(options.loadSessions() ?? [])];
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
+    this.restoreTabs();
   }
 
   private get workbench(): Workbench {
@@ -275,6 +284,7 @@ export class AcpController implements ChatBackendController {
     this.activeId = this.options.loadActiveSessionId();
     this.draftId = undefined;
     this.projections.clear();
+    this.restoreTabs();
     if (this.link) {
       void this.refreshList();
       if (this.activeId) void this.load(this.activeId);
@@ -349,13 +359,17 @@ export class AcpController implements ChatBackendController {
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
-      case 'closeTab':
-        this.setActive(undefined);
+        this.newTab();
         return;
       case 'switchSession':
-        this.setActive(message.payload.sessionId);
+        this.openSessionTab(message.payload.sessionId);
         return;
       case 'activateTab':
+        this.activateTab(message.payload.key);
+        return;
+      case 'closeTab':
+        this.closeTab(message.payload.key);
+        return;
       case 'loadOlder':
       case 'retryPending':
       case 'discardPending':
@@ -417,9 +431,117 @@ export class AcpController implements ChatBackendController {
     }
   }
 
+  // ---------------------------------------------------------------- 标签
+  // 和 dsh 的标签一样：只有一个新对话标签；打开已在标签里的会话时切过去；关掉最后一个标签时换成新对话。
+  // ACP 的每个会话都有自己的投影，后台标签的会话继续收更新，切回时内容立即可见。
+
+  /** 按保存的标签和上次打开的会话恢复标签；上次停在新对话时末尾加一个新对话标签。 */
+  private restoreTabs(): void {
+    const ids = [...new Set(this.options.loadOpenTabs?.() ?? [])];
+    if (this.activeId && !ids.includes(this.activeId)) ids.push(this.activeId);
+    this.tabs = ids.map((sessionId) => ({ key: this.nextTabKey(), sessionId }));
+    let active = this.tabs.find((tab) => tab.sessionId === this.activeId);
+    if (!active) {
+      active = { key: this.nextTabKey() };
+      this.tabs.push(active);
+    }
+    this.activeTab = active.key;
+  }
+
+  private nextTabKey(): string {
+    return `acp-tab-${++this.tabCounter}`;
+  }
+
+  private saveTabs(): void {
+    this.options.saveOpenTabs?.(this.tabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
+  }
+
+  /** 新对话：已有新对话标签时切过去，否则在当前标签后面新开一个。 */
+  private newTab(): void {
+    const blank = this.tabs.find((tab) => !tab.sessionId);
+    if (blank) return this.activateTab(blank.key);
+    const tab = { key: this.nextTabKey() };
+    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
+    this.activateTab(tab.key);
+  }
+
+  /** 打开会话：已经在标签里时切过去；当前是新对话时就在当前标签打开；否则新开一个标签。 */
+  private openSessionTab(sessionId: string): void {
+    const existing = this.tabs.find((tab) => tab.sessionId === sessionId);
+    if (existing) return this.activateTab(existing.key);
+    const current = this.tabs.find((tab) => tab.key === this.activeTab);
+    if (current && !current.sessionId) return this.setActive(sessionId);
+    const tab = { key: this.nextTabKey(), sessionId };
+    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
+    this.activateTab(tab.key);
+  }
+
+  private activateTab(key: string): void {
+    const tab = this.tabs.find((t) => t.key === key);
+    if (!tab) return;
+    this.activeTab = key;
+    this.setActive(tab.sessionId);
+    this.saveTabs();
+    this.scheduleRender();
+  }
+
+  /** 关闭标签：会话仍在代理里，可以从会话列表重新打开；它还在等的审批取消掉（没有地方再显示）。 */
+  private closeTab(key: string): void {
+    const index = this.tabs.findIndex((t) => t.key === key);
+    const tab = this.tabs[index];
+    if (!tab) return;
+    if (tab.sessionId) {
+      for (const [id, pending] of this.permissions) {
+        if (pending.sessionId !== tab.sessionId) continue;
+        pending.resolve({ outcome: { outcome: 'cancelled' } });
+        this.permissions.delete(id);
+      }
+    }
+    if (this.tabs.length === 1) {
+      if (!tab.sessionId) return;
+      this.tabs = [{ key: this.nextTabKey() }];
+      this.activateTab(this.tabs[0]!.key);
+      return;
+    }
+    this.tabs.splice(index, 1);
+    if (key === this.activeTab) this.activateTab((this.tabs[index] ?? this.tabs[index - 1])!.key);
+    else {
+      this.saveTabs();
+      this.scheduleRender();
+    }
+  }
+
+  private tabsState(current: SessionHeader): TabsState {
+    const waiting = new Set([...this.permissions.values()].map((p) => p.sessionId));
+    const items = this.tabs.map((tab) => {
+      if (tab.key === this.activeTab) {
+        return { key: tab.key, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}), title: current.title, running: current.running, ...(tab.sessionId && waiting.has(tab.sessionId) ? { needsAttention: true } : {}) };
+      }
+      if (!tab.sessionId) return { key: tab.key, title: t('session.new'), running: false };
+      return {
+        key: tab.key,
+        sessionId: tab.sessionId,
+        title: this.titleOf(tab.sessionId),
+        running: this.projections.get(tab.sessionId)?.running ?? false,
+        ...(waiting.has(tab.sessionId) ? { needsAttention: true } : {}),
+      };
+    });
+    return { items, active: this.activeTab };
+  }
+
+  /** 当前标签显示的会话（undefined 为新对话）；同一个会话不同时出现在两个标签里。 */
+  private setTabSession(sessionId: string | undefined): void {
+    const tab = this.tabs.find((t) => t.key === this.activeTab);
+    if (!tab || tab.sessionId === sessionId) return;
+    if (sessionId) this.tabs = this.tabs.filter((t) => t === tab || t.sessionId !== sessionId);
+    tab.sessionId = sessionId;
+    this.saveTabs();
+  }
+
   // ---------------------------------------------------------------- 会话
 
   private setActive(sessionId: string | undefined): void {
+    this.setTabSession(sessionId);
     if (sessionId === this.activeId && (sessionId !== undefined || this.draftId !== undefined)) return;
     this.activeId = sessionId;
     this.options.saveActiveSessionId(sessionId);
@@ -580,7 +702,7 @@ export class AcpController implements ChatBackendController {
   async send(text: string, options: { includeActive?: boolean; extra?: readonly ContextAttachment[]; diagnostics?: boolean; images?: readonly PromptImage[] } = {}): Promise<void> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
-      this.setActive(undefined);
+      this.newTab();
       if (slash.args.trim()) await this.send(slash.args, options);
       return;
     }
@@ -619,10 +741,11 @@ export class AcpController implements ChatBackendController {
     const sessionId = this.activeId ?? (await this.ensureDraft());
     if (!sessionId) return;
     if (!this.activeId) {
-      // 草稿会话收到第一条消息：成为正式会话
+      // 草稿会话收到第一条消息：成为正式会话，标签记住它
       this.activeId = sessionId;
       this.draftId = undefined;
       this.options.saveActiveSessionId(sessionId);
+      this.setTabSession(sessionId);
       this.remember(sessionId, prompt || t('acp.image'));
     }
     const projection = this.projectionFor(sessionId);
@@ -946,7 +1069,7 @@ export class AcpController implements ChatBackendController {
     return {
       sessionKey: this.activeId ?? '',
       sessions,
-      tabs: { items: [{ key: 'acp', ...(this.activeId ? { sessionId: this.activeId } : {}), title: session.title, running }], active: 'acp' },
+      tabs: this.tabsState(session),
       session,
       items,
       models: this.modelsOf(projection),

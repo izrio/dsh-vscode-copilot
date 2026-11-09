@@ -8,11 +8,14 @@ import { AcpController, type AcpInitialize, type AuthMethod, type StoredSession 
 import { AcpConnection } from '../acp/connection.ts';
 import { locateExecutable } from '../runtime/locate.ts';
 import { t } from '../i18n.ts';
+import { settings } from '../settings.ts';
 import { processEnvWithProxy, type BackendHost } from './dsh.ts';
 import type { BackendProfile, RunningBackend } from './types.ts';
 
 /** 协议版本：ACP v1。 */
 const PROTOCOL_VERSION = 1;
+/** 排查日志里每条消息最多保留的字符数。 */
+const TRACE_LIMIT = 4_000;
 
 export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' }>, host: BackendHost): RunningBackend {
   const state = host.context.workspaceState;
@@ -30,6 +33,8 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
     saveActiveSessionId: (sessionId) => void state.update(key('activeSessionId'), sessionId),
     loadSessions: () => state.get<StoredSession[]>(key('sessions')),
     saveSessions: (sessions) => void state.update(key('sessions'), [...sessions]),
+    loadOpenTabs: () => state.get<string[]>(key('openTabs')),
+    saveOpenTabs: (ids) => void state.update(key('openTabs'), [...ids]),
     authenticate: (methods, run) => signIn(profile.name, methods, run, host.log),
     singleSession: profile.singleSession === true,
     ...(profile.signInHint ? { signInHint: profile.signInHint } : {}),
@@ -65,6 +70,11 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
       env,
       log: host.log,
       onStderr: (line) => host.runtimeLog(line, 'stderr'),
+      // 排查用：设置 harnessDeck.backendTrace 打开后，收发的 ACP 消息原文写到「Harness Deck: Backend」输出面板
+      trace: (direction, line) => {
+        if (!settings().get<boolean>('backendTrace', false)) return;
+        host.runtimeLog(`${direction === 'in' ? '←' : '→'} ${line.length > TRACE_LIMIT ? `${line.slice(0, TRACE_LIMIT)}…(${line.length})` : line}`, 'stdout');
+      },
       onNotification: (method, params) => {
         if (method === 'session/update') controller.onSessionUpdate(params);
       },

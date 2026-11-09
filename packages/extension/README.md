@@ -77,7 +77,8 @@ Agent 能力（读写文件、执行命令、审批、会话、模型）都由�
 | 会话列表、重新打开历史会话 | ✅ | ✅ | ✅（列表由插件记录） | ✅ |
 | 图片 | ✅ | ✅ | ✅ | ✅ |
 | 同时在几个会话里回复 | ✅ | ✅ | 一次一个（见下） | ✅ |
-| 每轮改动汇总（含命令造成的改动）、会话改动栏、多开标签 | ✅ | — | — | — |
+| 多开标签（后台会话继续回复，切回时立即可见） | ✅ | ✅ | ✅（切到别的标签发消息时重启一次，见下） | ✅ |
+| 每轮改动汇总（含命令造成的改动）、会话改动栏 | ✅ | — | — | — |
 | 消息插队、子代理卡片、提问卡片、`/goal`、在浏览器中打开 | ✅ | — | — | — |
 
 CodeBuddy 的一个进程只给一个会话推送回复。回到别的会话发消息时，插件会重启 CodeBuddy 并重新加载那个会话（大约 2 秒）；一个会话正在回复时，要等它结束或先停止，才能在另一个会话里发送。
@@ -118,7 +119,7 @@ A VS Code chat panel for coding agents: streaming replies, compact tool rows, ap
 
 **Setup**: for dsh, install it (DeepSeek Desktop → "Manage dsh command…", or `npm install -g @deepseek-ai/dsh`) and set the API key when asked. For oh-my-pi, install Bun ≥ 1.4.4, run `bun install -g @oh-my-pi/pi-coding-agent`, configure a model provider for omp, then pick **oh-my-pi** under "…" → Backend (or run "Harness Deck: Switch Backend"). For CodeBuddy, run `npm install -g @tencent-ai/codebuddy-code`, pick **CodeBuddy**, and choose a sign-in method when asked (finished in the browser); or pass `CODEBUDDY_API_KEY` through `env` by overriding the built-in entry (same `id`, `codebuddy`) in `harnessDeck.backends`. For Claude, run `npm install -g @agentclientprotocol/claude-agent-acp` (Node 22+), sign in with `claude` → `/login` (shared with Claude Code) or pass `ANTHROPIC_API_KEY` through `env` on an entry with `id` `claude`, then pick **Claude**. Add other ACP agents there too (`name`, `command`, `args`, `env`). The workspace must be trusted.
 
-**Differences**: dsh supports everything; ACP backends cover streaming, tool rows, approvals, to-dos, stop, diffs, models and modes, session list and reload, and images when the agent offers them. Per-turn change summaries, the session changes bar, tabs, steering, subagent cards, questions, `/goal` and the browser link are dsh-only. A CodeBuddy process streams to one session at a time: sending in another session restarts CodeBuddy and reloads that session (about 2 s), and while one session is replying you need to wait or stop it before sending elsewhere.
+**Differences**: dsh supports everything; ACP backends cover streaming, tool rows, approvals, to-dos, stop, diffs, models and modes, session list and reload, and images when the agent offers them. Tabs work on every backend. Per-turn change summaries, the session changes bar, steering, subagent cards, questions, `/goal` and the browser link are dsh-only. A CodeBuddy process streams to one session at a time: sending in another session restarts CodeBuddy and reloads that session (about 2 s), and while one session is replying you need to wait or stop it before sending elsewhere.
 
 **Settings** moved from `dsh.*` to `harnessDeck.*` (old values are migrated on first start): `harnessDeck.backends`, `harnessDeck.dsh.path`, `harnessDeck.dsh.profile`, `harnessDeck.context.includeActiveEditor`, `harnessDeck.ui.language`, `harnessDeck.ui.fontSize`, `harnessDeck.ui.fontFamily`, `harnessDeck.ui.codeFontFamily`, `harnessDeck.ui.showTurnChanges`.
 

@@ -222,6 +222,11 @@
           "default": "",
           "markdownDescription": "%config.ui.codeFontFamily%"
         },
+        "harnessDeck.backendTrace": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.backendTrace%"
+        },
         "harnessDeck.ui.showTurnChanges": {
           "type": "boolean",
           "default": false,

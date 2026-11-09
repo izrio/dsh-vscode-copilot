@@ -37,5 +37,6 @@
   "config.backends.command": "Executable that speaks ACP over stdio, e.g. `omp`.",
   "config.backends.args": "Arguments, e.g. `[\"acp\"]`.",
   "config.backends.env": "Extra environment variables for the agent process.",
-  "config.backends.installHint": "Shown when the command cannot be found."
+  "config.backends.installHint": "Shown when the command cannot be found.",
+  "config.backendTrace": "Troubleshooting: write every ACP message exchanged with the backend (raw JSON, long ones truncated) to the \"Harness Deck: Backend\" output channel. Use it to check what the agent actually sent, for example whether a reply had text between tool calls. Turn it off afterwards: messages include file contents."
 }
