@@ -65,6 +65,18 @@ export interface AcpCommand {
   readonly input?: { readonly hint?: string } | null;
 }
 
+/** 本会话对一个文件的累计修改（改动栏）。 */
+export interface FileChange {
+  readonly path: string;
+  /** 按时间顺序的修改片段（没有 diff 内容的写入不在其中）。 */
+  readonly diffs: readonly AcpDiff[];
+  readonly calls: readonly string[];
+  /** 第一次修改是新建这个文件。 */
+  readonly created: boolean;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
 /** 一次修改的前后内容（打开 Diff 用）。 */
 export interface AcpDiff {
   readonly path: string;
@@ -112,6 +124,47 @@ export class AcpSessionProjection {
 
   snapshotItems(): readonly Item[] {
     return this.items;
+  }
+
+  /**
+   * 本会话改过的文件（输入框上方的改动栏）：完成了的修改类工具调用按文件归并，按第一次修改的先后排列。
+   * 增删行数是各次修改片段的合计；`diffs` 按时间顺序，用来还原会话开始前的内容。
+   */
+  fileChanges(): readonly FileChange[] {
+    // 流式输出时每次渲染都会调用：内容没变（version 相同）时直接用上次的结果
+    if (this.changesCache?.version === this.version) return this.changesCache.value;
+    const value = this.computeFileChanges();
+    this.changesCache = { version: this.version, value };
+    return value;
+  }
+
+  private changesCache: { readonly version: number; readonly value: readonly FileChange[] } | undefined;
+
+  private computeFileChanges(): FileChange[] {
+    const files = new Map<string, { diffs: AcpDiff[]; calls: string[]; created: boolean; additions: number; deletions: number }>();
+    for (const call of this.tools.values()) {
+      if (call.status !== 'completed' || this.variantOf(call) !== 'edit') continue;
+      const diffs = (call.content ?? []).filter((c): c is Extract<AcpToolContent, { type: 'diff' }> => c.type === 'diff');
+      const args = (call.rawInput ?? {}) as { path?: unknown; file_path?: unknown; content?: unknown };
+      const fallbackPath = call.locations?.[0]?.path ?? (typeof args.path === 'string' ? args.path : typeof args.file_path === 'string' ? args.file_path : undefined);
+      const entries: { path: string; diff?: AcpDiff; stats: LineStats }[] = diffs.length
+        ? diffs.map((d) => ({ path: d.path, diff: { path: d.path, oldText: d.oldText ?? null, newText: d.newText }, stats: lineStats(d.oldText ?? '', d.newText) }))
+        : fallbackPath && typeof args.content === 'string'
+          ? [{ path: fallbackPath, stats: { additions: countLines(args.content), deletions: 0 } }]
+          : [];
+      for (const entry of entries) {
+        let file = files.get(entry.path);
+        if (!file) {
+          file = { diffs: [], calls: [], created: entry.diff?.oldText === null, additions: 0, deletions: 0 };
+          files.set(entry.path, file);
+        }
+        if (entry.diff) file.diffs.push(entry.diff);
+        if (!file.calls.includes(call.toolCallId)) file.calls.push(call.toolCallId);
+        file.additions += entry.stats.additions;
+        file.deletions += entry.stats.deletions;
+      }
+    }
+    return [...files].map(([path, f]) => ({ path, ...f }));
   }
 
   /** 某次工具调用的修改（打开 Diff）。 */

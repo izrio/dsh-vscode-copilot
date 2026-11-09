@@ -25,6 +25,8 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  SessionChangesView,
+  ChangedFileView,
   TabsState,
   WebviewToHost,
 } from '@harness-deck/shared';
@@ -41,6 +43,7 @@ import {
   type TemplateName,
 } from '../vm/context.ts';
 import type { ChatControllerOptions } from '../vm/ChatController.ts';
+import { reverseToolDiffs } from '../vm/diffs.ts';
 import { displayPath } from '../vm/projector.ts';
 import { ViewPublisher, type ControllerView } from '../vm/ViewPublisher.ts';
 import { withoutDiagnostics } from '../vm/viewHelpers.ts';
@@ -1019,6 +1022,7 @@ export class AcpController implements ChatBackendController {
   // ---------------------------------------------------------------- Diff
 
   private async openDiff(ref: DiffRef): Promise<void> {
+    if (ref.kind === 'session') return this.openSessionDiff(ref.path);
     if (ref.kind !== 'tool') return;
     const diffs = this.currentProjection()?.diffsOf(ref.callId) ?? [];
     const diff = diffs[0];
@@ -1039,6 +1043,44 @@ export class AcpController implements ChatBackendController {
       created,
       scope: 'turn',
     });
+  }
+
+  /**
+   * 本会话对一个文件的累计改动：从磁盘上的当前内容倒着撤回这个会话的每次修改，还原出会话开始前的内容。
+   * 中途被别的方式改过、撤不回去时，改为显示最后一次修改。
+   */
+  private async openSessionDiff(path: string): Promise<void> {
+    const change = this.currentProjection()
+      ?.fileChanges()
+      .find((f) => this.absolute(f.path) === path);
+    if (!change || change.diffs.length === 0) return this.workbench.openFile(path);
+    const current = await this.workbench.readFile(path);
+    const before = current === undefined ? undefined : reverseToolDiffs(current, change.diffs);
+    if (before !== undefined) {
+      await this.workbench.openDiff({ kind: 'contents', path, before: change.created ? '' : before, created: change.created, scope: 'session' });
+      return;
+    }
+    this.options.log(`无法还原 ${path} 在本会话修改前的内容，改为显示最后一次修改`);
+    const last = change.calls.at(-1);
+    if (last) return this.openDiff({ kind: 'tool', callId: last });
+    return this.workbench.openFile(path);
+  }
+
+  /** 输入框上方的改动栏：本会话改过的文件和增删行数。 */
+  private sessionChanges(projection: AcpSessionProjection | undefined): SessionChangesView | undefined {
+    const files = projection?.fileChanges() ?? [];
+    if (files.length === 0) return undefined;
+    const views: ChangedFileView[] = files.map((f) => {
+      const path = this.absolute(f.path);
+      return {
+        path: displayPath(path, this.workspacePath),
+        ref: { kind: 'session', path },
+        additions: f.additions,
+        deletions: f.deletions,
+        ...(f.created ? { created: true } : {}),
+      };
+    });
+    return { files: views, additions: files.reduce((n, f) => n + f.additions, 0), deletions: files.reduce((n, f) => n + f.deletions, 0) };
   }
 
   // ---------------------------------------------------------------- 视图
@@ -1078,6 +1120,10 @@ export class AcpController implements ChatBackendController {
       ...(projection?.todos?.length ? { todos: projection.todos } : {}),
       ...(running && projection?.runningSince !== undefined ? { runningSince: projection.runningSince } : {}),
       ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
+      ...(() => {
+        const changes = this.sessionChanges(projection);
+        return changes ? { changes } : {};
+      })(),
     };
     const known = new Map<string, SessionListItem>();
     for (const s of this.listed) known.set(s.id, { id: s.id, title: this.titleOf(s.id), updatedAt: s.updatedAt, running: this.projections.get(s.id)?.running ?? false });

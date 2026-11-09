@@ -348,6 +348,12 @@ try {
   check('点开命令看到输出', (await commandRow.innerText()).includes('notes.md'), await commandRow.innerText());
   check('命令输出里没有代理的包装格式', !(await commandRow.innerText()).includes('Stdout:'), await commandRow.innerText());
   check('笔记真的写到了工作区', (await readFile(join(workspace, 'notes.md'), 'utf8').catch(() => '')).includes('第一条'));
+  // 会话改动栏：输入框上方列出本会话改过的文件
+  const changesBar = page.getByTestId('session-changes');
+  await changesBar.waitFor({ timeout: 10_000 }).then(
+    async () => check('输入框上方的改动栏列出本会话改过的文件', (await changesBar.innerText()).includes('1') && (await changesBar.innerText()).includes('+3'), await changesBar.innerText()),
+    () => check('输入框上方的改动栏列出本会话改过的文件', false),
+  );
   await shot('03-tools');
 
   // 待办：omp 和 Claude 用 plan 更新；CodeBuddy 的 TaskCreate / TaskUpdate 完成时带上整张待办表
