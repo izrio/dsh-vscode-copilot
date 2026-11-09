@@ -1,6 +1,10 @@
 # 更新记录 / Changelog
 
-## 未发布 / Unreleased
+## 0.3.2
+
+**ACP 底层（Claude、oh-my-pi、CodeBuddy）也有多开标签和会话改动栏**；新对话沿用上次选的模型；dsh 底层改叫 DeepSeek；护眼配色、滚动到底部、skill 补全和一轮界面打磨。
+
+**Tabs and the session changes bar on ACP backends (Claude, oh-my-pi, CodeBuddy)**; new chats keep the last chosen model; the dsh backend is shown as DeepSeek; soft colors, scroll to bottom, skill completion and a round of UI polish.
 
 - ACP 底层（Claude、oh-my-pi、CodeBuddy 等）也支持多开标签：新对话开在新标签里，从会话列表打开已在标签里的会话时切过去，后台标签显示运行中和等待审批；打开的标签按底层记住。
   Tabs for ACP backends (Claude, oh-my-pi, CodeBuddy…): a new chat opens a new tab, opening a session that already has a tab switches to it, background tabs show running and waiting-for-approval, and open tabs are remembered per backend.
