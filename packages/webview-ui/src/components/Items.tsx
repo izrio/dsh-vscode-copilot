@@ -112,15 +112,23 @@ function UserBubble({ item }: { item: Of<'user'> }) {
   );
 }
 
+/** 消息下面的操作：灰色小图标，悬停变亮；文字放在提示和无障碍名称里。 */
+function IconAction({ label, title, onClick, children }: { label: string; title?: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="msg-action" aria-label={label} title={title ?? label} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
 /** 已发送的消息：悬停时显示复制、编辑后重发。 */
 function UserActions({ text }: { text: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <div className="user__actions">
-      <button
-        type="button"
-        className="link-button"
+      <IconAction
+        label={copied ? t('user.copied') : t('user.copy')}
         onClick={() =>
           void navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
@@ -129,17 +137,15 @@ function UserActions({ text }: { text: string }) {
         }
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? t('user.copied') : t('user.copy')}
-      </button>
-      <button type="button" className="link-button" title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
+      </IconAction>
+      <IconAction label={t('user.editResend')} title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
         <PencilIcon />
-        {t('user.editResend')}
-      </button>
+      </IconAction>
     </div>
   );
 }
 
-/** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。 */
+/** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。状态一行文字，操作是一排图标。 */
 function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) {
   const t = useT();
   const running = useView((s) => s.session.running);
@@ -149,40 +155,38 @@ function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) 
   if (!running) {
     // 停止生成后 dsh 保留队列，但要等下一条消息才一起送达
     return (
-      <div className="user__meta" data-testid="queued-meta">
-        <span>{t('queue.stopped')}</span>
-        <button type="button" className="link-button" onClick={() => act('send')}>
-          <SendIcon />
-          {t('queue.sendNow')}
-        </button>
-        <button type="button" className="link-button" onClick={onEdit}>
-          <PencilIcon />
-          {t('common.edit')}
-        </button>
-        <button type="button" className="link-button" onClick={() => act('remove')}>
-          <TrashIcon />
-          {t('common.delete')}
-        </button>
+      <div className="user__meta user__meta--queued" data-testid="queued-meta">
+        <span className="user__status">{t('queue.stopped')}</span>
+        <span className="user__tools">
+          <IconAction label={t('queue.sendNow')} onClick={() => act('send')}>
+            <SendIcon />
+          </IconAction>
+          <IconAction label={t('common.edit')} onClick={onEdit}>
+            <PencilIcon />
+          </IconAction>
+          <IconAction label={t('common.delete')} onClick={() => act('remove')}>
+            <TrashIcon />
+          </IconAction>
+        </span>
       </div>
     );
   }
   return (
-    <div className="user__meta" data-testid="queued-meta">
-      <span>{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
-      <button type="button" className="link-button" onClick={onEdit}>
-        <PencilIcon />
-        {t('common.edit')}
-      </button>
-      {queue.target === 'next-turn' ? (
-        <button type="button" className="link-button" onClick={() => act('steer')} title={t('queue.steerTitle')}>
-          <FastForwardIcon />
-          {t('queue.steer')}
-        </button>
-      ) : null}
-      <button type="button" className="link-button" onClick={() => act('remove')}>
-        <TrashIcon />
-        {t('common.delete')}
-      </button>
+    <div className="user__meta user__meta--queued" data-testid="queued-meta">
+      <span className="user__status">{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
+      <span className="user__tools">
+        <IconAction label={t('common.edit')} onClick={onEdit}>
+          <PencilIcon />
+        </IconAction>
+        {queue.target === 'next-turn' ? (
+          <IconAction label={t('queue.steer')} title={t('queue.steerTitle')} onClick={() => act('steer')}>
+            <FastForwardIcon />
+          </IconAction>
+        ) : null}
+        <IconAction label={t('common.delete')} onClick={() => act('remove')}>
+          <TrashIcon />
+        </IconAction>
+      </span>
     </div>
   );
 }
@@ -248,7 +252,7 @@ function UserText({ text }: { text: string }) {
 
 function AssistantMessage({ item }: { item: Of<'assistant'> }) {
   return (
-    <div className="assistant">
+    <div className={`assistant ${item.streaming && item.markdown ? 'assistant--streaming' : ''}`}>
       {item.reasoning ? <Reasoning text={item.reasoning} active={item.streaming && !item.markdown} /> : null}
       {item.markdown ? <Markdown text={item.markdown} /> : null}
       {item.streaming && item.markdown ? <span className="cursor" aria-hidden /> : null}

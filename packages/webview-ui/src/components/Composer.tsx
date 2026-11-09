@@ -360,7 +360,8 @@ export function Composer() {
       <StatusStrip />
       {dirtyFiles > 0 ? (
         <div className="dirty-strip" data-testid="dirty-strip">
-          <span>{t('dirty.strip', dirtyFiles)}</span>
+          <SaveIcon className="dirty-strip__icon" />
+          <span className="dirty-strip__text">{t('dirty.strip', dirtyFiles)}</span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
             <SaveIcon />
             {t('dirty.saveAll')}

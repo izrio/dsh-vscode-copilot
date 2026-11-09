@@ -38,7 +38,8 @@ export function ContextRing({ usage, tokens }: { usage: number; tokens?: { used:
           transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
         />
       </svg>
-      <span className="context-ring__label">{Math.max(percent, usage > 0 ? 1 : 0)}%</span>
+      {/* 用得不多时只显示圆环（数字在悬停提示里），过半才显示百分比，少打扰 */}
+      {percent >= 50 ? <span className="context-ring__label">{percent}%</span> : null}
     </span>
   );
 }

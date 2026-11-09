@@ -74,7 +74,7 @@ function EmptyState() {
   if (needsApiKey) {
     return (
       <div className="empty" data-testid="api-key-setup">
-        <div className="empty__logo empty__logo--key">
+        <div className="home__logo home__logo--key" aria-hidden="true">
           <KeyIcon />
         </div>
         <p className="empty__title">{t('apiKey.title')}</p>

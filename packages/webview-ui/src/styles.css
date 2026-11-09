@@ -686,10 +686,52 @@ button {
 
 .user__meta {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px 8px;
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.85em;
+}
+
+.user__meta .link-button {
+  white-space: nowrap;
+}
+
+/* 排队消息：状态文字和一组图标；窄的时候图标整组换到下一行，不会一个字一行 */
+.user__tools {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+/* 消息下面的操作：灰色小图标，悬停变亮 */
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.msg-action:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+
+.msg-action svg {
+  width: 14px;
+  height: 14px;
 }
 
 .user__meta--error {
@@ -700,7 +742,10 @@ button {
   min-width: 0;
 }
 
-.cursor {
+.cursor,
+.assistant--streaming .markdown > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
+.assistant--streaming .markdown > :is(ul, ol):last-child > li:last-child::after {
+  content: '';
   display: inline-block;
   width: 7px;
   height: 1em;
@@ -708,6 +753,11 @@ button {
   vertical-align: text-bottom;
   background: var(--vscode-editorCursor-foreground, var(--vscode-foreground));
   animation: blink 1s steps(2, start) infinite;
+}
+
+/* 光标接在最后一段文字后面；最后是代码块、表格等时才单独放在下面 */
+.assistant--streaming .markdown:has(> :is(p, h1, h2, h3, h4, h5, h6, blockquote, ul, ol):last-child) + .cursor {
+  display: none;
 }
 
 .reasoning {
@@ -1697,7 +1747,7 @@ button.chip:hover {
 
 .user__actions {
   display: flex;
-  gap: 10px;
+  gap: 2px;
   margin-top: 2px;
   font-size: 0.85em;
   opacity: 0;
@@ -2107,11 +2157,32 @@ body.resizing {
 .dirty-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
-  margin: 0 10px 4px;
-  padding: 0 4px;
-  color: var(--muted);
-  font-size: 0.85em;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 10px 6px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 40%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--surface));
+  color: var(--text);
+  font-size: 0.86em;
+  line-height: 1.45;
+}
+
+.dirty-strip__icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--vscode-charts-yellow, #cca700);
+}
+
+.dirty-strip__text {
+  flex: 1;
+  min-width: 12em;
+}
+
+.dirty-strip .link-button {
+  white-space: nowrap;
 }
 
 .composer {
@@ -2145,6 +2216,10 @@ body.resizing {
 
 .composer__input::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--muted));
+  /* 占位文字只占一行，窄的时候截断，不换行 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer__toolbar {
@@ -2290,7 +2365,9 @@ body.resizing {
     animation-duration: 1.6s;
   }
 
-  .cursor {
+  .cursor,
+  .assistant--streaming .markdown > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
+  .assistant--streaming .markdown > :is(ul, ol):last-child > li:last-child::after {
     animation: none;
   }
 }
@@ -2405,6 +2482,21 @@ body.resizing {
     opacity: 1;
     transform: scale(1.15);
   }
+}
+
+.home__logo--key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, var(--accent), #6a45f5);
+  color: #ffffff;
+}
+
+.home__logo--key svg {
+  width: 24px;
+  height: 24px;
 }
 
 .home__logo--small {

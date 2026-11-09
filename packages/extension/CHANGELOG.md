@@ -4,6 +4,8 @@
 
 - ACP 底层（Claude、oh-my-pi、CodeBuddy 等）也支持多开标签：新对话开在新标签里，从会话列表打开已在标签里的会话时切过去，后台标签显示运行中和等待审批；打开的标签按底层记住。
   Tabs for ACP backends (Claude, oh-my-pi, CodeBuddy…): a new chat opens a new tab, opening a session that already has a tab switches to it, background tabs show running and waiting-for-approval, and open tabs are remembered per backend.
+- 界面细节打磨：流式回复的光标跟在文字末尾（不再单独占一行）；消息下面的「复制 / 编辑后重发」和排队消息的「编辑 / 插队 / 删除 / 现在发送」改成悬停变亮的灰色小图标（窄宽度下不再一个字一行地折行）；未保存文件的提示改成卡片；配置 API Key 页和首页风格一致；输入框的占位文字只占一行；上下文用量过半才显示百分比，平时只显示圆环；改动栏和输入框之间留出间距。
+  UI polish: the streaming cursor follows the text instead of taking its own line; message and queue actions are compact gray icons that light up on hover (no more one-character-per-line wrapping when narrow); the unsaved-files notice is a card; the API key page matches the home; the placeholder stays on one line; the context ring shows a percentage only past 50%; the changes bar has a gap above the composer.
 - ACP 底层（Claude、oh-my-pi、CodeBuddy 等）也有会话改动栏：输入框上方列出本会话用文件工具改过的文件和增删行数，点文件打开累计 Diff（从当前内容倒着撤回本会话的修改，还原出会话开始前的内容）。命令造成的改动 ACP 代理不上报，不在其中。
   The session changes bar now works on ACP backends (Claude, oh-my-pi, CodeBuddy…): files edited by file tools in this session with line counts; clicking one opens the cumulative diff, rebuilt by undoing this session's edits from the current file. Changes made by commands are not reported by ACP agents and are not included.
 - 修复：DeepSeek（dsh）底层输入 `/` 看不到 skill。dsh 的 skill 不在命令列表里，现在另外读取 skill 目录（工作区 `.dsh/skills`、`.agents/skills` 和全局的），补全里带「skill」标签；每次打开会话都重新读取，新装的 skill 也能出现。
