@@ -160,6 +160,8 @@ export class ChatController implements ChatBackendController {
   private pinCounter = 0;
   /** dsh 的斜杠命令目录（各会话相同），打开会话时读取。 */
   private dshCommands: CommandView[] = [];
+  /** 正在读取命令和 skill 的会话（同一个会话不重复读）。 */
+  private loadingCommands: string | undefined;
   private client: DshClient | undefined;
   private workspacePath: string;
   /** dsh 在 MISSING_CREDENTIAL 里要求配置的凭据名。 */
@@ -829,7 +831,8 @@ export class ChatController implements ChatBackendController {
       }
       return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments, options.images);
     }
-    if (slash && this.dshCommands.some((c) => c.name === slash.name)) return this.runCommand(text.trim());
+    // skill 不是命令：照常作为消息发出，dsh 识别 `/name` 调用 skill
+    if (slash && this.dshCommands.some((c) => c.name === slash.name && c.source === 'dsh')) return this.runCommand(text.trim());
     return this.sendPrompt(text, this.gatherContext(options), options.images);
   }
 
@@ -1003,21 +1006,42 @@ export class ChatController implements ChatBackendController {
     this.options.post({ type: 'fileCandidates', payload: { requestId, items: items.slice(0, 50) } });
   }
 
+  /**
+   * 斜杠命令和 skill。skill 不在 commands/list 里，要另外读 skills/list（会话的工作目录和预设决定能用哪些）；
+   * 每次打开会话都重新读，新装的 skill 也能出现。
+   */
   private loadCommands(sessionId: string): void {
     const client = this.service?.client;
-    if (!client || this.dshCommands.length > 0) return;
+    if (!client || this.loadingCommands === sessionId) return;
+    this.loadingCommands = sessionId;
     // 放进 then 里调用：读取失败（包括同步抛错）都不能影响打开会话
-    void Promise.resolve()
-      .then(() => client.commands(sessionId))
+    const commands = Promise.resolve().then(() => client.commands(sessionId));
+    const skills = Promise.resolve()
+      .then(() => client.skills(sessionId))
+      .catch((error: unknown) => {
+        this.options.log(`读取 skill 失败（旧版本 dsh 可能没有 skills/list）：${describe(error)}`);
+        return [];
+      });
+    void Promise.all([commands, skills])
       .then(
-      (commands) => {
-        this.dshCommands = commands
-          .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
-          .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
-        this.scheduleRender();
-      },
-      (error: unknown) => this.options.log(`读取斜杠命令失败：${describe(error)}`),
-    );
+        ([list, skillList]) => {
+          const views: CommandView[] = list
+            .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
+            .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
+          const taken = new Set([...views.map((c) => c.name), ...PLUGIN_COMMAND_NAMES]);
+          for (const skill of skillList) {
+            if (taken.has(skill.name)) continue;
+            taken.add(skill.name);
+            views.push({ name: skill.name, description: skill.description ?? skill.whenToUse ?? '', source: 'skill' });
+          }
+          this.dshCommands = views;
+          this.scheduleRender();
+        },
+        (error: unknown) => this.options.log(`读取斜杠命令失败：${describe(error)}`),
+      )
+      .finally(() => {
+        if (this.loadingCommands === sessionId) this.loadingCommands = undefined;
+      });
   }
 
   private async interrupt(): Promise<void> {

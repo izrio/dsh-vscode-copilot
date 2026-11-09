@@ -1626,6 +1626,16 @@ button.chip:hover {
   color: var(--vscode-editorSuggestWidget-foreground, inherit);
 }
 
+.completion__tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.78em;
+  line-height: 1.6;
+}
+
 .completion__icon {
   display: inline-flex;
   flex: none;

@@ -58,10 +58,27 @@ const SEARCH_DELAY_MS = 60;
 
 type Trigger = { readonly kind: 'command'; readonly query: string } | { readonly kind: 'file'; readonly token: ActiveAtToken; readonly start: number };
 
+/**
+ * 斜杠命令补全的候选：不区分大小写，名字开头匹配的在前，名字中间匹配的在后（输入 review 也能找到 code-review）。
+ * 同一档里保持原来的顺序（插件模板、底层命令、skill）。
+ */
+export function matchCommands<T extends { readonly name: string }>(commands: readonly T[], query: string): T[] {
+  const q = query.toLowerCase();
+  const starts: T[] = [];
+  const contains: T[] = [];
+  for (const command of commands) {
+    const at = command.name.toLowerCase().indexOf(q);
+    if (at === 0) starts.push(command);
+    else if (at > 0) contains.push(command);
+  }
+  return [...starts, ...contains];
+}
+
 /** 光标前的文本决定要不要打开补全。 */
 function triggerAt(text: string, caret: number): Trigger | undefined {
   const before = text.slice(0, caret);
-  const command = /^\/([\w-]*)$/u.exec(before);
+  // 命令名可以带 : . 等（插件里的 skill：engineering:code-review），到空白为止
+  const command = /^\/(\S*)$/u.exec(before);
   if (command) return { kind: 'command', query: command[1] ?? '' };
   const line = before.slice(before.lastIndexOf('\n') + 1);
   const token = activeAtToken(line);
@@ -196,9 +213,14 @@ export function Composer() {
 
   const items: CompletionItem[] = useMemo(() => {
     if (trigger?.kind === 'command') {
-      return commands
-        .filter((c) => c.name.startsWith(trigger.query.toLowerCase()))
-        .map((c) => ({ key: `${c.source}:${c.name}`, icon: 'command', label: `/${c.name}`, ...(c.hint ? { hint: c.hint } : {}), detail: c.description }));
+      return matchCommands(commands, trigger.query).map((c) => ({
+        key: `${c.source}:${c.name}`,
+        icon: 'command',
+        label: `/${c.name}`,
+        ...(c.source === 'skill' ? { tag: 'skill' } : {}),
+        ...(c.hint ? { hint: c.hint } : {}),
+        detail: c.description,
+      }));
     }
     if (trigger?.kind === 'file' && candidates.requestId >= 0) {
       return candidates.items.map((c) => {
@@ -220,7 +242,7 @@ export function Composer() {
   const complete =
     trigger?.kind === 'file'
       ? candidates.items.some((c) => c.kind === 'file' && c.path === trigger.token.query)
-      : trigger?.kind === 'command' && commands.some((c) => c.name === trigger.query);
+      : trigger?.kind === 'command' && commands.some((c) => c.name.toLowerCase() === trigger.query.toLowerCase());
   // 文件补全：结果还没回来时也打开，显示"正在搜索"
   const menuOpen = trigger !== undefined && !complete && (items.length > 0 || trigger.kind === 'file');
 
@@ -235,7 +257,7 @@ export function Composer() {
   const accept = (index: number) => {
     if (!trigger) return;
     if (trigger.kind === 'command') {
-      const command = commands.filter((c) => c.name.startsWith(trigger.query.toLowerCase()))[index];
+      const command = matchCommands(commands, trigger.query)[index];
       if (command) replaceRange(0, caret, `/${command.name} `);
       return;
     }

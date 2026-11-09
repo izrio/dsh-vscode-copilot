@@ -71,7 +71,12 @@ const MARKDOWN_ANSWER = [
 
 const env = await createDshTestEnv({
   nodeBin: cli['node-bin'],
-  files: { 'README.md': '# demo\n\n一个演示项目。\n', 'src/index.ts': 'export const answer = 42;\n' },
+  files: {
+    'README.md': '# demo\n\n一个演示项目。\n',
+    'src/index.ts': 'export const answer = 42;\n',
+    // 工作区里的 skill：dsh 的 skill 不在 commands/list 里，要从 skills/list 读到
+    '.dsh/skills/e2e-review/SKILL.md': '---\nname: e2e-review\ndescription: E2E 测试用的代码审查 skill\n---\n\n按清单审查改动。\n',
+  },
   scripts: {
     E2E_MARKDOWN: { kind: 'text', chunks: MARKDOWN_ANSWER, delayMs: 80 },
     E2E_TOOL: {
@@ -624,6 +629,16 @@ try {
   await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
   const commandOptions = await completion.locator('[role="option"]').allInnerTexts();
   check('输入 / 列出插件模板和 dsh 命令（不含 /export）', ['/explain', '/fix', '/test', '/new', '/compact', '/plan'].every((name) => commandOptions.some((t) => t.includes(name))) && !commandOptions.some((t) => t.includes('/export')), commandOptions.join(' | '));
+  check('输入 / 也列出 dsh 的 skill，带 skill 标签', commandOptions.some((t) => t.includes('/e2e-review') && t.includes('skill')), commandOptions.join(' | '));
+  // 名字中间的一段也能搜到 skill
+  await page.keyboard.type('review');
+  await completion.locator('[role="option"]', { hasText: '/e2e-review' }).waitFor({ timeout: 5_000 }).then(
+    () => check('输入 /review 能搜到 e2e-review（名字中间匹配）', true),
+    async () => check('输入 /review 能搜到 e2e-review（名字中间匹配）', false, (await completion.allInnerTexts().catch(() => [])).join(' | ')),
+  );
+  await composer.fill('');
+  await composer.press('/');
+  await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
   await shot('20-commands');
   await composer.press('c');
   await composer.press('o');
@@ -861,13 +876,17 @@ try {
   await page.locator('.user', { hasText: '重启之后还能继续吗' }).waitFor({ timeout: 10_000 });
   await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
   await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
-  // 翻到上面时出现「滚动到底部」按钮，点一下回到底部
+  await shot('12-light');
+  // 翻到上面时出现「滚动到底部」按钮，点一下回到底部。
+  // 窗口调矮一些，不依赖这个会话开场加载了多少内容
+  await page.setViewportSize({ width: 380, height: 480 });
+  await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
   const toBottom = page.getByTestId('to-bottom');
   await toBottom.waitFor({ timeout: 5_000 }).then(
     () => check('往上翻时出现「滚动到底部」按钮', true),
     () => check('往上翻时出现「滚动到底部」按钮', false),
   );
-  await shot('12-light');
+  await shot('12b-to-bottom');
   await toBottom.click();
   await page
     .waitForFunction(() => {
@@ -878,6 +897,7 @@ try {
       () => check('点按钮回到底部，按钮消失', true),
       () => check('点按钮回到底部，按钮消失', false),
     );
+  await page.setViewportSize({ width: 380, height: 760 });
 
   // 8. 没有 API Key：引导配置，保存到 dsh 要求的凭据名后立即可用
   withoutKey = true;

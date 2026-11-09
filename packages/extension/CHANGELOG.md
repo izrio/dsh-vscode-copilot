@@ -4,6 +4,10 @@
 
 - ACP 底层（Claude、oh-my-pi、CodeBuddy 等）也支持多开标签：新对话开在新标签里，从会话列表打开已在标签里的会话时切过去，后台标签显示运行中和等待审批；打开的标签按底层记住。
   Tabs for ACP backends (Claude, oh-my-pi, CodeBuddy…): a new chat opens a new tab, opening a session that already has a tab switches to it, background tabs show running and waiting-for-approval, and open tabs are remembered per backend.
+- 修复：DeepSeek（dsh）底层输入 `/` 看不到 skill。dsh 的 skill 不在命令列表里，现在另外读取 skill 目录（工作区 `.dsh/skills`、`.agents/skills` 和全局的），补全里带「skill」标签；每次打开会话都重新读取，新装的 skill 也能出现。
+  Fixed: skills did not show up after typing `/` on the DeepSeek (dsh) backend. dsh lists skills separately from commands; they are now read on every session open and shown with a "skill" tag.
+- 斜杠补全更好找：不区分大小写，名字中间的一段也能搜到（输入 `review` 能找到 `code-review`），名字可以带冒号（`/engineering:code-review`）。
+  Slash completion is easier to search: case-insensitive, matches inside names (`review` finds `code-review`), and names may contain colons (`/engineering:code-review`).
 - 护眼配色（默认）：对话里的文字不再用接近纯白的主题前景色，正文、标题、次要信息分层柔和，长时间看不累；「字体与字号」里可以关掉改用主题原色（设置 `harnessDeck.ui.palette`），高对比度主题始终用原色。
   Soft colors (default): chat text no longer uses the near-white theme foreground; body, headings and secondary text are toned down for long reading. Turn it off under Font & Size (setting `harnessDeck.ui.palette`); high-contrast themes always use theme colors.
 - 「滚动到底部」按钮：往上翻看历史时出现在右下角，翻上去时有新内容会带提示点，点一下回到底部并继续跟随新内容。

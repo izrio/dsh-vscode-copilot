@@ -110,6 +110,14 @@ const commandListSchema = z.array(
 );
 export type DshCommand = z.infer<typeof commandListSchema>[number];
 
+/** `skills/list`：会话能用的 skill（dsh 的 skill 不在 commands/list 里，用 `/name` 调用）。 */
+const skillListSchema = z
+  .object({
+    skills: z.array(z.object({ name: z.string(), description: z.string().optional(), whenToUse: z.string().optional() }).loose()),
+  })
+  .loose();
+export type DshSkill = z.infer<typeof skillListSchema>['skills'][number];
+
 const fileReferencesSchema = z.array(z.object({ path: z.string(), kind: z.enum(['file', 'directory']) }));
 
 /** `/api/changes.summary`：一轮里改动过的文件（包括命令造成的）。 */
@@ -301,6 +309,11 @@ export class DshClient {
   /** 会话可用的 dsh 斜杠命令（`/compact`、`/plan`、`/goal` 等）。 */
   async commands(sessionId: string): Promise<DshCommand[]> {
     return parse(commandListSchema, await this.unary.call('commands/list', { agentId: sessionId }), 'commands/list');
+  }
+
+  /** 会话能用的 skill（`/name` 调用）。旧版本 dsh 没有这个方法时抛错，调用方当作没有 skill。 */
+  async skills(sessionId: string): Promise<DshSkill[]> {
+    return parse(skillListSchema, await this.unary.call('skills/list', { request: { sessionId } }), 'skills/list').skills;
   }
 
   /**

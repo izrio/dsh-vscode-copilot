@@ -87,7 +87,8 @@ export interface CommandView {
   readonly description: string;
   /** 参数提示，例如 `<text>`。 */
   readonly hint?: string;
-  readonly source: 'plugin' | 'dsh';
+  /** plugin：插件自带的模板；dsh：底层的斜杠命令；skill：底层的 skill（也用 `/name` 调用）。 */
+  readonly source: 'plugin' | 'dsh' | 'skill';
 }
 
 /** `@` 补全的候选。 */

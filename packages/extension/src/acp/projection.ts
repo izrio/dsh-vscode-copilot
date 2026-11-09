@@ -58,6 +58,8 @@ export interface AcpConfigOption {
 }
 
 export interface AcpCommand {
+  /** CodeBuddy 等在 `_meta.type` 里标明是不是 skill。 */
+  readonly _meta?: { readonly type?: string } | null;
   readonly name: string;
   readonly description?: string;
   readonly input?: { readonly hint?: string } | null;

@@ -1099,7 +1099,7 @@ export class AcpController implements ChatBackendController {
         name: c.name,
         description: c.description ?? '',
         ...(c.input?.hint ? { hint: c.input.hint } : {}),
-        source: 'dsh' as const,
+        source: c._meta?.type === 'skill' ? ('skill' as const) : ('dsh' as const),
       })),
     ];
     return {
