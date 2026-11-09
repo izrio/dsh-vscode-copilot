@@ -4,7 +4,7 @@
  */
 import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@harness-deck/shared';
-import { AcpController, type AcpInitialize, type AuthMethod, type StoredSession } from '../acp/AcpController.ts';
+import { AcpController, type AcpInitialize, type AuthMethod, type PreferredModel, type StoredSession } from '../acp/AcpController.ts';
 import { AcpConnection } from '../acp/connection.ts';
 import { locateExecutable } from '../runtime/locate.ts';
 import { t } from '../i18n.ts';
@@ -33,6 +33,9 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
     saveActiveSessionId: (sessionId) => void state.update(key('activeSessionId'), sessionId),
     loadSessions: () => state.get<StoredSession[]>(key('sessions')),
     saveSessions: (sessions) => void state.update(key('sessions'), [...sessions]),
+    // 模型选择按用户记（不分工作区）：换个项目打开，新对话也是上次选的模型
+    loadPreferredModel: () => host.context.globalState.get<PreferredModel>(`harnessDeck.acp.${profile.id}.model`),
+    savePreferredModel: (preferred) => void host.context.globalState.update(`harnessDeck.acp.${profile.id}.model`, preferred),
     loadOpenTabs: () => state.get<string[]>(key('openTabs')),
     saveOpenTabs: (ids) => void state.update(key('openTabs'), [...ids]),
     authenticate: (methods, run) => signIn(profile.name, methods, run, host.log),

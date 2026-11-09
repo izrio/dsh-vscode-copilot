@@ -97,6 +97,12 @@ export interface AcpControllerOptions
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
   readonly loadSessions: () => readonly StoredSession[] | undefined;
   readonly saveSessions: (sessions: readonly StoredSession[]) => void;
+  /**
+   * 上次选的模型和思考等级。ACP 的模型是会话级的（Claude 新会话总是 Default），
+   * 新对话套用上次的选择，和看到的保持一致；已有的会话保持自己的模型。
+   */
+  readonly loadPreferredModel?: () => PreferredModel | undefined;
+  readonly savePreferredModel?: (preferred: PreferredModel) => void;
   /** 打开的标签（会话 id，按顺序）；新对话的标签不保存。 */
   readonly loadOpenTabs?: () => readonly string[] | undefined;
   readonly saveOpenTabs?: (sessionIds: readonly string[]) => void;
@@ -112,6 +118,11 @@ export interface AcpControllerOptions
   readonly singleSession?: boolean;
   /** 代理要求登录、又没有提供登录方式时显示的说明（例如 Claude：在终端登录 Claude Code）。 */
   readonly signInHint?: string;
+}
+
+export interface PreferredModel {
+  readonly model: string;
+  readonly effort?: string;
 }
 
 export interface AuthMethod {
@@ -590,8 +601,10 @@ export class AcpController implements ChatBackendController {
     if (!link) return Promise.resolve(undefined);
     this.creatingDraft = this.newSession(link)
       .then(
-        (id) => {
-          if (this.link === link) this.draftId = id;
+        async (id) => {
+          if (this.link !== link) return id;
+          this.draftId = id;
+          await this.applyPreferredModel(id);
           return id;
         },
         (error: unknown) => {
@@ -909,8 +922,31 @@ export class AcpController implements ChatBackendController {
       if (model !== option.currentValue) await this.setOption(sessionId, option.id, model);
       const effortOption = this.effortOption();
       if (effort && effortOption && effort !== effortOption.currentValue) await this.setOption(sessionId, effortOption.id, effort);
+      this.options.savePreferredModel?.({ model, ...(effort ? { effort } : {}) });
+      // 已经建好、还没用过的草稿会话也换过来
+      if (this.draftId && this.draftId !== sessionId) await this.applyPreferredModel(this.draftId);
     } catch (error) {
       this.toast('error', t('model.failed', describe(error)));
+    }
+  }
+
+  /** 新对话（草稿会话）套用上次选的模型和思考等级；代理没有这个选项时不动。 */
+  private async applyPreferredModel(sessionId: string): Promise<void> {
+    const preferred = this.options.loadPreferredModel?.();
+    const projection = this.projections.get(sessionId);
+    if (!preferred || !projection || projection.snapshotItems().length > 0) return;
+    try {
+      const model = this.modelOption(projection);
+      if (model && model.currentValue !== preferred.model && model.options?.some((o) => o.value === preferred.model)) {
+        await this.setOption(sessionId, model.id, preferred.model);
+      }
+      // 思考等级的选项随模型变化：换完模型再看
+      const effort = this.effortOption(this.projections.get(sessionId));
+      if (preferred.effort && effort && effort.currentValue !== preferred.effort && effort.options?.some((o) => o.value === preferred.effort)) {
+        await this.setOption(sessionId, effort.id, preferred.effort);
+      }
+    } catch (error) {
+      this.options.log(`新对话套用上次的模型失败：${describe(error)}`);
     }
   }
 
