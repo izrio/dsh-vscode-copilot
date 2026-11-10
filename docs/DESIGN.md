@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.8（M5 完成，v0.1.0）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v0.9（v0.1.0 之后的审查修复）｜ 日期：2026-11-10 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -37,7 +37,8 @@
 | v0.5 | M2 完成：按工具类型渲染活动行、审批与提问卡片、权限预设切换、VS Code Diff、本轮改动卡片、未保存保护（[对接说明第 10 节](./DSH-INTEGRATION.md#10-m2-验证结果)）。调整：审批卡片放在对话流末尾（不插在活动行下方）；还原失败时的片段视图放在编辑器里（只读的统一 diff 文档）而不是 Webview；Host 重启（端口变化）后丢弃改动汇总缓存，卡片退回按文件工具汇总 |
 | v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
 | v0.7 | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
-| **v0.8** | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
+| v0.8 | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
+| **v0.9** | 全面审查后的修复：没发出去的消息还给输入框、本地回显跨连接保留、改动汇总临时错误重试、流式回复与落盘消息同一个 id、"版本较新"按版本线判断；没有文件夹时不启动 dsh、未受信任工作区改为受限模式（3.4、7）、Windows `.cmd` 命令行引号；控制器拆分、活动行结构化（5.2）、长会话实测（13）；ESLint / Prettier、Webview 组件测试、Windows / macOS CI（10、11）。3.5 中没有实现的集成点标出 |
 
 ---
 
@@ -116,7 +117,7 @@ dsh 有五个对外入口：`dsh web`、Desktop、`dsh sdk`、`dsh acp`、`dsh h
 | 输入框整宽卡片 + 一行工具条，状态只在有内容时出现 | ✅ |
 | 本轮改动卡片在对话流中 | ✅ |
 | 用户消息悬停时"复制 / 编辑后重发" | 自查时发现没做，M5 补上（编辑后重发 = 放回输入框修改再发送，不分叉会话） |
-| 单文件尽量不超过 500 行 | 部分：`ChatController` 从 1106 行拆到约 860 行（拆出 `viewHelpers`、`interactionViews`、`ViewPublisher`），剩下的是会话编排；`projector` 约 580 行。其余文件都在 400 行以内 |
+| 单文件尽量不超过 500 行 | 部分：`ChatController` 从 1106 行拆到约 820 行（拆出 `viewHelpers`、`interactionViews`、`ViewPublisher`，v0.9 又拆出 `ChangesCache`、`ContextAttachments`、`SlashCommands`），剩下的是会话编排和消息处理；`projector` 约 650 行。其余文件都在 400 行以内 |
 | 路径相对显示，过长时省略中间 | 部分：相对路径 ✅；过长时省略的是末尾（CSS 省略号），没有做中间省略 |
 | 状态靠图标和颜色，跟随 VS Code 主题 | ✅（深色、浅色主题都有截图验证） |
 
@@ -199,19 +200,22 @@ P0 是 MVP 必须有的，P1 是正式版需要的，P2 后续再做。"dsh 能�
 - **什么时候会审批**：在 `workspace-write` 下，工作区内的读写和普通命令不需要审批；只有模型请求越过沙箱（`sandbox_permissions`）时，dsh 才发审批请求。
 - **审批卡片**：dsh 的回答只有"允许一次 / 拒绝"（`allowed-once` / `rejected`），卡片显示请求自带的 `displayReason`（有中文），插件只负责展示和回传。
 - **未保存保护**：审批一个会写文件的工具时，如果目标文件在 VS Code 里有未保存内容，卡片提示先保存并禁用"允许"，Host 收到允许时也会再检查一次（dsh 直接写磁盘，否则会和编辑器里的内容冲突；参考项目也是这样处理的）。另外，工作区里有未保存文件时，输入框上方显示一行提示和"全部保存"——dsh 读写的都是磁盘上的版本。
-- **未受信任的工作区**：插件不启动 dsh，需要用户先信任工作区。
+- **未受信任的工作区**：声明受限模式（`untrustedWorkspaces: limited`），视图可以打开，但不启动 dsh，提示条带「管理信任」入口；`dsh.runtime.path`、`dsh.runtime.profile` 列为受限设置，未受信任时不读取工作区里的值。
+- **没有打开文件夹**：不启动 dsh（否则工作目录只能是主目录，沙箱的可写范围和会话列表都会变成整个主目录），提示条带「打开文件夹」入口；之后添加了文件夹再启动。
 
 ### 3.5 VS Code 集成点
 
 | 集成点 | 做法 |
 | --- | --- |
-| 视图 | `viewsContainers.secondarySidebar` + `WebviewView`；另提供 `WebviewPanel` 编辑器形态 |
+| 视图 | `viewsContainers.secondarySidebar` + `WebviewView`。`WebviewPanel` 编辑器形态**未实现**，有需要再加 |
 | Diff | `dsh-diff:` 只读虚拟文档提供改动前内容，用 `vscode.diff` 打开，右侧是磁盘上的真实文件（还原方法见 5.4） |
 | 跳转 | 回复、活动行、改动列表中的路径可点击，用 `showTextDocument` 打开并定位到行 |
 | 文件刷新 | dsh 直接写磁盘，VS Code 的文件监听会自动刷新已打开且没有未保存内容的编辑器 |
 | 右键菜单 | `editor/context`：「DSH：问这段代码 / 解释 / 修复」 |
-| 状态栏 | dsh 运行状态（启动中/已连接/断开）+ 当前模型，点击打开面板 |
-| 快捷键 | 打开并聚焦输入框（默认键位开发时再定，避免冲突） |
+| 状态栏 | dsh 运行状态（启动中/已连接/断开）+ 当前模型，点击打开面板；有审批或提问等待时换成提醒 |
+| 视图徽标 | 有审批或提问等待时，视图图标上显示数字（视图收起时也能看到） |
+| 插入代码 | 代码块的「插入到光标处」：替换当前编辑器的选区，只改编辑器内容、不保存（见 [D6](#d6-插件不读写工作区文件不执行命令)） |
+| 快捷键 | **未设置默认键位**（避免和其他插件冲突），用户可以给「DSH: 打开对话」自己绑定 |
 
 ---
 
@@ -315,6 +319,8 @@ Chat Participant（在 Copilot Chat 里 `@dsh`）依赖用户安装 Copilot Chat
 
 所有文件修改和命令执行都在 dsh 里进行，受 dsh 的沙箱和审批约束。插件只**展示** dsh 记录的改动，用 VS Code Diff 编辑器呈现。读取磁盘上的当前文件内容只用于还原 Diff，不做任何写入。这样插件就不会绕开 dsh 的安全边界。
 
+例外只有两个，都由用户点击触发、都走 VS Code 的编辑器：「全部保存」（保存编辑器里未保存的内容）和代码块的「插入到光标处」（改动编辑器内容，不保存）。
+
 #### D7. Extension Host 持有视图状态，Webview 只渲染
 
 - Webview 刷新或重新显示时，发 `ready` 拿一次完整快照，之后只接收增量
@@ -397,10 +403,12 @@ sequenceDiagram
 | `dsh/session/journal` | 单个会话的事件日志：按官方语义结算逐字流（暂存到 `end` 帧再发布）、序号/revision/下标检查、历史分页合并 |
 | `dsh/session/SessionStream` | 单个会话的 follow 生命周期：要求 rebaseline 时重开（带退避）、加载更早的历史 |
 | `dsh/DshConnection` | 连接管理：端点变化换连接、mux 断开后按退避重连、迟到的旧连接丢弃 |
-| `dsh/SessionService` | 绑定在一次连接上：工作区注册、会话列表（只列当前目录、非子 Agent、非空白）、`session/control` 投影、发送/停止/选择模型、本地回显 |
+| `dsh/SessionService` | 绑定在一次连接上：工作区注册、会话列表（只列当前目录、非子 Agent、非空白）、`session/control` 投影、发送/停止/选择模型。本地回显存在控制器持有的 `PendingPrompts` 里，重连后不丢失 |
 | `dsh/DshClient` | 组合上面的协议模块，提供插件用到的方法；`session/page` 与 `session/events`、两种 control 帧格式的兼容在这里处理 |
 | `vm/projector` | 事件 → 界面条目（纯函数，见 5.2、5.3） |
-| `vm/ChatController` | 对话面板的控制器：会话切换、新对话延迟创建、断线期间保留旧内容、按 id 计算增量、错误翻译成提示；审批/提问卡片、权限、改动汇总的读取与缓存、打开 Diff |
+| `vm/ChatController` | 对话面板的控制器：会话切换、新对话延迟创建、断线期间保留旧内容、错误翻译成提示；审批/提问卡片、权限、打开 Diff。`compute()` 只计算视图，投影得出的结论由 `sync` 一步写回 |
+| `vm/ChangesCache` | 每轮改动汇总的读取：Host 重启后作废、404 记为不可用、临时错误按退避重试 |
+| `vm/ContextAttachments` / `vm/SlashCommands` | 随消息附带的编辑器上下文（当前编辑器、固定的选区）；斜杠命令目录（插件模板 + dsh 命令） |
 | `dsh/InteractionService`（M2） | 审批（`approval/request`）和提问（`user-questions/request`）waterfall：挂起等用户答复后回传；dsh 取消时撤掉；看不懂的请求交给下一个回答方（`next`） |
 | `vm/diffs`（M2） | 纯函数：增删行数、从当前文件反向应用工具片段或 hunk 还原改动前内容、审批前预览、兜底的统一 diff |
 | `vm/workbench`（M2） | 控制器需要的编辑器能力接口（打开 Diff、未保存文件、确认框），控制器因此不依赖 vscode |
@@ -596,6 +604,8 @@ interface SessionView {
   running: boolean;
 }
 
+// 下面是方案阶段的草图；实际类型以 packages/shared/src/viewModel.ts 为准
+// （例如活动行是 { label, detail? } 两个字段，不再把名称和说明拼成一个字符串）
 type Item =
   | { kind: 'user'; id: string; text: string; attachments: AttachmentView[] }
   | { kind: 'assistant'; id: string; markdown: string; reasoning?: string; streaming: boolean; interrupted?: boolean }
@@ -662,7 +672,8 @@ dsh --profile web --no-open --host 127.0.0.1 --port 0
 
 - `deactivate` 或用户执行"重启 dsh"：先发 SIGTERM，等待最多 5 秒，再强制结束整个进程组（Windows 下结束进程树）
 - 只结束插件自己启动的进程，不碰用户手动运行的 dsh
-- 有任务在运行时，面板中提示"关闭窗口会中断正在进行的任务"
+- ~~有任务在运行时，面板中提示"关闭窗口会中断正在进行的任务"~~：VS Code 没有在关闭窗口前询问插件的接口，未实现
+- Extension Host 没走 `deactivate` 就退出时，在 `process` 的 `exit` 事件里同步结束 dsh 的进程组（Host 被强制结束时无法处理）
 
 ---
 
@@ -674,7 +685,9 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | --- | --- |
 | 启动令牌泄露 | 令牌只保存在内存中；日志、界面、错误信息里统一脱敏（`token=<redacted>`） |
 | 端口被其他人访问 | dsh 只绑定 `127.0.0.1`；不提供修改绑定地址的设置项 |
-| 不受信任的工作区 | 声明 `capabilities.untrustedWorkspaces: { supported: false }`；未受信任时不启动 dsh |
+| 不受信任的工作区 | 声明 `capabilities.untrustedWorkspaces: { supported: "limited" }`，`dsh.runtime.path` / `dsh.runtime.profile` 为受限设置；未受信任时不启动 dsh |
+| 没有打开文件夹 | 不启动 dsh，避免把主目录当作工作区和沙箱范围 |
+| 命令行注入 | `dsh.runtime.profile` 只允许 `[\w.-]`；Windows 下经 cmd.exe 运行 `.cmd` 时命令和参数加引号 |
 | 误开最高权限 | 切换到 `danger-full-access` 时插件弹出确认框 |
 | 覆盖用户未保存的修改 | 审批写文件前检查未保存内容（[3.4](#34-权限与审批)） |
 | Webview 注入 | 严格 CSP：`default-src 'none'`；入口脚本带 nonce，按需加载的高亮语言包只允许插件目录；样式只允许插件目录，**不开 `'unsafe-inline'`**。Markdown 渲染禁用原始 HTML，不用 `innerHTML`（代码高亮用 React 元素渲染，颜色通过 CSSOM 设置，不受 CSP 拦截）；链接由 Host 校验后再用 `vscode.env.openExternal` 打开 |
@@ -688,7 +701,7 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | --- | --- |
 | 启动令牌 | ✅ 只在内存里；dsh 的 stdout/stderr、启动失败信息先脱敏再写日志。自查后补充：插件自己的日志也统一脱敏，并增加 `sk-…` API Key 和 `Bearer` 令牌的脱敏规则 |
 | 端口 | ✅ 启动参数固定 `--host 127.0.0.1`，没有修改绑定地址的设置 |
-| 未受信任的工作区 | ✅ `untrustedWorkspaces.supported: false`，未受信任时不启动（说明文字已本地化） |
+| 未受信任的工作区 | ✅ 未受信任时不启动（说明文字已本地化）。v0.9 改为受限模式：视图可以打开并给出「管理信任」入口，运行时设置列为受限设置 |
 | 最高权限 | ✅ 切换到 `danger-full-access` 前 VS Code 模态确认（真实 VS Code 测试覆盖） |
 | 未保存内容 | ✅ 审批写文件前检查，卡片和 Host 两处拦截 |
 | Webview 注入 | ✅ CSP 没有 `'unsafe-inline'`，端到端测试用生产 CSP 并检查没有违规；Markdown 不渲染原始 HTML，图片不加载；外部链接只放行 http(s)，由 Host 打开 |
@@ -708,7 +721,7 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 | 配置 | 类型 / 默认值 | 说明 |
 | --- | --- | --- |
 | `dsh.runtime.path` | string / `""` | 指定 dsh 可执行文件；为空时在 `PATH` 中查找（`machine-overridable`，远程场景写在远端的 Machine 设置里） |
-| `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile |
+| `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile；只允许字母、数字、点、下划线和连字符 |
 | `dsh.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
 | `dsh.ui.language` | `auto` / `zh` / `en`，默认 `auto` | 界面语言；`auto` 跟随 VS Code 的显示语言 |
 
@@ -813,6 +826,7 @@ dsh-vscode-copilot/
 
 | 层级 | 范围 | 做法 | 命令 |
 | --- | --- | --- | --- |
+| Webview 组件测试 | store 的快照和增量合并、回复里的本地文件链接、输入框（发送、没发出去时放回、↑↓ 历史、不可用时的提示）、菜单的键盘操作和焦点、运行状态提示条 | vitest + jsdom + Testing Library（文件开头 `// @vitest-environment jsdom`） | `pnpm test` |
 | 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、排队消息与队列操作、计划审阅、状态条、重命名、API Key 配置、切换文件夹、投影缓存与现算一致、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
 | 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
@@ -832,7 +846,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - **打包**：`pnpm package` → 构建 webview-ui → 构建 extension → `vsce package --no-dependencies`（依赖已由 esbuild 打进产物）
 - **不打包 dsh 运行时**：由 6.1 的方式获取
 - **CI**（GitHub Actions）：
-  - PR：lint、类型检查、单元测试、集成测试（Linux 下用 xvfb）、打包
+  - PR：类型检查、ESLint、Prettier 检查、单元测试、打包（Linux）；Windows 和 macOS 上跑类型检查和单元测试（Windows 跳过用 POSIX 路径写断言的投影 / 上下文 / 控制器测试，覆盖启动、`.cmd` 引号和进程树）
   - 定时：多版本 dsh 兼容测试
   - 打 tag：产出 `.vsix` 上传到 Release
 - **版本**：插件自己用语义化版本；`CHANGELOG.md` 写明每个版本支持的 dsh 版本范围
@@ -958,7 +972,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 | 改动前内容还原失败（文件之后又被改过） | Diff 打不开 | 不猜测，退回片段视图；每轮汇总可用时优先用它 |
 | 多窗口或与用户自己的 dsh 争用同一会话 | 会话打不开 | 识别 `session/writer-held` 并给出明确提示；后续考虑共享 Host |
 | 远程开发场景 | 远端缺 dsh 或访问不了模型 API | dsh 跑在远端；文档写明远端要求；启动失败时显示 dsh 的报错 |
-| Webview 长会话卡顿 | 体验差 | Host 合并流式推送；虚拟列表；只读操作合并；代码高亮放到空闲时执行 |
+| Webview 长会话卡顿 | 体验差 | Host 合并流式推送；只读操作合并；代码高亮放到空闲时执行；屏幕外条目 `content-visibility: auto`。v0.9 实测（`pnpm --filter dsh-copilot bench` 和 Chromium）：5000 条持久事件全量投影约 10ms，流式时每帧 Host 侧不到 1ms；Webview 里 3000 个条目时流式每帧仍在两次 rAF 的基线（约 33ms）内，只有一次性打开 3000 条约 0.5s（dsh 的开场快照只给最近两轮，更早的按页加载），所以暂不做虚拟列表 |
 | 功能范围膨胀（参考项目功能非常多） | 核心体验做不精 | 首版严格按 3.3 的 P0/P1 范围；新功能先评估是否值得占用界面 |
 
 ---

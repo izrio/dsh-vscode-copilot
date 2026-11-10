@@ -96,3 +96,24 @@ describe.skipIf(process.platform === 'win32')('RuntimeManager', () => {
     expect(manager.currentStatus.kind).toBe('notInstalled');
   });
 });
+
+/**
+ * Windows：npm 全局安装的 dsh 是 `dsh.cmd`，只能经 cmd.exe 运行；安装目录常带空格（`C:\Program Files\…`）。
+ * 用带空格的临时目录里的 .cmd 包装假的 dsh，确认命令行加了引号、能正常启动和停止。
+ */
+describe.runIf(process.platform === 'win32')('RuntimeManager（Windows .cmd）', () => {
+  it('路径带空格的 dsh.cmd 能启动', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fake dsh '));
+    dirs.push(dir);
+    await writeFile(join(dir, 'fake-dsh.js'), FAKE_DSH);
+    const command = join(dir, 'dsh.cmd');
+    await writeFile(command, `@echo off\r\n"${process.execPath}" "%~dp0fake-dsh.js" %*\r\n`);
+    const manager = new RuntimeManager({
+      getConfig: () => ({ configuredPath: command, profile: 'web', cwd: dir, env: { ...process.env, FAKE_DSH_MODE: 'ok' }, readyTimeoutMs: 10_000 }),
+      log: () => undefined,
+    });
+    managers.push(manager);
+    const endpoint = await manager.start();
+    expect(endpoint).toEqual({ origin: 'http://127.0.0.1:45678', token: 'fake-token-1', version: '0.2.1-rc.5' });
+  });
+});

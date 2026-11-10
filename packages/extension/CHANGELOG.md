@@ -1,5 +1,43 @@
 # 更新记录 / Changelog
 
+## 未发布 / Unreleased
+
+### 修复 / Fixes
+
+- 消息没发出去（创建会话失败、未连接、`/fix` 没有上下文）时，文字放回输入框，不再丢失。
+  Text you sent comes back to the composer when nothing could be sent (session creation failed, not connected, `/fix` without context).
+- 发送失败的消息在 dsh 重连后仍然显示，可以重试。
+  Failed messages survive a reconnect and can still be retried.
+- 英文界面下，审批原因和通信错误也显示英文。
+  Approval reasons and connection errors follow the UI language.
+- 本轮改动汇总遇到临时网络错误时重试，不再直接退回按文件工具汇总。
+  Turn change summaries are retried after transient errors.
+- 同一版本线（例如 0.2.x）里更新的 dsh 不再提示"版本较新"；提示可以关掉。
+  No "newer than tested" notice within the same dsh release line; the notice can be dismissed.
+- 流式回复结束时不再重新挂载，展开的推理过程保持展开。
+  A finished reply updates in place; expanded reasoning stays expanded.
+- Windows：dsh 安装在带空格的路径（`.cmd`）时也能启动。
+  Windows: dsh installed under a path with spaces (`.cmd`) starts correctly.
+
+### 改进 / Improvements
+
+- 没有打开文件夹时不启动 dsh，提示打开文件夹；工作区文件夹增删时跟着切换。
+  dsh no longer starts without a folder (it used to run in the home directory); follows workspace folder changes.
+- 未受信任的工作区里可以打开视图，并提供「管理信任」入口；`dsh.runtime.*` 设置在未受信任时不读取工作区的值。
+  Limited support in untrusted workspaces with a "Manage trust" action; `dsh.runtime.*` are restricted settings.
+- 找不到 dsh 时提示条提供「设置路径」「安装说明」。
+  "Set path" and "Install guide" actions when dsh is not found.
+- 有审批或提问等待时，视图图标显示数字，状态栏提醒。
+  View badge and status bar alert while approvals or questions are waiting.
+- 往上翻时出现「回到最新」按钮；回复里的本地文件链接可以点击打开；回复可以复制；代码块可以插入到光标处；输入框为空时 ↑↓ 取回发送过的消息。
+  "Jump to latest" button, clickable local file links, copy reply, insert code at cursor, ↑/↓ message history.
+- 模型写大文件等工具参数时显示「准备中」；命令输出去掉终端颜色，过长时保留开头和结尾。
+  "Preparing" row while tool arguments stream; ANSI codes stripped, long output keeps its tail.
+- 更多语言的代码高亮（Kotlin、C/C++、C#、PHP、Ruby、Swift 等）。
+  More highlighted languages (Kotlin, C/C++, C#, PHP, Ruby, Swift, …).
+- 窄侧边栏下工具条不再重叠；菜单支持方向键，关闭后焦点回到按钮；审批卡片出现时获得焦点；读屏不再逐字播报流式输出。
+  Narrow-sidebar layout fixes, keyboard menus, focus handling and quieter screen-reader output.
+
 ## 0.1.0
 
 第一个可用版本。支持 dsh `0.2.1-rc.5` 及以上（已测试到 `0.2.2-alpha.3`）。

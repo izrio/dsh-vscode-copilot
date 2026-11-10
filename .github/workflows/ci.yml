@@ -17,9 +17,33 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm test
       - run: pnpm package
       - uses: actions/upload-artifact@v4
         with:
           name: vsix
           path: packages/extension/*.vsix
+
+  # 启动 dsh、结束进程树、.cmd 的命令行引号等代码按平台走不同分支，在 Windows 和 macOS 上也跑单元测试
+  test-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # 投影、上下文和控制器的测试用 POSIX 风格的工作区路径（/w/...）写断言，Windows 上只跑与平台有关的部分
+      - if: runner.os == 'Windows'
+        run: pnpm exec vitest run --exclude "**/chatController.test.ts" --exclude "**/context.test.ts" --exclude "**/projector.test.ts"
+      - if: runner.os != 'Windows'
+        run: pnpm test

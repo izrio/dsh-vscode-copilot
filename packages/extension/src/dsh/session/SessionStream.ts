@@ -5,6 +5,7 @@
 import type { DshClient } from '../DshClient.ts';
 import { RemoteError, TransportError } from '../remote/errors.ts';
 import { SessionJournal } from './journal.ts';
+import { describeError } from '../../util/errors.ts';
 
 export type SessionStreamStatus =
   | { readonly kind: 'opening' }
@@ -64,7 +65,7 @@ export class SessionStream {
         const page = await this.options.client.readHistory(this.sessionId, oldest, this.journal.lastSeq, this.abort.signal);
         this.journal.prependOlder(page.records, page.hasMore);
       } catch (error) {
-        this.log(`加载历史失败：${message(error)}`);
+        this.log(`加载历史失败：${describeError(error)}`);
       } finally {
         this.loadingOlderPromise = undefined;
         this.options.onChange();
@@ -103,10 +104,10 @@ export class SessionStream {
       } catch (error) {
         if (this.abort.signal.aborted) return;
         if (!rebaseline) {
-          this.log(`会话 ${this.sessionId} 的 follow 中断：${message(error)}`);
+          this.log(`会话 ${this.sessionId} 的 follow 中断：${describeError(error)}`);
           if (error instanceof RemoteError) this.setStatus({ kind: 'failed', code: error.code, message: error.message });
           else if (error instanceof TransportError) this.setStatus({ kind: 'disconnected' });
-          else this.setStatus({ kind: 'failed', code: 'client', message: message(error) });
+          else this.setStatus({ kind: 'failed', code: 'client', message: describeError(error) });
           return;
         }
       }
@@ -131,8 +132,4 @@ export class SessionStream {
   private log(line: string): void {
     this.options.log?.(line);
   }
-}
-
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

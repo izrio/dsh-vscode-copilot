@@ -14,7 +14,8 @@ export function parseFileLink(href: string): { path: string; startLine?: number;
   let target = href;
   if (/^file:/iu.test(target)) {
     try {
-      target = decodeURIComponent(new URL(target).pathname).replace(/^\/([A-Za-z]:\/)/u, '$1');
+      const url = new URL(target);
+      target = decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:\/)/u, '$1') + url.hash;
     } catch {
       return undefined;
     }

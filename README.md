@@ -69,6 +69,10 @@ pnpm typecheck
 ```
 
 ```bash
+pnpm lint
+```
+
+```bash
 pnpm test
 ```
 
