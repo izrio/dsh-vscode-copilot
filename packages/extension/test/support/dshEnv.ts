@@ -38,17 +38,13 @@ export async function createDshTestEnv(options: DshTestEnvOptions): Promise<DshT
     await mkdir(join(workspace, path, '..'), { recursive: true });
     await writeFile(join(workspace, path), content);
   }
-  const git = (...args: string[]) =>
-    execFileSync('git', ['-c', 'user.email=test@example.invalid', '-c', 'user.name=test', ...args], { cwd: workspace });
+  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.email=test@example.invalid', '-c', 'user.name=test', ...args], { cwd: workspace });
   git('init', '-q');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
 
   const model = await startMockModel(options.scripts);
-  await writeFile(
-    join(home, 'settings.yaml'),
-    `llm-deepseek:\n  apiKeyEnv: DSH_TEST_API_KEY\n  baseURL: ${model.url}\n  thinking: disabled\n`,
-  );
+  await writeFile(join(home, 'settings.yaml'), `llm-deepseek:\n  apiKeyEnv: DSH_TEST_API_KEY\n  baseURL: ${model.url}\n  thinking: disabled\n`);
   // 关掉目标轮次驱动，避免额外的模型请求干扰测试
   const patchPath = join(storage, 'test.patch.yml');
   await writeFile(patchPath, "- id: goal-round-driver\n  name: '@deepseek-ai/dsh-goal-round-driver'\n  disabled: true\n");

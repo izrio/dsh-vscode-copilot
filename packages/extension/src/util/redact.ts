@@ -15,9 +15,5 @@ const BEARER = /(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/giu;
  * @returns 脱敏后的文本。
  */
 export function redactSecrets(text: string): string {
-  return text
-    .replace(TOKEN_IN_URL, '$1<redacted>')
-    .replace(AUTH_COOKIE, '$1<redacted>')
-    .replace(API_KEY, 'sk-<redacted>')
-    .replace(BEARER, '$1<redacted>');
+  return text.replace(TOKEN_IN_URL, '$1<redacted>').replace(AUTH_COOKIE, '$1<redacted>').replace(API_KEY, 'sk-<redacted>').replace(BEARER, '$1<redacted>');
 }

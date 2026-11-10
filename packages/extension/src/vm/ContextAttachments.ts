@@ -70,7 +70,9 @@ export class ContextAttachments {
     });
     const active = this.active();
     return {
-      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
+      ...(active
+        ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } }
+        : {}),
       includeActiveByDefault: this.includeActiveByDefault(),
       pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
     };

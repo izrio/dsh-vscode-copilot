@@ -19,10 +19,21 @@ for (let turn = 1; events.length < total; turn++) {
   push('turn/start', { turn });
   push('user/message', { content: [{ type: 'text', text: `第 ${turn} 个问题：${'内容'.repeat(40)}` }], source: { kind: 'user', rpcId: `r${turn}` } });
   for (let step = 1; step <= 3; step++) {
-    push('assistant/message', { turn, step, message: { content: [{ type: 'text', text: `回答 ${turn}.${step}\n\n${'一段说明。'.repeat(60)}\n\n\`\`\`ts\nconst x = ${step};\n\`\`\`` }] } });
+    push('assistant/message', {
+      turn,
+      step,
+      message: { content: [{ type: 'text', text: `回答 ${turn}.${step}\n\n${'一段说明。'.repeat(60)}\n\n\`\`\`ts\nconst x = ${step};\n\`\`\`` }] },
+    });
     const callId = `c${turn}.${step}`;
-    push('tool/call', { callId, name: step === 2 ? 'edit' : 'read', arguments: JSON.stringify({ file_path: `/w/src/f${step}.ts`, old_string: 'a\nb', new_string: 'a\nc\nd' }) });
-    push('tool/result', { message: { toolCallId: callId, content: [{ type: 'text', text: 'ok' }] }, meta: step === 2 ? { diffs: [{ oldText: 'a\nb', newText: 'a\nc\nd' }] } : {} });
+    push('tool/call', {
+      callId,
+      name: step === 2 ? 'edit' : 'read',
+      arguments: JSON.stringify({ file_path: `/w/src/f${step}.ts`, old_string: 'a\nb', new_string: 'a\nc\nd' }),
+    });
+    push('tool/result', {
+      message: { toolCallId: callId, content: [{ type: 'text', text: 'ok' }] },
+      meta: step === 2 ? { diffs: [{ oldText: 'a\nb', newText: 'a\nc\nd' }] } : {},
+    });
   }
   push('turn/end', { reason: { kind: 'done' } });
 }
@@ -44,7 +55,15 @@ time('projectEvents（未命中缓存）', 10, () => {
 let text = '';
 const frame = () => {
   text += '流式输出的一小段文字。';
-  return project({ events, workspacePath: '/w', pending: [], live: { attemptId: 'x', turn: 9999, step: 1, startedAfterSeq: seq, nextIndex: 1, blocks: new Map([[0, { kind: 'text', text }]]) } }, base);
+  return project(
+    {
+      events,
+      workspacePath: '/w',
+      pending: [],
+      live: { attemptId: 'x', turn: 9999, step: 1, startedAfterSeq: seq, nextIndex: 1, blocks: new Map([[0, { kind: 'text', text }]]) },
+    },
+    base,
+  );
 };
 time('project（命中缓存，带流式内容）', 200, () => void frame());
 

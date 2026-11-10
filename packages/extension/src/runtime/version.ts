@@ -21,8 +21,7 @@ export interface SemVer {
   readonly prerelease: readonly (string | number)[];
 }
 
-const SEMVER =
-  /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/u;
+const SEMVER = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/u;
 
 /**
  * 解析版本号。`dsh --version` 的输出可能带前后空白，这里一并去掉。
@@ -69,20 +68,13 @@ export function compareVersions(a: SemVer, b: SemVer): number {
   return 0;
 }
 
-export type VersionSupport =
-  | { readonly kind: 'supported'; readonly newerThanTested: boolean }
-  | { readonly kind: 'tooOld' }
-  | { readonly kind: 'invalid' };
+export type VersionSupport = { readonly kind: 'supported'; readonly newerThanTested: boolean } | { readonly kind: 'tooOld' } | { readonly kind: 'invalid' };
 
 /**
  * 判断某个 dsh 版本是否在支持范围内。
  * @param text - `dsh --version` 的输出。
  */
-export function checkVersionSupport(
-  text: string,
-  minimum: string = MINIMUM_DSH_VERSION,
-  tested: string = TESTED_DSH_VERSION,
-): VersionSupport {
+export function checkVersionSupport(text: string, minimum: string = MINIMUM_DSH_VERSION, tested: string = TESTED_DSH_VERSION): VersionSupport {
   const version = parseVersion(text);
   const min = parseVersion(minimum);
   const max = parseVersion(tested);

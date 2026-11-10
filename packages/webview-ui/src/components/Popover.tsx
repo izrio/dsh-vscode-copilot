@@ -79,7 +79,13 @@ export function MenuItem({
   icon?: ReactNode;
 }) {
   return (
-    <button type="button" role="menuitem" aria-current={active ? 'true' : undefined} className={`menu-item ${active ? 'menu-item--active' : ''}`} onClick={onSelect}>
+    <button
+      type="button"
+      role="menuitem"
+      aria-current={active ? 'true' : undefined}
+      className={`menu-item ${active ? 'menu-item--active' : ''}`}
+      onClick={onSelect}
+    >
       {icon ? <span className="menu-item__icon">{icon}</span> : null}
       <span className="menu-item__label">{children}</span>
       {hint ? <span className="menu-item__hint">{hint}</span> : null}

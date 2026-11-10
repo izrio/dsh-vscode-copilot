@@ -45,7 +45,13 @@ export function RuntimeBanner({ status, connection }: { status: RuntimeStatus; c
         {icon}
         <span>{view.title}</span>
         {view.dismissKey ? (
-          <button type="button" className="icon-button banner__close" aria-label={t('runtime.dismiss')} title={t('runtime.dismiss')} onClick={() => dismiss(view.dismissKey!)}>
+          <button
+            type="button"
+            className="icon-button banner__close"
+            aria-label={t('runtime.dismiss')}
+            title={t('runtime.dismiss')}
+            onClick={() => dismiss(view.dismissKey!)}
+          >
             <CloseIcon />
           </button>
         ) : null}
@@ -54,7 +60,12 @@ export function RuntimeBanner({ status, connection }: { status: RuntimeStatus; c
       {view.actions?.length ? (
         <div className="banner__actions">
           {view.actions.map((action, index) => (
-            <button key={action} type="button" className={`button ${index === 0 ? '' : 'button--secondary'}`} onClick={() => postToHost(ACTIONS[action].message)}>
+            <button
+              key={action}
+              type="button"
+              className={`button ${index === 0 ? '' : 'button--secondary'}`}
+              onClick={() => postToHost(ACTIONS[action].message)}
+            >
               {ACTIONS[action].icon}
               {t(ACTIONS[action].label)}
             </button>

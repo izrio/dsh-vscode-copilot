@@ -19,11 +19,4 @@ export type {
   SessionListItem,
   WorkspaceState,
 } from './viewModel.ts';
-export {
-  parseWebviewMessage,
-  webviewToHostSchema,
-  type HostSnapshot,
-  type HostToWebview,
-  type ItemsPatch,
-  type WebviewToHost,
-} from './bridge.ts';
+export { parseWebviewMessage, webviewToHostSchema, type HostSnapshot, type HostToWebview, type ItemsPatch, type WebviewToHost } from './bridge.ts';

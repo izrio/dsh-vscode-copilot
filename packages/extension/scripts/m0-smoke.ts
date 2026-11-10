@@ -127,10 +127,7 @@ const model = await startMockModel({
   default: { kind: 'text', chunks: ['OK'] },
 });
 
-await writeFile(
-  join(home, 'settings.yaml'),
-  `llm-deepseek:\n  apiKeyEnv: DSH_M0_API_KEY\n  baseURL: ${model.url}\n  thinking: disabled\n`,
-);
+await writeFile(join(home, 'settings.yaml'), `llm-deepseek:\n  apiKeyEnv: DSH_M0_API_KEY\n  baseURL: ${model.url}\n  thinking: disabled\n`);
 // 关掉目标轮次驱动，避免额外的模型请求干扰脚本
 const patchPath = join(storage, 'm0.patch.yml');
 await writeFile(patchPath, "- id: goal-round-driver\n  name: '@deepseek-ai/dsh-goal-round-driver'\n  disabled: true\n");
@@ -278,7 +275,11 @@ try {
     check('场景 hello：轮次结束', result.finished);
     const streamFrames = result.frames.filter((f) => f.type === 'assistant-stream');
     check('场景 hello：收到逐字流帧（start/chunk/end）', streamFrames.length > 0, { count: streamFrames.length });
-    check('场景 hello：逐字流中出现过部分文本', result.liveSamples.some((text) => text.length > 0 && text !== 'Hello, world!'), result.liveSamples.slice(0, 5));
+    check(
+      '场景 hello：逐字流中出现过部分文本',
+      result.liveSamples.some((text) => text.length > 0 && text !== 'Hello, world!'),
+      result.liveSamples.slice(0, 5),
+    );
     const message = result.events.find((event) => event.type === 'assistant/message');
     check('场景 hello：收到 assistant/message', message !== undefined);
     findings.helloEventTypes = result.events.map((event) => event.type);
@@ -350,7 +351,11 @@ try {
     const result = await scenario('approval-allow', 'M0_ESCALATE 需要越权的命令');
     check('场景 approval-allow：轮次结束', result.finished);
     const asked = approvals.slice(approvalsBefore);
-    check('场景 approval-allow：收到 approval/request', asked.length === 1, asked.map((a) => sanitize(a)));
+    check(
+      '场景 approval-allow：收到 approval/request',
+      asked.length === 1,
+      asked.map((a) => sanitize(a)),
+    );
     findings.approvalRequest = asked.map((a) => sanitize(a));
     const toolResult = result.events.find((event) => event.type === 'tool/result');
     check('场景 approval-allow：批准后命令执行', JSON.stringify(toolResult?.data ?? null).includes('m0-escalated-ok'), sanitize(toolResult?.data));
@@ -376,7 +381,11 @@ try {
     const result = await scenario('ask', 'M0_ASK 问我一个问题');
     check('场景 ask：轮次结束', result.finished);
     const asked = questions.slice(questionsBefore);
-    check('场景 ask：收到 user-questions/request 并回答', asked.length === 1, asked.map((q) => sanitize(q)));
+    check(
+      '场景 ask：收到 user-questions/request 并回答',
+      asked.length === 1,
+      asked.map((q) => sanitize(q)),
+    );
     findings.questionRequest = asked.map((q) => sanitize(q));
     const toolResult = result.events.find((event) => event.type === 'tool/result');
     findings.askToolResult = sanitize(toolResult?.data);

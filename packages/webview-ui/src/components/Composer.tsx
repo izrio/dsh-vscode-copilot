@@ -257,7 +257,12 @@ export function Composer() {
         />
       ) : null}
       <div className="composer">
-        <ContextChips active={active} included={includeActive} onToggle={() => active && setToggledKey(toggledKey === active.key ? undefined : active.key)} pinned={context.pinned} />
+        <ContextChips
+          active={active}
+          included={includeActive}
+          onToggle={() => active && setToggledKey(toggledKey === active.key ? undefined : active.key)}
+          pinned={context.pinned}
+        />
         <textarea
           ref={ref}
           className="composer__input"
@@ -301,10 +306,18 @@ export function Composer() {
               <CloseIcon />
             </button>
           ) : null}
-          {session.contextUsage !== undefined ? <ContextRing usage={session.contextUsage} {...(session.contextTokens ? { tokens: session.contextTokens } : {})} /> : null}
+          {session.contextUsage !== undefined ? (
+            <ContextRing usage={session.contextUsage} {...(session.contextTokens ? { tokens: session.contextTokens } : {})} />
+          ) : null}
           <span className="composer__spacer" />
           {showStop ? (
-            <button type="button" className="send-button send-button--stop" onClick={() => postToHost({ type: 'interrupt', payload: {} })} aria-label={t('composer.stop')} title={t('composer.stop')}>
+            <button
+              type="button"
+              className="send-button send-button--stop"
+              onClick={() => postToHost({ type: 'interrupt', payload: {} })}
+              aria-label={t('composer.stop')}
+              title={t('composer.stop')}
+            >
               <StopIcon />
             </button>
           ) : (

@@ -28,8 +28,7 @@ let connection: DshConnection | undefined;
 let controller: ChatController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  const applyLocale = (): void =>
-    setLocale(resolveLocale(vscode.env.language, vscode.workspace.getConfiguration('dsh.ui').get<string>('language', 'auto')));
+  const applyLocale = (): void => setLocale(resolveLocale(vscode.env.language, vscode.workspace.getConfiguration('dsh.ui').get<string>('language', 'auto')));
   applyLocale();
   const output = vscode.window.createOutputChannel('DSH', { log: true });
   // 所有日志都先脱敏：错误信息里可能带着 dsh 回显的令牌或 API Key

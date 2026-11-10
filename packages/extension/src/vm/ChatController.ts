@@ -129,7 +129,10 @@ export class ChatController {
     this.activeId = options.loadActiveSessionId();
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
     this.changes = new ChangesCache({ onChange: () => this.scheduleRender(), log: options.log });
-    this.context = new ContextAttachments(() => this.workbench, () => options.includeActiveEditor?.() ?? true);
+    this.context = new ContextAttachments(
+      () => this.workbench,
+      () => options.includeActiveEditor?.() ?? true,
+    );
     this.commands = new SlashCommands(() => this.scheduleRender(), options.log);
   }
 
@@ -423,11 +426,7 @@ export class ChatController {
 
   private async selectPermission(preset: string): Promise<void> {
     if (preset === DANGER_PRESET) {
-      const ok = await this.workbench.confirm(
-        t('danger.title'),
-        t('danger.detail'),
-        t('danger.allow'),
-      );
+      const ok = await this.workbench.confirm(t('danger.title'), t('danger.detail'), t('danger.allow'));
       if (!ok) return;
     }
     if (!this.activeId || !this.service) {
@@ -729,15 +728,18 @@ export class ChatController {
     if (!this.eventsMemo || this.eventsMemo.key.some((part, i) => part !== key[i])) {
       this.eventsMemo = { key, value: projectEvents({ events, workspacePath: this.workspacePath, changes }) };
     }
-    const projection = project({
-      events,
-      live: stream?.journal.live,
-      pending,
-      ...(streamLive ? {} : { fallbackRunning: summary?.running ?? false }),
-      workspacePath: this.workspacePath,
-      inbox: projections.inbox,
-      changes,
-    }, this.eventsMemo.value);
+    const projection = project(
+      {
+        events,
+        live: stream?.journal.live,
+        pending,
+        ...(streamLive ? {} : { fallbackRunning: summary?.running ?? false }),
+        workspacePath: this.workspacePath,
+        inbox: projections.inbox,
+        changes,
+      },
+      this.eventsMemo.value,
+    );
     const sync = () => this.syncProjection(projection, sessionId, service, streamLive && !showingStale);
 
     const streamStatus = stream?.status;
@@ -816,4 +818,3 @@ export class ChatController {
     this.options.post({ type: 'toast', payload: { level, text } });
   }
 }
-

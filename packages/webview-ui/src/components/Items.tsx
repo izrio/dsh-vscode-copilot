@@ -68,7 +68,13 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.attachments?.length ? (
         <div className="user__attachments">
           {item.attachments.map((a) => (
-            <button key={attachmentLabel(a) + a.path} type="button" className="chip chip--small" onClick={() => openAttachment(a)} title={t('common.open', a.path)}>
+            <button
+              key={attachmentLabel(a) + a.path}
+              type="button"
+              className="chip chip--small"
+              onClick={() => openAttachment(a)}
+              title={t('common.open', a.path)}
+            >
               {a.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
               <span className="chip__label">{attachmentLabel(a)}</span>
             </button>
@@ -86,11 +92,19 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.pending === 'failed' ? (
         <div className="user__meta user__meta--error">
           <span>{item.error ? t('user.failedWith', item.error) : t('user.failed')}</span>
-          <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'retryPending', payload: { requestId: item.requestId } })}>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => item.requestId && postToHost({ type: 'retryPending', payload: { requestId: item.requestId } })}
+          >
             <RefreshIcon />
             {t('user.retry')}
           </button>
-          <button type="button" className="link-button" onClick={() => item.requestId && postToHost({ type: 'discardPending', payload: { requestId: item.requestId } })}>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => item.requestId && postToHost({ type: 'discardPending', payload: { requestId: item.requestId } })}
+          >
             <TrashIcon />
             {t('common.delete')}
           </button>
@@ -233,7 +247,13 @@ function UserText({ text }: { text: string }) {
         part.kind === 'text' ? (
           part.text
         ) : (
-          <button key={index} type="button" className="mention" onClick={() => postToHost({ type: 'openFile', payload: { path: part.path } })} title={t('common.open', part.path)}>
+          <button
+            key={index}
+            type="button"
+            className="mention"
+            onClick={() => postToHost({ type: 'openFile', payload: { path: part.path } })}
+            title={t('common.open', part.path)}
+          >
             {part.text}
           </button>
         ),
@@ -406,10 +426,10 @@ function ExploreRow({ item }: { item: Of<'explore'> }) {
 /** 一轮结束时的改动汇总卡片。 */
 function ChangesCard({ item }: { item: Of<'changes'> }) {
   const t = useT();
-  const total = item.files.reduce(
-    (sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }),
-    { additions: 0, deletions: 0 },
-  );
+  const total = item.files.reduce((sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }), {
+    additions: 0,
+    deletions: 0,
+  });
   return (
     <section className="changes" aria-label={t('changes.label')}>
       <header className="changes__header">

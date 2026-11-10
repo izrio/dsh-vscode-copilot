@@ -109,10 +109,7 @@ export function cachedHighlight(code: string, lang: string | undefined): Highlig
 
 function getHighlighter(): Promise<HighlighterCore> {
   highlighter ??= (async () => {
-    const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([
-      import('shiki/core'),
-      import('shiki/engine/javascript'),
-    ]);
+    const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([import('shiki/core'), import('shiki/engine/javascript')]);
     return createHighlighterCore({
       themes: [import('shiki/themes/github-light-default.mjs'), import('shiki/themes/github-dark-default.mjs')],
       langs: [],

@@ -44,8 +44,7 @@ export type Pending =
   | { readonly kind: 'question'; readonly id: string; readonly sessionId: string; readonly request: QuestionRequest };
 
 export type QuestionAnswer =
-  | { readonly answers: readonly { readonly id: string; readonly selected: readonly string[]; readonly custom?: string }[] }
-  | { readonly cancelled: true };
+  { readonly answers: readonly { readonly id: string; readonly selected: readonly string[]; readonly custom?: string }[] } | { readonly cancelled: true };
 
 interface Waiting {
   readonly pending: Pending;

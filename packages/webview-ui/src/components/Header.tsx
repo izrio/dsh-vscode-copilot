@@ -86,11 +86,24 @@ export function Header() {
           </div>
         </Popover>
       </div>
-      <button type="button" className="icon-button" aria-label={t('header.new')} title={t('header.new')} onClick={() => postToHost({ type: 'newSession', payload: {} })}>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={t('header.new')}
+        title={t('header.new')}
+        onClick={() => postToHost({ type: 'newSession', payload: {} })}
+      >
         <PlusIcon />
       </button>
       <div className="header__more">
-        <button type="button" className="icon-button" aria-label={t('header.more')} title={t('header.more')} aria-expanded={menu === 'more'} onClick={() => setMenu(menu === 'more' ? undefined : 'more')}>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={t('header.more')}
+          title={t('header.more')}
+          aria-expanded={menu === 'more'}
+          onClick={() => setMenu(menu === 'more' ? undefined : 'more')}
+        >
           <MoreIcon />
         </button>
         <Popover open={menu === 'more'} onClose={close} className="more-menu" label={t('header.moreActions')}>

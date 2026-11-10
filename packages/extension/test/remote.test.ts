@@ -175,7 +175,9 @@ describe('UnaryClient', () => {
   });
 
   it('业务错误映射为 RemoteError，保留 code 和 details', async () => {
-    const error = await client().call('session/writer').catch((e: unknown) => e);
+    const error = await client()
+      .call('session/writer')
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RemoteError);
     expect(error).toMatchObject({ code: 'session/writer-held', details: { sessionId: 's1' } });
   });
@@ -185,7 +187,9 @@ describe('UnaryClient', () => {
   });
 
   it('方法不存在（HTTP 404）时 isMethodUnavailable 为 true', async () => {
-    const error = await client().call('missing/method').catch((e: unknown) => e);
+    const error = await client()
+      .call('missing/method')
+      .catch((e: unknown) => e);
     expect(isMethodUnavailable(error)).toBe(true);
     expect(isMethodUnavailable(new RemoteError('x/y', 'gateway/method-unavailable', ''))).toBe(true);
     expect(isMethodUnavailable(new RemoteError('x/y', 'session/writer-held', ''))).toBe(false);
@@ -276,11 +280,23 @@ describe('session/control 帧兼容', () => {
   it('rc.5 的单键更新和 alpha 的批量更新都统一成 changes', async () => {
     const frames = [
       { type: 'projection', sessionId: 's', key: 'title', value: 'A', seq: 3 },
-      { type: 'projection', sessionId: 's', seq: 4, changes: [{ key: 'title', val: 'B' }, { key: 'todos', val: null }] },
+      {
+        type: 'projection',
+        sessionId: 's',
+        seq: 4,
+        changes: [
+          { key: 'title', val: 'B' },
+          { key: 'todos', val: null },
+        ],
+      },
       { type: 'baseline', value: { projections: {} } },
       { type: 'unknown-kind' },
     ];
-    const fakeMux = { async *open() { yield* frames; } };
+    const fakeMux = {
+      async *open() {
+        yield* frames;
+      },
+    };
     // 只替换 mux，直接测试 control() 的解析和归一化
     const client = Object.create(DshClient.prototype) as DshClient;
     Object.assign(client, { mux: fakeMux });
@@ -288,7 +304,15 @@ describe('session/control 帧兼容', () => {
     for await (const frame of client.control()) seen.push(frame);
     expect(seen).toEqual([
       { type: 'projection', sessionId: 's', seq: 3, changes: [{ key: 'title', value: 'A' }] },
-      { type: 'projection', sessionId: 's', seq: 4, changes: [{ key: 'title', value: 'B' }, { key: 'todos', value: null }] },
+      {
+        type: 'projection',
+        sessionId: 's',
+        seq: 4,
+        changes: [
+          { key: 'title', value: 'B' },
+          { key: 'todos', value: null },
+        ],
+      },
       { type: 'baseline', value: { projections: {} } },
     ]);
   });

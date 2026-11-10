@@ -27,11 +27,7 @@ export class TransportError extends Error {
 }
 
 /** 表示"当前 Host 没有这个方法或服务"的网关错误码（dsh packages/api/gateway/src/remote-error-codes.ts）。 */
-const UNAVAILABLE_CODES = new Set([
-  'gateway/method-unavailable',
-  'gateway/service-unavailable',
-  'gateway/definition-unavailable',
-]);
+const UNAVAILABLE_CODES = new Set(['gateway/method-unavailable', 'gateway/service-unavailable', 'gateway/definition-unavailable']);
 
 /**
  * 方法在当前 dsh 版本或组合中不存在。用于能力探测：调用方据此隐藏功能，而不是报错。

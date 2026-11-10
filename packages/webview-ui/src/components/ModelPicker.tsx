@@ -69,7 +69,11 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
                       </MenuItem>
                     ))
                   ) : (
-                    <MenuItem key={`${o.provider}/${o.model}`} active={o.provider === current?.provider && o.model === current?.model} onSelect={() => select(o, o.efforts[0]?.id)}>
+                    <MenuItem
+                      key={`${o.provider}/${o.model}`}
+                      active={o.provider === current?.provider && o.model === current?.model}
+                      onSelect={() => select(o, o.efforts[0]?.id)}
+                    >
                       {o.name}
                     </MenuItem>
                   ),

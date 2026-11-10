@@ -139,8 +139,6 @@ export function unifiedFromToolDiffs(path: string, diffs: readonly ToolDiff[]): 
 
 /** 还原失败时的兜底：把带行号的 hunk 渲染成统一 diff 文本。 */
 export function unifiedFromHunks(path: string, hunks: readonly Hunk[]): string {
-  const body = hunks
-    .map((h) => [`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`, ...h.lines].join('\n'))
-    .join('\n');
+  const body = hunks.map((h) => [`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`, ...h.lines].join('\n')).join('\n');
   return `--- ${path}\n+++ ${path}\n${body}\n`;
 }

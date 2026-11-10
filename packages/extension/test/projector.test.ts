@@ -7,8 +7,8 @@ import { plainTitle } from '../src/vm/ChatController.ts';
 
 /** 用 M0 录制的真实帧回放出 journal，再投影成界面条目。 */
 function journalOf(name: string): SessionJournal {
-  const frames = (JSON.parse(readFileSync(new URL(`./fixtures/m0/${name}.json`, import.meta.url), 'utf8')) as unknown[]).map(
-    (frame) => followFrameSchema.parse(frame),
+  const frames = (JSON.parse(readFileSync(new URL(`./fixtures/m0/${name}.json`, import.meta.url), 'utf8')) as unknown[]).map((frame) =>
+    followFrameSchema.parse(frame),
   );
   const firstEvent = frames.find((f) => f.type === 'event');
   const firstStream = frames.find((f) => f.type === 'assistant-stream');
@@ -137,12 +137,25 @@ describe('project：按工具类型渲染（M2）', () => {
 
   it('write 新建文件：标记新建，新增行数取内容行数', () => {
     const items = project({
-      events: [call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }), result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } })],
+      events: [
+        call(1, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }),
+        result(2, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } }),
+      ],
       pending: [],
       workspacePath: '/w',
     }).items;
     expect(items).toEqual([
-      { kind: 'activity', id: 't:c1', tool: 'write', variant: 'edit', label: 'new.txt', status: 'ok', stats: { additions: 2, deletions: 0 }, created: true, diff: { kind: 'tool', callId: 'c1' } },
+      {
+        kind: 'activity',
+        id: 't:c1',
+        tool: 'write',
+        variant: 'edit',
+        label: 'new.txt',
+        status: 'ok',
+        stats: { additions: 2, deletions: 0 },
+        created: true,
+        diff: { kind: 'tool', callId: 'c1' },
+      },
     ]);
   });
 
@@ -165,7 +178,13 @@ describe('project：按工具类型渲染（M2）', () => {
       pending: [],
     }).items;
     expect(summary(items)).toEqual(['explore:读取 1 个文件，搜索 1 次:running', 'assistant:看完了', 'explore:读取 1 个文件:running']);
-    expect(items[0]).toMatchObject({ id: 'x:r1', entries: [{ id: 'r1', status: 'ok' }, { id: 'g1', status: 'running' }] });
+    expect(items[0]).toMatchObject({
+      id: 'x:r1',
+      entries: [
+        { id: 'r1', status: 'ok' },
+        { id: 'g1', status: 'running' },
+      ],
+    });
   });
 });
 
@@ -174,7 +193,9 @@ describe('project：规则', () => {
 
   it('surfaceOp 不是 append 的消息不渲染（模型历史改写，例如压缩）', () => {
     const items = project({
-      events: [event(1, 'assistant/message', { message: { content: [{ type: 'text', text: 'summary' }] } }, { surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 } })],
+      events: [
+        event(1, 'assistant/message', { message: { content: [{ type: 'text', text: 'summary' }] } }, { surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 } }),
+      ],
       pending: [],
     }).items;
     expect(items).toEqual([]);
@@ -184,7 +205,19 @@ describe('project：规则', () => {
     const items = project({
       events: [
         event(1, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'x', name: 'read', arguments: '{}' }] } }, { surfaceOp: 'append' }),
-        event(2, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '想一想' }, { type: 'text', text: '答案' }] } }, { surfaceOp: 'append' }),
+        event(
+          2,
+          'assistant/message',
+          {
+            message: {
+              content: [
+                { type: 'reasoning', text: '想一想' },
+                { type: 'text', text: '答案' },
+              ],
+            },
+          },
+          { surfaceOp: 'append' },
+        ),
       ],
       pending: [],
     }).items;
@@ -262,7 +295,10 @@ describe('project：规则', () => {
 
 describe('activityLabel', () => {
   it('按命令 > 文件 > 搜索词 > 目录的优先级选摘要', () => {
-    expect(activityLabel('bash', JSON.stringify({ command: 'pnpm test\n--watch', description: 'Run tests' }))).toEqual({ label: 'bash', detail: 'pnpm test …' });
+    expect(activityLabel('bash', JSON.stringify({ command: 'pnpm test\n--watch', description: 'Run tests' }))).toEqual({
+      label: 'bash',
+      detail: 'pnpm test …',
+    });
     expect(activityLabel('read', JSON.stringify({ file_path: '/w/src/a.ts' }), '/w')).toEqual({ label: 'read', detail: 'src/a.ts' });
     expect(activityLabel('grep', JSON.stringify({ pattern: 'answer', path: '.' }))).toEqual({ label: 'grep', detail: 'answer' });
     expect(activityLabel('glob', JSON.stringify({ path: '/w/src' }), '/w')).toEqual({ label: 'glob', detail: 'src' });
@@ -288,7 +324,10 @@ describe('project：缺少 API Key', () => {
   it('MISSING_CREDENTIAL 显示中文提示和配置入口，并给出 dsh 要求的凭据名', () => {
     const message =
       'llm-deepseek: no API key for provider route "deepseek-official"; store DSH_TEST_API_KEY through the credentials service (the web Models page writes it), or export DSH_TEST_API_KEY in the launching environment';
-    const result = project({ events: [{ type: 'turn/end', seq: 3, time: 3, data: { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message } } } }], pending: [] });
+    const result = project({
+      events: [{ type: 'turn/end', seq: 3, time: 3, data: { reason: { kind: 'error', error: { code: 'MISSING_CREDENTIAL', message } } } }],
+      pending: [],
+    });
     expect(result.items[0]).toMatchObject({ kind: 'notice', level: 'error', action: { kind: 'configureApiKey' } });
     expect(result.items[0]?.kind === 'notice' && result.items[0].text).toContain('API Key');
     expect(result.missingCredentialRef).toBe('DSH_TEST_API_KEY');
@@ -326,8 +365,24 @@ describe('project：M3', () => {
       pending: [],
     }).items;
     expect(items).toEqual([
-      { kind: 'activity', id: 'cmd:c1', tool: 'slash', variant: 'generic', label: '/compact', detail: 'Compacted 3 history items (~277 tokens).', status: 'ok' },
-      { kind: 'activity', id: 'cmd:c2', tool: 'slash', variant: 'generic', label: '/feedback', detail: 'Feedback text is required. Usage: /feedback <text>', status: 'error' },
+      {
+        kind: 'activity',
+        id: 'cmd:c1',
+        tool: 'slash',
+        variant: 'generic',
+        label: '/compact',
+        detail: 'Compacted 3 history items (~277 tokens).',
+        status: 'ok',
+      },
+      {
+        kind: 'activity',
+        id: 'cmd:c2',
+        tool: 'slash',
+        variant: 'generic',
+        label: '/feedback',
+        detail: 'Feedback text is required. Usage: /feedback <text>',
+        status: 'error',
+      },
     ]);
   });
 
@@ -355,7 +410,14 @@ describe('project：M3', () => {
     }).items;
     expect(items).toEqual([
       { kind: 'user', id: 'u:1', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }] },
-      { kind: 'user', id: 'p:r2', text: '看看', attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }], pending: 'sending', requestId: 'r2' },
+      {
+        kind: 'user',
+        id: 'p:r2',
+        text: '看看',
+        attachments: [{ kind: 'selection', path: 'src/a.ts', startLine: 3, endLine: 4 }],
+        pending: 'sending',
+        requestId: 'r2',
+      },
     ]);
   });
 });
@@ -368,12 +430,20 @@ describe('project：M4', () => {
     const items = project({
       events: [event(1, 'user/message', { content: [{ type: 'text', text: '已送达' }], source: { kind: 'user', rpcId: 'r0' } }, { surfaceOp: 'append' })],
       inbox: {
-        'next-turn': [queued('m0', 'r0', '已送达'), queued('m1', 'r1', '等下一轮'), { id: 'x', content: [{ type: 'text', text: 'system' }], source: { kind: 'plan-mode' } }],
+        'next-turn': [
+          queued('m0', 'r0', '已送达'),
+          queued('m1', 'r1', '等下一轮'),
+          { id: 'x', content: [{ type: 'text', text: 'system' }], source: { kind: 'plan-mode' } },
+        ],
         'next-step': [queued('m2', 'r2', '插队的')],
       },
       pending: [],
     }).items;
-    expect(items.map((item) => (item.kind === 'user' ? `${item.text}:${item.queue?.target ?? '-'}` : item.kind))).toEqual(['已送达:-', '插队的:next-step', '等下一轮:next-turn']);
+    expect(items.map((item) => (item.kind === 'user' ? `${item.text}:${item.queue?.target ?? '-'}` : item.kind))).toEqual([
+      '已送达:-',
+      '插队的:next-step',
+      '等下一轮:next-turn',
+    ]);
   });
 
   it('todo_write 不在对话流里出现；计划工具显示计划标题和审阅结果', () => {
@@ -383,11 +453,15 @@ describe('project：M4', () => {
         event(1, 'tool/call', { callId: 't1', name: 'todo_write', arguments: JSON.stringify({ todos: [] }) }),
         event(2, 'tool/result', { message: { toolCallId: 't1', content: [], isError: false } }),
         event(3, 'tool/call', { callId: 'p1', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
-        event(4, 'tool/result', { message: { toolCallId: 'p1', content: [{ type: 'text', text: 'The user chose to keep planning; their feedback: 先补测试' }], isError: true } }),
+        event(4, 'tool/result', {
+          message: { toolCallId: 'p1', content: [{ type: 'text', text: 'The user chose to keep planning; their feedback: 先补测试' }], isError: true },
+        }),
         event(5, 'tool/call', { callId: 'p2', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
         event(6, 'tool/result', { message: { toolCallId: 'p2', content: [{ type: 'text', text: 'Plan approved — plan mode exited' }], isError: false } }),
         event(7, 'tool/call', { callId: 'p3', name: 'exit_plan_mode', arguments: JSON.stringify({ plan }) }),
-        event(8, 'tool/result', { message: { toolCallId: 'p3', content: [{ type: 'text', text: 'exit_plan_mode is only available in plan mode' }], isError: true } }),
+        event(8, 'tool/result', {
+          message: { toolCallId: 'p3', content: [{ type: 'text', text: 'exit_plan_mode is only available in plan mode' }], isError: true },
+        }),
       ],
       pending: [],
     }).items;

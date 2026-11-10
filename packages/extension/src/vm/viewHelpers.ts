@@ -36,7 +36,9 @@ export function buildModelState(
   return {
     ...(needsApiKey ? { needsApiKey } : {}),
     options,
-    ...(current ? { current: { provider: current.provider, model: current.model, ...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}) } } : {}),
+    ...(current
+      ? { current: { provider: current.provider, model: current.model, ...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}) } }
+      : {}),
   };
 }
 
@@ -74,7 +76,11 @@ export function queuedText(inbox: unknown, itemId: string): string | undefined {
   for (const list of Object.values(inbox as Record<string, unknown>)) {
     if (!Array.isArray(list)) continue;
     const item = list.find((entry: { id?: unknown }) => entry?.id === itemId) as { content?: { type?: string; text?: string }[] } | undefined;
-    if (item) return (item.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
+    if (item)
+      return (item.content ?? [])
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text ?? '')
+        .join('\n');
   }
   return undefined;
 }
@@ -108,9 +114,7 @@ export function todosOf(projections: Readonly<Record<string, unknown>>): Pick<Se
 
 export function goalOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'goal'> {
   const value = projections.goal as
-    | { goal?: { objective?: string; phase?: string; maxGoalRounds?: number; blockedReason?: { message?: string } }; roundsStarted?: number }
-    | null
-    | undefined;
+    { goal?: { objective?: string; phase?: string; maxGoalRounds?: number; blockedReason?: { message?: string } }; roundsStarted?: number } | null | undefined;
   const goal = value?.goal;
   if (!goal?.objective || !['active', 'paused', 'blocked', 'complete'].includes(goal.phase ?? '')) return {};
   return {

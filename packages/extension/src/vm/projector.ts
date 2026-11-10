@@ -153,7 +153,14 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           permissionArgs.set(`cmd:${commandId}`, presetName(args));
           break;
         }
-        items.push({ kind: 'activity', id: `cmd:${commandId}`, tool: 'slash', variant: 'generic', label: `/${name}${args ? ` ${firstLine(args)}` : ''}`, status: 'running' });
+        items.push({
+          kind: 'activity',
+          id: `cmd:${commandId}`,
+          tool: 'slash',
+          variant: 'generic',
+          label: `/${name}${args ? ` ${firstLine(args)}` : ''}`,
+          status: 'running',
+        });
         break;
       }
       case 'command/done': {
@@ -162,7 +169,10 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const result = typeof data.text === 'string' ? data.text.trim() : '';
         if (at && previous?.kind === 'notice') {
           const preset = permissionArgs.get(previous.id) ?? '';
-          items[at.index] = data.kind === 'error' ? { ...previous, level: 'error', text: t('notice.permissionFailed', result) } : { ...previous, text: t('notice.permissionSwitched', preset) };
+          items[at.index] =
+            data.kind === 'error'
+              ? { ...previous, level: 'error', text: t('notice.permissionFailed', result) }
+              : { ...previous, text: t('notice.permissionSwitched', preset) };
           break;
         }
         if (!at || previous?.kind !== 'activity') break;
@@ -177,8 +187,16 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
       case 'assistant/message': {
         const message = data.message as { content?: unknown } | undefined;
         const blocks = Array.isArray(message?.content) ? (message.content as ContentBlock[]) : [];
-        const markdown = blocks.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n\n').trim();
-        const reasoning = blocks.filter((b) => b.type === 'reasoning').map((b) => b.text ?? '').join('\n\n').trim();
+        const markdown = blocks
+          .filter((b) => b.type === 'text')
+          .map((b) => b.text ?? '')
+          .join('\n\n')
+          .trim();
+        const reasoning = blocks
+          .filter((b) => b.type === 'reasoning')
+          .map((b) => b.text ?? '')
+          .join('\n\n')
+          .trim();
         const interrupted = data.interrupted === true;
         if (!markdown && !reasoning) break;
         // 与流式输出时用同一个 id（按轮次和步骤），结算时界面原地更新，不重新挂载
@@ -268,9 +286,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         let next: Activity = { ...previous, status, ...(output ? { output } : {}) };
         if (previous.variant === 'edit' && status === 'ok' && (diffs !== undefined || created)) {
           const content = typeof call.args.content === 'string' ? call.args.content : undefined;
-          const stats = created
-            ? { additions: content !== undefined ? countLines(content) : 0, deletions: 0 }
-            : sumStats((diffs ?? []).map(cachedLineStats));
+          const stats = created ? { additions: content !== undefined ? countLines(content) : 0, deletions: 0 } : sumStats((diffs ?? []).map(cachedLineStats));
           next = { ...next, stats, ...(created ? { created } : {}), diff: { kind: 'tool', callId } };
           // 文件修改成功时输出只是「已修改」之类的确认，不需要展开
           const { output: _omit, ...rest } = next;
@@ -291,7 +307,8 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const notice = turnEndNotice(event.seq, data.reason);
         if (notice) items.push(notice);
         const reason = data.reason as { error?: { code?: string; message?: string } } | undefined;
-        if (reason?.error?.code === 'MISSING_CREDENTIAL') missingCredentialRef = /\bstore ([A-Z_][A-Z0-9_]*)\b/u.exec(reason.error.message ?? '')?.[1] ?? missingCredentialRef;
+        if (reason?.error?.code === 'MISSING_CREDENTIAL')
+          missingCredentialRef = /\bstore ([A-Z_][A-Z0-9_]*)\b/u.exec(reason.error.message ?? '')?.[1] ?? missingCredentialRef;
         else if (notice === undefined) missingCredentialRef = undefined; // 之后有成功的轮次：已经配置好了
         break;
       }
@@ -424,7 +441,9 @@ function summarizeExplore(group: Explore): Explore {
     else if (tool === 'ls' || tool === 'list') lists++;
     else searches++;
   }
-  const parts = [reads ? t('explore.reads', reads) : '', searches ? t('explore.searches', searches) : '', lists ? t('explore.lists', lists) : ''].filter(Boolean);
+  const parts = [reads ? t('explore.reads', reads) : '', searches ? t('explore.searches', searches) : '', lists ? t('explore.lists', lists) : ''].filter(
+    Boolean,
+  );
   const statuses = group.entries.map((e) => e.status);
   const status = statuses.includes('running') ? 'running' : statuses.every((s) => s === 'error') ? 'error' : 'ok';
   return { ...group, summary: parts.join(t('explore.separator')), status };
@@ -595,7 +614,6 @@ function firstLine(text: string): string {
   const line = text.split('\n', 1)[0] ?? '';
   return line.length < text.length ? `${line} …` : line;
 }
-
 
 function turnEndNotice(seq: number, reason: unknown): Item | undefined {
   const r = reason as { kind?: string; error?: { message?: string; code?: string } } | undefined;

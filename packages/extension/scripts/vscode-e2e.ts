@@ -38,8 +38,7 @@ if (!cli['code-server'] || !cli.dsh) {
 }
 const codeServer = cli['code-server'];
 const here = fileURLToPath(new URL('.', import.meta.url));
-const vsix =
-  cli.vsix ?? join(here, '..', (await readdir(join(here, '..'))).find((name) => name.endsWith('.vsix')) ?? 'missing.vsix');
+const vsix = cli.vsix ?? join(here, '..', (await readdir(join(here, '..'))).find((name) => name.endsWith('.vsix')) ?? 'missing.vsix');
 const outDir = resolve(cli.out ?? join(here, '../../../.e2e-screenshots/vscode'));
 await mkdir(outDir, { recursive: true });
 
@@ -97,7 +96,19 @@ execFileSync(codeServer, ['--extensions-dir', extensions, '--user-data-dir', dat
 const port = 38_000 + Math.floor(Math.random() * 1_000);
 const server = spawn(
   codeServer,
-  ['--auth', 'none', '--bind-addr', `127.0.0.1:${port}`, '--extensions-dir', extensions, '--user-data-dir', data, '--disable-telemetry', '--disable-update-check', env.workspace],
+  [
+    '--auth',
+    'none',
+    '--bind-addr',
+    `127.0.0.1:${port}`,
+    '--extensions-dir',
+    extensions,
+    '--user-data-dir',
+    data,
+    '--disable-telemetry',
+    '--disable-update-check',
+    env.workspace,
+  ],
   { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true },
 );
 let serverLog = '';
@@ -125,7 +136,13 @@ try {
   const findWebview = async () => {
     for (let i = 0; i < 120; i++) {
       for (const frame of page.frames()) {
-        if (await frame.locator('.composer').count().catch(() => 0)) return frame;
+        if (
+          await frame
+            .locator('.composer')
+            .count()
+            .catch(() => 0)
+        )
+          return frame;
       }
       await page.waitForTimeout(500);
     }
@@ -154,10 +171,13 @@ try {
   check('工具调用显示为活动行', (await webview.locator('.activity').count()) === 2);
   await webview.locator('.shiki').first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1_000);
-  const colors = await webview.locator('.shiki .line span').first().evaluate((el) => ({
-    token: getComputedStyle(el).color,
-    body: getComputedStyle(document.body).color,
-  }));
+  const colors = await webview
+    .locator('.shiki .line span')
+    .first()
+    .evaluate((el) => ({
+      token: getComputedStyle(el).color,
+      body: getComputedStyle(document.body).color,
+    }));
   check('代码高亮在 Webview 的 CSP 下生效', colors.token !== colors.body);
   const status = await page.locator('.statusbar-item', { hasText: 'DSH' }).first().innerText();
   check(`状态栏显示当前模型（${status.replace(/\s+/gu, ' ').trim()}）`, status.includes('·'));
@@ -168,21 +188,39 @@ try {
   await input.press('Enter');
   await webview.locator('.assistant', { hasText: 'README 改好了' }).waitFor({ timeout: 60_000 });
   await webview.locator('.activity--edit .activity__row').click();
-  await page.locator('.monaco-diff-editor').first().waitFor({ timeout: 15_000 }).then(
-    () => check('点击修改行在 Diff 编辑器里打开', true),
-    () => check('点击修改行在 Diff 编辑器里打开', false),
-  );
-  const tab = await page.locator('.tab.active').first().innerText().catch(() => '');
+  await page
+    .locator('.monaco-diff-editor')
+    .first()
+    .waitFor({ timeout: 15_000 })
+    .then(
+      () => check('点击修改行在 Diff 编辑器里打开', true),
+      () => check('点击修改行在 Diff 编辑器里打开', false),
+    );
+  const tab = await page
+    .locator('.tab.active')
+    .first()
+    .innerText()
+    .catch(() => '');
   check(`Diff 标签标明修改前后（${tab.replace(/\s+/gu, ' ').trim()}）`, tab.includes('before'));
-  const original = await page.locator('.monaco-diff-editor .editor.original .view-lines').first().innerText().catch(() => '');
-  const modified = await page.locator('.monaco-diff-editor .editor.modified .view-lines').first().innerText().catch(() => '');
+  const original = await page
+    .locator('.monaco-diff-editor .editor.original .view-lines')
+    .first()
+    .innerText()
+    .catch(() => '');
+  const modified = await page
+    .locator('.monaco-diff-editor .editor.modified .view-lines')
+    .first()
+    .innerText()
+    .catch(() => '');
   check('Diff 左侧是修改前的内容，右侧是当前文件', !original.includes('一个演示项目') && modified.includes('一个演示项目'));
   await page.screenshot({ path: join(outDir, 'diff.png') });
   await webview.locator('.changes__file').first().click();
-  await page.waitForFunction(() => document.querySelector('.tab.active')?.textContent?.includes('before this turn') ?? false, undefined, { timeout: 15_000 }).then(
-    () => check('点击改动汇总里的文件打开本轮 Diff', true),
-    () => check('点击改动汇总里的文件打开本轮 Diff', false),
-  );
+  await page
+    .waitForFunction(() => document.querySelector('.tab.active')?.textContent?.includes('before this turn') ?? false, undefined, { timeout: 15_000 })
+    .then(
+      () => check('点击改动汇总里的文件打开本轮 Diff', true),
+      () => check('点击改动汇总里的文件打开本轮 Diff', false),
+    );
 
   // 切换到完全访问时弹出 VS Code 的模态确认框
   await webview.getByTestId('permission-picker').click();
@@ -194,10 +232,14 @@ try {
   );
   await page.screenshot({ path: join(outDir, 'permission-confirm.png') });
   await dialog.getByRole('button', { name: 'Allow full access' }).click();
-  await webview.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('Full access') ?? false, undefined, { timeout: 10_000 }).then(
-    () => check('确认后权限切换为完全访问', true),
-    () => check('确认后权限切换为完全访问', false),
-  );
+  await webview
+    .waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('Full access') ?? false, undefined, {
+      timeout: 10_000,
+    })
+    .then(
+      () => check('确认后权限切换为完全访问', true),
+      () => check('确认后权限切换为完全访问', false),
+    );
 
   // 编辑器右键菜单：选中代码 →「DSH → 解释这段代码」
   await page.keyboard.press('Control+P');
@@ -241,7 +283,10 @@ try {
   check(`未预期的错误：${error instanceof Error ? error.message : String(error)}`, false);
   await debugPage?.screenshot({ path: join(outDir, 'failure.png') }).catch(() => undefined);
   for (const frame of debugPage?.frames() ?? []) {
-    const text = await frame.locator('.app').innerText().catch(() => '');
+    const text = await frame
+      .locator('.app')
+      .innerText()
+      .catch(() => '');
     if (text) console.log(`Webview 内容：\n${text}`);
   }
   console.log(serverLog.slice(-3_000));

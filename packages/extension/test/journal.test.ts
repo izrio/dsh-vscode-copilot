@@ -117,7 +117,7 @@ describe('SessionJournal 规则', () => {
     type: 'event',
     event: { type, seq, time: seq, data, ...extra },
   });
-  const stream = (frame: Record<string, unknown>): FollowFrame => ({ type: 'assistant-stream', frame } as FollowFrame);
+  const stream = (frame: Record<string, unknown>): FollowFrame => ({ type: 'assistant-stream', frame }) as FollowFrame;
   const start = (revision: number) => stream({ type: 'start', attemptId: 'a', revision, startedAfterSeq: 4, turn: 1, step: 1 });
   const chunk = (revision: number, index: number, text: string) =>
     stream({ type: 'chunk', attemptId: 'a', revision, index, time: 0, chunk: { type: 'text-delta', index: 0, text } });
@@ -212,14 +212,22 @@ describe('SessionJournal 规则', () => {
     } as FollowFrame);
     expect(liveBlocksText(journal.live?.blocks ?? new Map())).toBe('Hello');
     // 接着收到下标 3 的 chunk
-    expect(journal.accept(stream({ type: 'chunk', attemptId: 'a', revision: 4, index: 3, time: 0, chunk: { type: 'text-delta', index: 0, text: '!' } }))).toBe('ok');
+    expect(journal.accept(stream({ type: 'chunk', attemptId: 'a', revision: 4, index: 3, time: 0, chunk: { type: 'text-delta', index: 0, text: '!' } }))).toBe(
+      'ok',
+    );
     expect(liveBlocksText(journal.live?.blocks ?? new Map())).toBe('Hello!');
   });
 
   it('prependOlder 把更早的历史插到前面并去重', () => {
     const journal = fresh();
     journal.accept(event(5));
-    journal.prependOlder([{ type: 'turn/start', seq: 3, time: 3, data: {} }, { type: 'step/start', seq: 5, time: 5, data: {} }], false);
+    journal.prependOlder(
+      [
+        { type: 'turn/start', seq: 3, time: 3, data: {} },
+        { type: 'step/start', seq: 5, time: 5, data: {} },
+      ],
+      false,
+    );
     expect(journal.events.map((e) => e.seq)).toEqual([3, 5]);
     expect(journal.hasOlder).toBe(false);
   });

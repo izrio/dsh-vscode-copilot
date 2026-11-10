@@ -11,10 +11,7 @@ export interface Endpoint {
   readonly token: string;
 }
 
-export type ConnectionStatus =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'connecting'; readonly attempt: number }
-  | { readonly kind: 'connected' };
+export type ConnectionStatus = { readonly kind: 'idle' } | { readonly kind: 'connecting'; readonly attempt: number } | { readonly kind: 'connected' };
 
 export interface DshConnectionOptions {
   readonly log?: (line: string) => void;

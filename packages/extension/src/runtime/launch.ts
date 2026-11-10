@@ -40,8 +40,7 @@ export class LaunchError extends Error {
   }
 }
 
-const LAUNCH_URL =
-  /https?:\/\/(?:\[[0-9a-f:.]+\]|localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?\/?\?token=[A-Za-z0-9_-]+/iu;
+const LAUNCH_URL = /https?:\/\/(?:\[[0-9a-f:.]+\]|localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?\/?\?token=[A-Za-z0-9_-]+/iu;
 
 /**
  * 从一行输出中找到带令牌的启动 URL。
@@ -81,7 +80,11 @@ export function quoteForCmd(arg: string): string {
 }
 
 /** 按平台准备 spawn / execFile 的命令和参数。 */
-export function commandLine(command: string, args: readonly string[], platform: NodeJS.Platform = process.platform): { file: string; args: string[]; shell: boolean } {
+export function commandLine(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): { file: string; args: string[]; shell: boolean } {
   if (!needsShell(command, platform)) return { file: command, args: [...args], shell: false };
   return { file: quoteForCmd(command), args: args.map(quoteForCmd), shell: true };
 }
@@ -95,25 +98,16 @@ export function isValidProfile(profile: string): boolean {
  * 执行 `dsh --version`。
  * @returns 去掉首尾空白的版本输出。
  */
-export function probeVersion(
-  command: string,
-  env: Readonly<Record<string, string | undefined>>,
-  timeoutMs = 15_000,
-): Promise<string> {
+export function probeVersion(command: string, env: Readonly<Record<string, string | undefined>>, timeoutMs = 15_000): Promise<string> {
   const line = commandLine(command, ['--version']);
   return new Promise((resolve, reject) => {
-    execFile(
-      line.file,
-      line.args,
-      { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: line.shell, windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new LaunchError(t('runtime.versionFailed', error.message), redactSecrets(String(stderr))));
-          return;
-        }
-        resolve(String(stdout).trim());
-      },
-    );
+    execFile(line.file, line.args, { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: line.shell, windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new LaunchError(t('runtime.versionFailed', error.message), redactSecrets(String(stderr))));
+        return;
+      }
+      resolve(String(stdout).trim());
+    });
   });
 }
 

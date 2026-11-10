@@ -35,7 +35,12 @@ export function ContextChips({
         <span key={a.id} className="chip" title={t('chip.pinnedTitle', a.startLine ? t('chip.lines', a.path, a.startLine, a.endLine ?? a.startLine) : a.path)}>
           {a.kind === 'selection' ? <SelectionIcon /> : <FileIcon />}
           <span className="chip__label">{attachmentLabel(a)}</span>
-          <button type="button" className="chip__remove" aria-label={t('chip.remove', attachmentLabel(a))} onClick={() => postToHost({ type: 'removeAttachment', payload: { id: a.id } })}>
+          <button
+            type="button"
+            className="chip__remove"
+            aria-label={t('chip.remove', attachmentLabel(a))}
+            onClick={() => postToHost({ type: 'removeAttachment', payload: { id: a.id } })}
+          >
             <CloseIcon />
           </button>
         </span>

@@ -7,7 +7,6 @@ import { useView } from '../store.ts';
 import { CheckIcon, ChecklistIcon, ChevronRightIcon, SpinnerIcon, TargetIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
-
 export function StatusStrip() {
   const todos = useView((s) => s.session.todos);
   const goal = useView((s) => s.session.goal);
@@ -42,7 +41,10 @@ export function StatusStrip() {
             <ul className="todo-list">
               {todos.map((todo, index) => (
                 <li key={index} className={`todo todo--${todo.status}`}>
-                  <span className="todo__mark" aria-label={todo.status === 'completed' ? t('todo.completed') : todo.status === 'in_progress' ? t('todo.inProgress') : t('todo.pending')}>
+                  <span
+                    className="todo__mark"
+                    aria-label={todo.status === 'completed' ? t('todo.completed') : todo.status === 'in_progress' ? t('todo.inProgress') : t('todo.pending')}
+                  >
                     {todo.status === 'completed' ? <CheckIcon /> : todo.status === 'in_progress' && running ? <SpinnerIcon /> : <span className="todo__dot" />}
                   </span>
                   <span>{todo.content}</span>

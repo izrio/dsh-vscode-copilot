@@ -60,8 +60,8 @@ const MARKDOWN_ANSWER = [
   '- `webview-ui`：界面\n\n',
   '入口代码大致如下：\n\n',
   '```ts\n',
-  "export function activate(context: vscode.ExtensionContext) {\n",
-  "  const manager = new RuntimeManager({ log: console.log });\n",
+  'export function activate(context: vscode.ExtensionContext) {\n',
+  '  const manager = new RuntimeManager({ log: console.log });\n',
   '  void manager.start();\n',
   '}\n',
   '```\n\n',
@@ -84,10 +84,23 @@ const env = await createDshTestEnv({
       after: '看过了：README 介绍了项目，`src/index.ts` 导出了 `answer`，测试全部通过。',
     },
     E2E_QUEUE: { kind: 'hold', chunks: ['先', '处理', '这个'] },
-    E2E_PLAN: { kind: 'tool', tool: { name: 'exit_plan_mode', input: { plan: '# 重构计划\n\n1. 拆分 `RuntimeManager`\n2. 补充单元测试\n3. 更新文档' } }, after: '好的，按审阅结果继续。' },
+    E2E_PLAN: {
+      kind: 'tool',
+      tool: { name: 'exit_plan_mode', input: { plan: '# 重构计划\n\n1. 拆分 `RuntimeManager`\n2. 补充单元测试\n3. 更新文档' } },
+      after: '好的，按审阅结果继续。',
+    },
     E2E_TODO: {
       kind: 'tool',
-      tool: { name: 'todo_write', input: { todos: [{ content: '阅读现有实现', status: 'completed' }, { content: '修改启动逻辑', status: 'in_progress' }, { content: '运行测试', status: 'pending' }] } },
+      tool: {
+        name: 'todo_write',
+        input: {
+          todos: [
+            { content: '阅读现有实现', status: 'completed' },
+            { content: '修改启动逻辑', status: 'in_progress' },
+            { content: '运行测试', status: 'pending' },
+          ],
+        },
+      },
       after: '待办列好了。',
     },
     E2E_CTX: { kind: 'text', chunks: ['收到，', '我看了你选中的代码。'], delayMs: 30 },
@@ -288,17 +301,23 @@ try {
     await composer.press('Enter');
   };
 
-  await page.locator('.banner').first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+  await page
+    .locator('.banner')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .catch(() => undefined);
   await shot('01-starting');
   await runtime.start();
   await page.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 60_000 });
   check('dsh 就绪后状态提示消失，显示空状态', await page.locator('.empty').isVisible());
   check('空状态有示例任务', (await page.getByTestId('suggestions').locator('.suggestion').count()) === 4);
   await page.getByTestId('suggestions').locator('.suggestion').first().click();
-  await page.waitForFunction(() => (document.querySelector('textarea')?.value.length ?? 0) > 10, undefined, { timeout: 5_000 }).then(
-    () => check('点击示例任务放进输入框', true),
-    () => check('点击示例任务放进输入框', false),
-  );
+  await page
+    .waitForFunction(() => (document.querySelector('textarea')?.value.length ?? 0) > 10, undefined, { timeout: 5_000 })
+    .then(
+      () => check('点击示例任务放进输入框', true),
+      () => check('点击示例任务放进输入框', false),
+    );
   await composer.fill('');
   await shot('02-empty');
 
@@ -312,20 +331,28 @@ try {
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 30_000 });
   await page.locator('.cursor').waitFor({ state: 'detached', timeout: 10_000 });
   check('回复完成后光标消失', true);
-  await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).then(
-    () => check('代码块完成语法高亮', true),
-    () => check('代码块完成语法高亮', false),
-  );
+  await page
+    .locator('.shiki')
+    .first()
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('代码块完成语法高亮', true),
+      () => check('代码块完成语法高亮', false),
+    );
   // 高亮颜色真的生效了（CSP 拦掉内联样式时元素还在，但颜色会退回正文颜色）
-  const colors = await page.locator('.shiki .line span').first().evaluate((el) => ({
-    token: getComputedStyle(el).color,
-    body: getComputedStyle(document.body).color,
-  }));
+  const colors = await page
+    .locator('.shiki .line span')
+    .first()
+    .evaluate((el) => ({
+      token: getComputedStyle(el).color,
+      body: getComputedStyle(document.body).color,
+    }));
   check('代码高亮颜色生效（不被 CSP 拦截）', colors.token !== colors.body, JSON.stringify(colors));
   check('表格渲染', (await page.locator('.markdown table').count()) === 1);
   const ring = page.getByTestId('context-ring');
   await ring.waitFor({ timeout: 10_000 }).then(
-    async () => check('上下文用量显示为环形进度，提示里有 token 数', /tokens/u.test((await ring.getAttribute('title')) ?? ''), (await ring.getAttribute('title')) ?? ''),
+    async () =>
+      check('上下文用量显示为环形进度，提示里有 token 数', /tokens/u.test((await ring.getAttribute('title')) ?? ''), (await ring.getAttribute('title')) ?? ''),
     () => check('上下文用量显示为环形进度，提示里有 token 数', false),
   );
   check('只有一条助手回复（没有重复）', (await page.locator('.assistant').count()) === 1);
@@ -337,7 +364,10 @@ try {
   await page.locator('.assistant', { hasText: '测试全部通过' }).waitFor({ timeout: 30_000 });
   const activities = page.locator('.activity');
   check('读文件和搜索合并成一行「浏览」，命令单独一行', (await activities.count()) === 2, String(await activities.count()));
-  check('浏览行显示摘要', (await page.locator('.activity', { hasText: '已浏览' }).locator('.activity__detail', { hasText: '读取 1 个文件，搜索 1 次' }).count()) === 1);
+  check(
+    '浏览行显示摘要',
+    (await page.locator('.activity', { hasText: '已浏览' }).locator('.activity__detail', { hasText: '读取 1 个文件，搜索 1 次' }).count()) === 1,
+  );
   check('命令行显示命令', (await page.locator('.activity__detail', { hasText: 'echo "3 passed"' }).count()) === 1);
   await page.locator('.activity__row', { hasText: '已浏览' }).click();
   check('展开浏览行显示每一步和相对路径', await page.locator('.explore__entry', { hasText: 'README.md' }).isVisible());
@@ -350,13 +380,23 @@ try {
   await send('E2E_EDIT 给 README 补充用法，再记一份笔记');
   await page.locator('.assistant', { hasText: '改好了' }).waitFor({ timeout: 30_000 });
   const editRow = page.locator('.activity--edit', { hasText: 'README.md' });
-  check('修改行显示「已编辑」和增删行数', (await editRow.locator('.activity__name').innerText()) === '已编辑' && (await editRow.locator('.stats').innerText()).replace(/\s+/gu, ' ') === '+5 −1', await editRow.innerText());
-  check('新建文件显示「已新建」', (await page.locator('.activity--edit', { hasText: 'docs/notes.md' }).locator('.activity__name').innerText()) === '已新建');
-  await page.locator('.changes').waitFor({ timeout: 10_000 }).then(
-    () => check('本轮结束显示改动汇总卡片', true),
-    () => check('本轮结束显示改动汇总卡片', false),
+  check(
+    '修改行显示「已编辑」和增删行数',
+    (await editRow.locator('.activity__name').innerText()) === '已编辑' && (await editRow.locator('.stats').innerText()).replace(/\s+/gu, ' ') === '+5 −1',
+    await editRow.innerText(),
   );
-  check('改动汇总列出两个文件', (await page.locator('.changes__file').count()) === 2 && (await page.locator('.changes__header').innerText()).includes('2 个文件已更改'));
+  check('新建文件显示「已新建」', (await page.locator('.activity--edit', { hasText: 'docs/notes.md' }).locator('.activity__name').innerText()) === '已新建');
+  await page
+    .locator('.changes')
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('本轮结束显示改动汇总卡片', true),
+      () => check('本轮结束显示改动汇总卡片', false),
+    );
+  check(
+    '改动汇总列出两个文件',
+    (await page.locator('.changes__file').count()) === 2 && (await page.locator('.changes__header').innerText()).includes('2 个文件已更改'),
+  );
   await shot('13-edits');
   await editRow.locator('.activity__row').click();
   await page.waitForTimeout(200);
@@ -418,11 +458,18 @@ try {
   await permission.click();
   await shot('16-permissions');
   await page.getByRole('menuitem', { name: /完全访问/u }).click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('完全访问'), undefined, { timeout: 10_000 });
-  check('切换到完全访问前先确认，按钮标为警告色', confirms.length === 1 && (await permission.getAttribute('class'))?.includes('toolbar-button--danger') === true);
+  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('完全访问'), undefined, {
+    timeout: 10_000,
+  });
+  check(
+    '切换到完全访问前先确认，按钮标为警告色',
+    confirms.length === 1 && (await permission.getAttribute('class'))?.includes('toolbar-button--danger') === true,
+  );
   await permission.click();
   await page.getByRole('menuitem', { name: /工作区可写/u }).click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('工作区可写'), undefined, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelector('[data-testid="permission-picker"]')?.textContent?.includes('工作区可写'), undefined, {
+    timeout: 10_000,
+  });
 
   // 2g. 未保存的文件
   dirtyFiles = [join(env.workspace, 'README.md')];
@@ -465,7 +512,10 @@ try {
     ctxRequest?.userText?.slice(-300),
   );
   const ctxBubble = page.locator('.user', { hasText: 'E2E_CTX' });
-  check('消息气泡里不显示上下文块，选区显示为标签', !(await ctxBubble.innerText()).includes('ide_context') && (await ctxBubble.locator('.chip', { hasText: 'index.ts:1' }).count()) === 1);
+  check(
+    '消息气泡里不显示上下文块，选区显示为标签',
+    !(await ctxBubble.innerText()).includes('ide_context') && (await ctxBubble.locator('.chip', { hasText: 'index.ts:1' }).count()) === 1,
+  );
   check('消息里的 @README.md 显示为可点击的引用', (await ctxBubble.locator('.mention', { hasText: '@README.md' }).count()) === 1);
   await activeChip.click();
   check('点击标签后不附带', (await activeChip.getAttribute('aria-pressed')) === 'false');
@@ -482,28 +532,43 @@ try {
   await composer.press('/');
   await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
   const commandOptions = await completion.locator('[role="option"]').allInnerTexts();
-  check('输入 / 列出插件模板和 dsh 命令（不含 /export）', ['/explain', '/fix', '/test', '/new', '/compact', '/plan'].every((name) => commandOptions.some((t) => t.includes(name))) && !commandOptions.some((t) => t.includes('/export')), commandOptions.join(' | '));
+  check(
+    '输入 / 列出插件模板和 dsh 命令（不含 /export）',
+    ['/explain', '/fix', '/test', '/new', '/compact', '/plan'].every((name) => commandOptions.some((t) => t.includes(name))) &&
+      !commandOptions.some((t) => t.includes('/export')),
+    commandOptions.join(' | '),
+  );
   await shot('20-commands');
   await composer.press('c');
   await composer.press('o');
   await composer.press('Enter');
   check('确认后插入 /compact', (await composer.inputValue()) === '/compact ');
   await composer.press('Enter');
-  await page.locator('.activity', { hasText: '/compact' }).locator('.activity__detail', { hasText: 'Compacted' }).waitFor({ timeout: 30_000 }).then(
-    () => check('/compact 交给 dsh 执行，结果显示在对话里', true),
-    () => check('/compact 交给 dsh 执行，结果显示在对话里', false),
-  );
+  await page
+    .locator('.activity', { hasText: '/compact' })
+    .locator('.activity__detail', { hasText: 'Compacted' })
+    .waitFor({ timeout: 30_000 })
+    .then(
+      () => check('/compact 交给 dsh 执行，结果显示在对话里', true),
+      () => check('/compact 交给 dsh 执行，结果显示在对话里', false),
+    );
   check('压缩生成的检查点消息不显示成用户消息', (await page.locator('.user', { hasText: 'checkpoint' }).count()) === 0);
   await send('/plan');
-  await page.getByTestId('plan-badge').waitFor({ timeout: 15_000 }).then(
-    () => check('/plan 后输入框显示计划模式', true),
-    () => check('/plan 后输入框显示计划模式', false),
-  );
+  await page
+    .getByTestId('plan-badge')
+    .waitFor({ timeout: 15_000 })
+    .then(
+      () => check('/plan 后输入框显示计划模式', true),
+      () => check('/plan 后输入框显示计划模式', false),
+    );
   await page.getByTestId('plan-badge').click();
-  await page.getByTestId('plan-badge').waitFor({ state: 'detached', timeout: 15_000 }).then(
-    () => check('点击计划模式标记退出计划模式', true),
-    () => check('点击计划模式标记退出计划模式', false),
-  );
+  await page
+    .getByTestId('plan-badge')
+    .waitFor({ state: 'detached', timeout: 15_000 })
+    .then(
+      () => check('点击计划模式标记退出计划模式', true),
+      () => check('点击计划模式标记退出计划模式', false),
+    );
 
   editorSnapshot = { path: join(env.workspace, 'README.md'), languageId: 'markdown' };
   controller.pinActiveEditor();
@@ -523,44 +588,63 @@ try {
   await send('排队一');
   await send('排队二');
   const queuedMeta = page.getByTestId('queued-meta');
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="queued-meta"]').length === 2, undefined, { timeout: 10_000 }).then(
-    () => check('运行中发送的两条消息显示为排队中（来自 dsh 的队列）', true),
-    () => check('运行中发送的两条消息显示为排队中（来自 dsh 的队列）', false),
-  );
+  await page
+    .waitForFunction(() => document.querySelectorAll('[data-testid="queued-meta"]').length === 2, undefined, { timeout: 10_000 })
+    .then(
+      () => check('运行中发送的两条消息显示为排队中（来自 dsh 的队列）', true),
+      () => check('运行中发送的两条消息显示为排队中（来自 dsh 的队列）', false),
+    );
   await shot('22-queue');
   await page.locator('.user', { hasText: '排队一' }).getByRole('button', { name: '编辑' }).click();
   const queueEditor = page.getByRole('textbox', { name: '编辑排队的消息' });
   await queueEditor.fill('排队一（改过）');
   await queueEditor.press('Enter');
-  await page.locator('.user__bubble', { hasText: '排队一（改过）' }).waitFor({ timeout: 10_000 }).then(
-    () => check('编辑排队的消息', true),
-    () => check('编辑排队的消息', false),
-  );
+  await page
+    .locator('.user__bubble', { hasText: '排队一（改过）' })
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('编辑排队的消息', true),
+      () => check('编辑排队的消息', false),
+    );
   await page.locator('.user', { hasText: '排队二' }).getByRole('button', { name: '删除' }).click();
-  await page.locator('.user', { hasText: '排队二' }).waitFor({ state: 'detached', timeout: 10_000 }).then(
-    () => check('删除排队的消息', true),
-    () => check('删除排队的消息', false),
-  );
+  await page
+    .locator('.user', { hasText: '排队二' })
+    .waitFor({ state: 'detached', timeout: 10_000 })
+    .then(
+      () => check('删除排队的消息', true),
+      () => check('删除排队的消息', false),
+    );
   await page.locator('.user', { hasText: '排队一（改过）' }).getByRole('button', { name: '插队' }).click();
-  await queuedMeta.filter({ hasText: '已插队' }).waitFor({ timeout: 10_000 }).then(
-    () => check('插队后显示"在下一步送达"', true),
-    () => check('插队后显示"在下一步送达"', false),
-  );
+  await queuedMeta
+    .filter({ hasText: '已插队' })
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('插队后显示"在下一步送达"', true),
+      () => check('插队后显示"在下一步送达"', false),
+    );
   await page.getByRole('button', { name: '停止生成' }).click();
   // dsh 停止生成后保留队列，但不会自己开始新的一轮：提供"现在发送"
   const leftover = page.locator('.user', { hasText: '排队一（改过）' });
-  await leftover.getByRole('button', { name: '现在发送' }).waitFor({ timeout: 30_000 }).then(
-    () => check('停止后留在队列里的消息可以"现在发送"', true),
-    () => check('停止后留在队列里的消息可以"现在发送"', false),
-  );
+  await leftover
+    .getByRole('button', { name: '现在发送' })
+    .waitFor({ timeout: 30_000 })
+    .then(
+      () => check('停止后留在队列里的消息可以"现在发送"', true),
+      () => check('停止后留在队列里的消息可以"现在发送"', false),
+    );
   await shot('22b-queue-stopped');
   await leftover.getByRole('button', { name: '现在发送' }).click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="queued-meta"]').length === 0, undefined, { timeout: 30_000 }).then(
-    () => check('现在发送后消息离开队列', true),
-    () => check('现在发送后消息离开队列', false),
-  );
+  await page
+    .waitForFunction(() => document.querySelectorAll('[data-testid="queued-meta"]').length === 0, undefined, { timeout: 30_000 })
+    .then(
+      () => check('现在发送后消息离开队列', true),
+      () => check('现在发送后消息离开队列', false),
+    );
   for (let i = 0; i < 60 && !env.model.requests.some((r) => r.userText?.includes('排队一（改过）')); i++) await page.waitForTimeout(250);
-  check('发送给模型的是编辑后的内容', env.model.requests.some((r) => r.userText?.includes('排队一（改过）')));
+  check(
+    '发送给模型的是编辑后的内容',
+    env.model.requests.some((r) => r.userText?.includes('排队一（改过）')),
+  );
   await page.waitForFunction(() => !document.querySelector('[aria-label="停止生成"]'), undefined, { timeout: 30_000 });
   check('删除的消息不会以本地回显的形式重新出现', (await page.locator('.user', { hasText: '排队二' }).count()) === 0);
   await page.waitForFunction(() => !document.querySelector('[aria-label="停止生成"]'), undefined, { timeout: 30_000 });
@@ -582,35 +666,50 @@ try {
   await send('E2E_PLAN 出个方案');
   const planCard = page.getByTestId('plan-review-card');
   await planCard.waitFor({ timeout: 30_000 });
-  check('计划审阅卡片显示计划内容（Markdown）', (await planCard.locator('.markdown h1').innerText()) === '重构计划' && (await planCard.locator('.markdown li').count()) === 3);
+  check(
+    '计划审阅卡片显示计划内容（Markdown）',
+    (await planCard.locator('.markdown h1').innerText()) === '重构计划' && (await planCard.locator('.markdown li').count()) === 3,
+  );
   await shot('24-plan-review');
   await planCard.getByRole('button', { name: '继续完善' }).click();
   await planCard.getByRole('textbox', { name: '对计划的反馈' }).fill('先补测试再拆分');
   await planCard.getByRole('button', { name: '发送反馈' }).click();
   await page.locator('.activity', { hasText: '继续完善' }).waitFor({ timeout: 30_000 });
   await page.waitForFunction(() => !document.querySelector('[aria-label="停止生成"]'), undefined, { timeout: 30_000 });
-  check('继续完善：反馈交给模型，仍在计划模式', env.model.requests.some((r) => r.marker === 'E2E_PLAN') && (await page.getByTestId('plan-badge').count()) === 1);
+  check(
+    '继续完善：反馈交给模型，仍在计划模式',
+    env.model.requests.some((r) => r.marker === 'E2E_PLAN') && (await page.getByTestId('plan-badge').count()) === 1,
+  );
   await send('E2E_PLAN 改好了再看看');
   await planCard.waitFor({ timeout: 30_000 });
   await planCard.getByRole('button', { name: '批准并开始执行' }).click();
-  await page.locator('.activity', { hasText: '已批准' }).waitFor({ timeout: 30_000 }).then(
-    () => check('批准计划后显示"已批准"', true),
-    () => check('批准计划后显示"已批准"', false),
-  );
-  await page.getByTestId('plan-badge').waitFor({ state: 'detached', timeout: 30_000 }).then(
-    () => check('批准后退出计划模式', true),
-    () => check('批准后退出计划模式', false),
-  );
+  await page
+    .locator('.activity', { hasText: '已批准' })
+    .waitFor({ timeout: 30_000 })
+    .then(
+      () => check('批准计划后显示"已批准"', true),
+      () => check('批准计划后显示"已批准"', false),
+    );
+  await page
+    .getByTestId('plan-badge')
+    .waitFor({ state: 'detached', timeout: 30_000 })
+    .then(
+      () => check('批准后退出计划模式', true),
+      () => check('批准后退出计划模式', false),
+    );
   await page.waitForFunction(() => !document.querySelector('[aria-label="停止生成"]'), undefined, { timeout: 30_000 });
 
   // 2l. 重命名
   inputAnswers.push('E2E 重命名的会话');
   await page.getByRole('button', { name: '更多' }).click();
   await page.getByRole('menuitem', { name: '重命名会话' }).click();
-  await page.locator('.header__title', { hasText: 'E2E 重命名的会话' }).waitFor({ timeout: 10_000 }).then(
-    () => check('重命名会话', true),
-    () => check('重命名会话', false),
-  );
+  await page
+    .locator('.header__title', { hasText: 'E2E 重命名的会话' })
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('重命名会话', true),
+      () => check('重命名会话', false),
+    );
 
   // 3. 停止生成
   await send('E2E_SLOW 慢慢分析');
@@ -621,10 +720,13 @@ try {
   await stop.click();
   await page.locator('.notice', { hasText: '已停止生成' }).waitFor({ timeout: 20_000 });
   check('停止后显示"已停止生成"，保留部分回复', (await page.locator('.assistant', { hasText: '正在仔细分析' }).count()) === 1);
-  await page.getByRole('button', { name: '发送' }).waitFor({ timeout: 10_000 }).then(
-    () => check('停止后恢复发送按钮', true),
-    () => check('停止后恢复发送按钮', false),
-  );
+  await page
+    .getByRole('button', { name: '发送' })
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('停止后恢复发送按钮', true),
+      () => check('停止后恢复发送按钮', false),
+    );
   await shot('08-stopped');
   const firstSession = activeSessionId;
   const firstSessionActivities = await page.locator('.activity').count();
@@ -639,10 +741,12 @@ try {
   const sentBubble = page.locator('.user', { hasText: '你好' }).first();
   await sentBubble.hover();
   await sentBubble.getByRole('button', { name: '编辑后重发' }).click();
-  await page.waitForFunction(() => document.querySelector('textarea')?.value === '你好', undefined, { timeout: 5_000 }).then(
-    () => check('悬停用户消息可以"编辑后重发"（放回输入框）', true),
-    async () => check('悬停用户消息可以"编辑后重发"（放回输入框）', false, await composer.inputValue()),
-  );
+  await page
+    .waitForFunction(() => document.querySelector('textarea')?.value === '你好', undefined, { timeout: 5_000 })
+    .then(
+      () => check('悬停用户消息可以"编辑后重发"（放回输入框）', true),
+      async () => check('悬停用户消息可以"编辑后重发"（放回输入框）', false, await composer.inputValue()),
+    );
   await composer.fill('');
   await page.locator('.header__title').click();
   await page.locator('.sessions-menu .menu-item').nth(1).waitFor({ timeout: 10_000 });
@@ -650,7 +754,11 @@ try {
   await shot('09-sessions');
   await page.locator('.sessions-menu .menu-item', { hasNotText: '你好' }).first().click();
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
-  check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === firstSessionActivities, (await page.locator('.activity').allInnerTexts()).join(' | '));
+  check(
+    '切换回第一个会话，历史完整恢复',
+    activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === firstSessionActivities,
+    (await page.locator('.activity').allInnerTexts()).join(' | '),
+  );
 
   // 5. Webview 重新加载：Host 是状态的唯一来源
   await load();
@@ -660,20 +768,26 @@ try {
   // 6. dsh 进程被杀掉后自动恢复
   const pid = runtime.pid;
   if (pid) process.kill(-pid, 'SIGKILL');
-  await page.locator('.banner', { hasText: '意外退出' }).waitFor({ timeout: 15_000 }).then(
-    () => check('dsh 被杀掉后显示正在重启', true),
-    () => check('dsh 被杀掉后显示正在重启', false),
-  );
+  await page
+    .locator('.banner', { hasText: '意外退出' })
+    .waitFor({ timeout: 15_000 })
+    .then(
+      () => check('dsh 被杀掉后显示正在重启', true),
+      () => check('dsh 被杀掉后显示正在重启', false),
+    );
   check('重启期间继续显示原来的对话内容', await page.locator('.assistant', { hasText: '需要我继续展开' }).isVisible());
   await shot('10-crashed');
   await page.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 90_000 });
   check('dsh 自动重启并重新连接', runtime.pid !== undefined && runtime.pid !== pid);
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
   check('重启后当前会话的历史仍在', true);
-  await page.locator('.changes__note', { hasText: 'dsh 重启过' }).waitFor({ timeout: 15_000 }).then(
-    () => check('重启后改动汇总退回按文件工具汇总', true),
-    () => check('重启后改动汇总退回按文件工具汇总', false),
-  );
+  await page
+    .locator('.changes__note', { hasText: 'dsh 重启过' })
+    .waitFor({ timeout: 15_000 })
+    .then(
+      () => check('重启后改动汇总退回按文件工具汇总', true),
+      () => check('重启后改动汇总退回按文件工具汇总', false),
+    );
   const before = diffRequests.length;
   await page.locator('.changes__file', { hasText: 'README.md' }).click();
   await page.waitForTimeout(300);
@@ -691,7 +805,11 @@ try {
   await load('light');
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 10_000 });
   await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
-  await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+  await page
+    .locator('.shiki')
+    .first()
+    .waitFor({ timeout: 10_000 })
+    .catch(() => undefined);
   await shot('12-light');
 
   // 8. 没有 API Key：引导配置，保存到 dsh 要求的凭据名后立即可用
@@ -701,37 +819,53 @@ try {
   await page.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 90_000 });
   check('不带 API Key 重启 dsh', runtime.pid !== keylessPid);
   await page.getByRole('button', { name: '新对话' }).click();
-  await page.getByTestId('api-key-setup').waitFor({ timeout: 20_000 }).then(
-    () => check('没有 API Key 时空状态显示配置引导', true),
-    () => check('没有 API Key 时空状态显示配置引导', false),
-  );
+  await page
+    .getByTestId('api-key-setup')
+    .waitFor({ timeout: 20_000 })
+    .then(
+      () => check('没有 API Key 时空状态显示配置引导', true),
+      () => check('没有 API Key 时空状态显示配置引导', false),
+    );
   await shot('25-api-key');
   await send('你好');
   const keyNotice = page.locator('.notice', { hasText: 'API Key' });
   await keyNotice.waitFor({ timeout: 30_000 });
   inputAnswers.push('local-test-only');
   await keyNotice.getByRole('button', { name: '配置 API Key' }).click();
-  await page.locator('.toast', { hasText: 'API Key 已保存' }).waitFor({ timeout: 15_000 }).then(
-    () => check('从提示里配置 API Key（保存到 dsh 要求的凭据名）', true),
-    () => check('从提示里配置 API Key（保存到 dsh 要求的凭据名）', false),
-  );
+  await page
+    .locator('.toast', { hasText: 'API Key 已保存' })
+    .waitFor({ timeout: 15_000 })
+    .then(
+      () => check('从提示里配置 API Key（保存到 dsh 要求的凭据名）', true),
+      () => check('从提示里配置 API Key（保存到 dsh 要求的凭据名）', false),
+    );
   await send('配置好了吗');
-  await page.locator('.assistant', { hasText: '有什么可以帮你' }).waitFor({ timeout: 30_000 }).then(
-    () => check('配置后不用重启就能对话', true),
-    () => check('配置后不用重启就能对话', false),
-  );
+  await page
+    .locator('.assistant', { hasText: '有什么可以帮你' })
+    .waitFor({ timeout: 30_000 })
+    .then(
+      () => check('配置后不用重启就能对话', true),
+      () => check('配置后不用重启就能对话', false),
+    );
 
   // 9. 英文界面：切换语言后 Webview 和 Host 生成的文字都换成英文
   setLocale('en');
   controller.localeChanged();
-  await page.waitForFunction(() => document.querySelector('textarea')?.getAttribute('placeholder')?.startsWith('Describe a task') ?? false, undefined, { timeout: 10_000 }).then(
-    () => check('切换到英文后输入框是英文', true),
-    () => check('切换到英文后输入框是英文', false),
-  );
-  await page.locator('.notice', { hasText: 'No API key is set' }).waitFor({ timeout: 10_000 }).then(
-    () => check('对话流里 Host 生成的提示也换成英文', true),
-    () => check('对话流里 Host 生成的提示也换成英文', false),
-  );
+  await page
+    .waitForFunction(() => document.querySelector('textarea')?.getAttribute('placeholder')?.startsWith('Describe a task') ?? false, undefined, {
+      timeout: 10_000,
+    })
+    .then(
+      () => check('切换到英文后输入框是英文', true),
+      () => check('切换到英文后输入框是英文', false),
+    );
+  await page
+    .locator('.notice', { hasText: 'No API key is set' })
+    .waitFor({ timeout: 10_000 })
+    .then(
+      () => check('对话流里 Host 生成的提示也换成英文', true),
+      () => check('对话流里 Host 生成的提示也换成英文', false),
+    );
   // 会话标题来自用户自己的消息，不算
   const chrome = [
     ...(await page.locator('.composer').allInnerTexts()),

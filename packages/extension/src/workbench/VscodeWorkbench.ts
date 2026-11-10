@@ -105,7 +105,13 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
     await vscode.workspace.saveAll(false);
   }
 
-  input(options: { readonly title: string; readonly prompt?: string; readonly value?: string; readonly placeHolder?: string; readonly password?: boolean }): Promise<string | undefined> {
+  input(options: {
+    readonly title: string;
+    readonly prompt?: string;
+    readonly value?: string;
+    readonly placeHolder?: string;
+    readonly password?: boolean;
+  }): Promise<string | undefined> {
     return Promise.resolve(
       vscode.window.showInputBox({
         title: options.title,

@@ -55,10 +55,7 @@ const streamFrame = z.discriminatedUnion('type', [
     attemptId: z.string(),
     revision: z.number(),
     index: z.number().int(),
-    outcome: z.union([
-      z.object({ kind: z.literal('committed'), eventType: z.string(), seq: z.number() }),
-      z.object({ kind: z.literal('abandoned') }),
-    ]),
+    outcome: z.union([z.object({ kind: z.literal('committed'), eventType: z.string(), seq: z.number() }), z.object({ kind: z.literal('abandoned') })]),
   }),
 ]);
 
@@ -70,9 +67,7 @@ export const followFrameSchema = z.union([
     records: z.array(recordSchema),
     hasMore: z.boolean(),
     projections: z.unknown(),
-    assistantStream: z
-      .object({ revision: z.number(), activeAttempt: attemptBaseline.optional() })
-      .optional(),
+    assistantStream: z.object({ revision: z.number(), activeAttempt: attemptBaseline.optional() }).optional(),
   }),
   recordSchema,
   z.object({ type: z.literal('assistant-stream'), frame: streamFrame }),

@@ -60,7 +60,11 @@ function EmptyState() {
             <KeyIcon />
             {t('apiKey.configure')}
           </button>
-          <button type="button" className="button button--secondary" onClick={() => postToHost({ type: 'openExternal', payload: { url: 'https://platform.deepseek.com/api_keys' } })}>
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() => postToHost({ type: 'openExternal', payload: { url: 'https://platform.deepseek.com/api_keys' } })}
+          >
             <GlobeIcon />
             {t('apiKey.get')}
           </button>

@@ -28,9 +28,16 @@ describe('界面语言', () => {
       ],
       pending: [],
     }).items;
-    expect(items).toMatchObject([{ kind: 'explore', summary: 'read 1 file(s), searched 1 time(s)' }, { kind: 'notice', text: 'Stopped' }]);
+    expect(items).toMatchObject([
+      { kind: 'explore', summary: 'read 1 file(s), searched 1 time(s)' },
+      { kind: 'notice', text: 'Stopped' },
+    ]);
     expect(templatePrompt('fix', '')).toMatch(/^Find the problems/u);
-    expect(pluginCommands().map((c) => c.description).join(' ')).not.toMatch(CJK);
+    expect(
+      pluginCommands()
+        .map((c) => c.description)
+        .join(' '),
+    ).not.toMatch(CJK);
     expect(t('send.failed', 'boom')).toBe('Failed to send: boom');
   });
 

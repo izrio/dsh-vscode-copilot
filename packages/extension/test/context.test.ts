@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { attachmentLabel, dedupeAttachments, parseSlash, splitContext, templatePrompt, withContext, isTemplate } from '../src/vm/context.ts';
 
 const W = '/w';
-const selection = { kind: 'selection' as const, path: '/w/src/a.ts', startLine: 12, endLine: 14, languageId: 'typescript', text: 'const a = 1;\nconst b = 2;\nconst c = 3;\n' };
+const selection = {
+  kind: 'selection' as const,
+  path: '/w/src/a.ts',
+  startLine: 12,
+  endLine: 14,
+  languageId: 'typescript',
+  text: 'const a = 1;\nconst b = 2;\nconst c = 3;\n',
+};
 
 describe('上下文块', () => {
   it('选区带路径、行号、语言和代码；当前文件只给路径', () => {

@@ -28,7 +28,12 @@ describe('reverseToolDiffs', () => {
   });
   it('多个片段从后往前还原', () => {
     const current = 'A2\nmid\nB2\n';
-    expect(reverseToolDiffs(current, [{ oldText: 'A1', newText: 'A2' }, { oldText: 'B1', newText: 'B2' }])).toBe('A1\nmid\nB1\n');
+    expect(
+      reverseToolDiffs(current, [
+        { oldText: 'A1', newText: 'A2' },
+        { oldText: 'B1', newText: 'B2' },
+      ]),
+    ).toBe('A1\nmid\nB1\n');
   });
   it('CRLF 文件保持 CRLF', () => {
     expect(reverseToolDiffs(AFTER.replace(/\n/gu, '\r\n'), [TOOL_DIFF])).toBe(BEFORE.replace(/\n/gu, '\r\n'));
@@ -63,9 +68,7 @@ describe('reverseHunks', () => {
     expect(reverseHunks('# m2\nchanged later\nline 2.5\nline3\n', [HUNK])).toBeUndefined();
   });
   it('兜底的统一 diff 带行号', () => {
-    expect(unifiedFromHunks('README.md', [HUNK])).toBe(
-      '--- README.md\n+++ README.md\n@@ -1,3 +1,4 @@\n # m2\n-line2\n+line two\n+line 2.5\n line3\n',
-    );
+    expect(unifiedFromHunks('README.md', [HUNK])).toBe('--- README.md\n+++ README.md\n@@ -1,3 +1,4 @@\n # m2\n-line2\n+line two\n+line 2.5\n line3\n');
   });
 });
 

@@ -26,9 +26,7 @@ describe('parseLaunchUrl', () => {
 
 describe('buildLaunchArgs', () => {
   it('启动器参数在应用参数之前，只绑定回环地址，端口由系统分配', () => {
-    expect(buildLaunchArgs('web', ['--patch', '/p.yml'])).toEqual([
-      '--profile', 'web', '--patch', '/p.yml', '--no-open', '--host', '127.0.0.1', '--port', '0',
-    ]);
+    expect(buildLaunchArgs('web', ['--patch', '/p.yml'])).toEqual(['--profile', 'web', '--patch', '/p.yml', '--no-open', '--host', '127.0.0.1', '--port', '0']);
   });
 });
 

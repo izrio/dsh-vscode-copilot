@@ -29,7 +29,10 @@ export class PendingPrompts {
   update(sessionId: string, requestId: string, patch: Partial<Omit<PendingPrompt, 'requestId'>>): boolean {
     const list = this.bySession.get(sessionId);
     if (!list?.some((item) => item.requestId === requestId)) return false;
-    this.bySession.set(sessionId, list.map((item) => (item.requestId === requestId ? { ...item, ...patch } : item)));
+    this.bySession.set(
+      sessionId,
+      list.map((item) => (item.requestId === requestId ? { ...item, ...patch } : item)),
+    );
     return true;
   }
 

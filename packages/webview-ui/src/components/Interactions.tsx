@@ -89,7 +89,11 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
           {t('approval.reject')}
         </button>
         {item.previewable ? (
-          <button type="button" className="toolbar-button interaction__preview" onClick={() => postToHost({ type: 'previewApproval', payload: { id: item.id } })}>
+          <button
+            type="button"
+            className="toolbar-button interaction__preview"
+            onClick={() => postToHost({ type: 'previewApproval', payload: { id: item.id } })}
+          >
             <EyeIcon />
             <span>{t('approval.preview')}</span>
           </button>

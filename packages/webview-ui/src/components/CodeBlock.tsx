@@ -43,7 +43,13 @@ export const CodeBlock = memo(function CodeBlock({ code, lang }: { code: string;
       <div className="code-block__bar">
         <span className="code-block__lang">{lang ?? ''}</span>
         <span className="code-block__actions">
-          <button type="button" className="icon-button" onClick={() => postToHost({ type: 'insertCode', payload: { code } })} aria-label={t('code.insert')} title={t('code.insert')}>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => postToHost({ type: 'insertCode', payload: { code } })}
+            aria-label={t('code.insert')}
+            title={t('code.insert')}
+          >
             <InsertIcon />
           </button>
           <button type="button" className="icon-button" onClick={copy} aria-label={t('code.copy')} title={copied ? t('code.copied') : t('code.copyShort')}>
