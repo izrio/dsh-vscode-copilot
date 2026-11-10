@@ -71,6 +71,8 @@ export function activate(context: vscode.ExtensionContext): void {
     if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
   };
 
+  // 控制器和视图互相引用：控制器先创建，推送时视图可能还没注册
+  // eslint-disable-next-line prefer-const
   let provider: ChatViewProvider | undefined;
   const workbench = new VscodeWorkbench(log);
   const chat = new ChatController({

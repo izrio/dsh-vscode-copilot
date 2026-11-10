@@ -100,13 +100,15 @@ export function Composer() {
     return () => clearTimeout(timer);
   }, [fileQuery, connected]);
 
+  const triggerKind = trigger?.kind;
+  const commandQuery = trigger?.kind === 'command' ? trigger.query : undefined;
   const items: CompletionItem[] = useMemo(() => {
-    if (trigger?.kind === 'command') {
+    if (commandQuery !== undefined) {
       return commands
-        .filter((c) => c.name.startsWith(trigger.query.toLowerCase()))
+        .filter((c) => c.name.startsWith(commandQuery.toLowerCase()))
         .map((c) => ({ key: `${c.source}:${c.name}`, icon: 'command', label: `/${c.name}`, ...(c.hint ? { hint: c.hint } : {}), detail: c.description }));
     }
-    if (trigger?.kind === 'file' && candidates.requestId >= 0) {
+    if (triggerKind === 'file' && candidates.requestId >= 0) {
       return candidates.items.map((c) => {
         const slash = c.path.lastIndexOf('/');
         return {
@@ -118,7 +120,7 @@ export function Composer() {
       });
     }
     return [];
-  }, [trigger?.kind, trigger?.kind === 'command' ? trigger.query : undefined, commands, candidates]);
+  }, [triggerKind, commandQuery, commands, candidates]);
 
   useEffect(() => setSelected(0), [items.length, trigger?.kind, fileQuery]);
 

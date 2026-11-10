@@ -72,6 +72,7 @@ function fakeClient() {
       default: { provider: 'deepseek-official', model: 'deepseek-flash' },
       groups: [{ id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' }] }],
     }),
+    // eslint-disable-next-line require-yield -- 控制流不推送任何帧，等到中止
     async *control(signal?: AbortSignal) {
       await new Promise((resolve) => signal?.addEventListener('abort', resolve, { once: true }));
     },
