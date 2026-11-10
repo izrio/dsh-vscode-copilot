@@ -43,6 +43,7 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
     case 'assistant':
       return <AssistantMessage item={item} />;
     case 'activity':
+      if (item.preparing) return <PreparingRow item={item} />;
       return item.variant === 'edit' ? <EditRow item={item} /> : <ActivityRow item={item} />;
     case 'explore':
       return <ExploreRow item={item} />;
@@ -99,25 +100,33 @@ function UserBubble({ item }: { item: Of<'user'> }) {
   );
 }
 
+/** 复制按钮：点击后短暂显示"已复制"。 */
+function CopyButton({ text, label, done, title }: { text: string; label: string; done: string; title?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="link-button"
+      title={title}
+      onClick={() =>
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1_200);
+        })
+      }
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+      {copied ? done : label}
+    </button>
+  );
+}
+
 /** 已发送的消息：悬停时显示复制、编辑后重发。 */
 function UserActions({ text }: { text: string }) {
   const t = useT();
-  const [copied, setCopied] = useState(false);
   return (
     <div className="user__actions">
-      <button
-        type="button"
-        className="link-button"
-        onClick={() =>
-          void navigator.clipboard.writeText(text).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1_200);
-          })
-        }
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? t('user.copied') : t('user.copy')}
-      </button>
+      <CopyButton text={text} label={t('user.copy')} done={t('user.copied')} />
       <button type="button" className="link-button" title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
         <PencilIcon />
         {t('user.editResend')}
@@ -234,11 +243,17 @@ function UserText({ text }: { text: string }) {
 }
 
 function AssistantMessage({ item }: { item: Of<'assistant'> }) {
+  const t = useT();
   return (
     <div className="assistant">
       {item.reasoning ? <Reasoning text={item.reasoning} active={item.streaming && !item.markdown} /> : null}
       {item.markdown ? <Markdown text={item.markdown} /> : null}
       {item.streaming && item.markdown ? <span className="cursor" aria-hidden /> : null}
+      {!item.streaming && item.markdown ? (
+        <div className="assistant__actions">
+          <CopyButton text={item.markdown} label={t('assistant.copy')} done={t('assistant.copied')} title={t('assistant.copyTitle')} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -291,6 +306,22 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
         {(command ? detail || name : detail) ? <span className="activity__detail">{command ? detail || name : detail}</span> : null}
       </button>
       {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
+    </div>
+  );
+}
+
+/** 模型还在写参数的工具调用：「准备中 write src/a.ts」。 */
+function PreparingRow({ item }: { item: Of<'activity'> }) {
+  const t = useT();
+  const [name, ...rest] = item.label.split('  ');
+  const icon = item.variant === 'command' ? <TerminalIcon /> : item.variant === 'edit' ? <FileEditIcon /> : <GenericToolIcon tool={item.tool} />;
+  return (
+    <div className="activity activity--running activity--preparing" data-testid="preparing-row">
+      <div className="activity__row" title={item.label}>
+        <StatusIcon status="running" icon={icon} />
+        <span className="activity__name">{t('activity.preparing')}</span>
+        <span className="activity__detail">{rest.length ? `${name}  ${rest.join('  ')}` : name}</span>
+      </div>
     </div>
   );
 }

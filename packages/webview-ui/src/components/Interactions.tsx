@@ -2,7 +2,7 @@
  * 等待用户处理的请求，显示在对话流末尾：审批（dsh 要越过沙箱执行命令或修改文件）和提问（ask_user_question）。
  * 回答后由 Host 回传给 dsh，卡片随 Host 推送的列表消失。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PendingInteraction, QuestionView } from '@dsh-copilot/shared';
 import { postToHost } from '../vscode.ts';
 import { Markdown } from './Markdown.tsx';
@@ -25,6 +25,20 @@ import { useT } from '../i18n.ts';
 
 type Of<K extends PendingInteraction['kind']> = Extract<PendingInteraction, { kind: K }>;
 
+/**
+ * 卡片出现时把焦点移到卡片上（读屏会读出内容，Tab 进入按钮）。只在用户没在输入时移动，
+ * 并且不直接聚焦"允许"按钮：误按的 Enter 不能批准命令。
+ */
+function useFocusOnAppear() {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    const typing = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement;
+    if (!typing && !(active instanceof HTMLElement && active.closest('.popover'))) ref.current?.focus({ preventScroll: true });
+  }, []);
+  return ref;
+}
+
 export function InteractionCard({ interaction }: { interaction: PendingInteraction }) {
   if (interaction.kind === 'approval') return <ApprovalCard item={interaction} />;
   const review = interaction.questions.length === 1 ? interaction.questions[0] : undefined;
@@ -35,6 +49,7 @@ export function InteractionCard({ interaction }: { interaction: PendingInteracti
 function ApprovalCard({ item }: { item: Of<'approval'> }) {
   const [sent, setSent] = useState<'allow' | 'reject' | undefined>();
   const t = useT();
+  const focusRef = useFocusOnAppear();
   const blocked = item.dirtyFiles.length > 0;
   const respond = (decision: 'allow' | 'reject') => {
     setSent(decision);
@@ -42,7 +57,7 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
   };
   const title = item.subjectKind === 'command' ? t('approval.command') : item.subjectKind === 'file' ? t('approval.file') : t('approval.tool', item.toolName);
   return (
-    <section className="interaction interaction--approval" aria-label={t('approval.label')} data-testid="approval-card">
+    <section ref={focusRef} tabIndex={-1} className="interaction interaction--approval" aria-label={t('approval.label')} data-testid="approval-card">
       <header className="interaction__header">
         <ShieldIcon />
         <span>{title}</span>
@@ -89,6 +104,7 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
   const t = useT();
   const [feedback, setFeedback] = useState<string | undefined>();
   const [sent, setSent] = useState<'approve' | 'keep' | 'reply' | undefined>();
+  const focusRef = useFocusOnAppear();
   const intent = question.intent!;
   const answer = (selected: string, custom?: string) => {
     setSent(selected === intent.approve ? 'approve' : 'keep');
@@ -96,7 +112,7 @@ function PlanReviewCard({ id, question }: { id: string; question: QuestionView }
   };
   const keep = intent.keepPlanning ?? question.options.find((o) => o.label !== intent.approve)?.label ?? 'Keep planning';
   return (
-    <section className="interaction interaction--plan" aria-label={t('plan.label')} data-testid="plan-review-card">
+    <section ref={focusRef} tabIndex={-1} className="interaction interaction--plan" aria-label={t('plan.label')} data-testid="plan-review-card">
       <header className="interaction__header">
         <PlanIcon />
         <span>{t('plan.title')}</span>
@@ -169,6 +185,7 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
   const t = useT();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [sent, setSent] = useState<'submit' | 'skip' | undefined>();
+  const focusRef = useFocusOnAppear();
   const draftOf = (q: QuestionView): Draft => drafts[q.id] ?? { selected: [], custom: '' };
   const update = (q: QuestionView, next: Draft) => setDrafts({ ...drafts, [q.id]: next });
   const answered = (q: QuestionView) => draftOf(q).selected.length > 0 || draftOf(q).custom.trim().length > 0;
@@ -195,7 +212,7 @@ function QuestionCard({ item }: { item: Of<'question'> }) {
   };
 
   return (
-    <section className="interaction interaction--question" aria-label={t('question.label')} data-testid="question-card">
+    <section ref={focusRef} tabIndex={-1} className="interaction interaction--question" aria-label={t('question.label')} data-testid="question-card">
       <header className="interaction__header">
         <QuestionIcon />
         <span>{t('question.title')}</span>

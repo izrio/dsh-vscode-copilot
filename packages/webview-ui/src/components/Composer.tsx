@@ -16,10 +16,12 @@ import { ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.ts
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
 import { StatusStrip } from './StatusStrip.tsx';
+import { runtimeBlocked } from './RuntimeBanner.tsx';
 import { useT } from '../i18n.ts';
 
 const MAX_HEIGHT = 200;
 const SEARCH_DELAY_MS = 60;
+const HISTORY_LIMIT = 50;
 
 type Trigger = { readonly kind: 'command'; readonly query: string } | { readonly kind: 'file'; readonly token: ActiveAtToken; readonly start: number };
 
@@ -44,7 +46,10 @@ export function Composer() {
   const context = useView((s) => s.context);
   const commands = useView((s) => s.commands);
   const candidates = useView((s) => s.fileCandidates);
+  const blocked = useView((s) => runtimeBlocked(s.runtime));
   const t = useT();
+  /** 正在浏览的历史消息下标（从最新往前）；undefined 表示不在浏览历史。 */
+  const [historyIndex, setHistoryIndex] = useState<number | undefined>();
   const [text, setText] = useState(() => loadState().draft ?? '');
   const [caret, setCaret] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -154,10 +159,39 @@ export function Composer() {
   const canSend = connected && text.trim().length > 0;
   const send = () => {
     if (!canSend) return;
-    postToHost({ type: 'sendMessage', payload: { text: text.trim(), includeActive } });
+    const message = text.trim();
+    postToHost({ type: 'sendMessage', payload: { text: message, includeActive } });
+    const history = (loadState().history ?? []).filter((h) => h !== message);
+    saveState({ history: [...history, message].slice(-HISTORY_LIMIT) });
+    setHistoryIndex(undefined);
     setText('');
     setCaret(0);
     setToggledKey(undefined);
+  };
+
+  /** ↑ / ↓ 浏览发送过的消息：输入框为空（或正显示一条历史消息）且光标在首行 / 末行时生效。 */
+  const browseHistory = (direction: -1 | 1, el: HTMLTextAreaElement): boolean => {
+    const history = loadState().history ?? [];
+    if (history.length === 0) return false;
+    if (historyIndex === undefined && (direction === 1 || text !== '')) return false;
+    if (historyIndex !== undefined && text !== history[history.length - 1 - historyIndex]) return false;
+    const before = el.value.slice(0, el.selectionStart);
+    const after = el.value.slice(el.selectionEnd);
+    if (direction === -1 ? before.includes('\n') : after.includes('\n')) return false;
+    const next = historyIndex === undefined ? 0 : historyIndex - direction;
+    if (next >= history.length) return true;
+    if (next < 0) {
+      setHistoryIndex(undefined);
+      setText('');
+      setCaret(0);
+      return true;
+    }
+    const value = history[history.length - 1 - next] ?? '';
+    setHistoryIndex(next);
+    setText(value);
+    setCaret(value.length);
+    requestAnimationFrame(() => ref.current?.setSelectionRange(value.length, value.length));
+    return true;
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -181,6 +215,10 @@ export function Composer() {
         return;
       }
     }
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !composing && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      if (browseHistory(event.key === 'ArrowUp' ? -1 : 1, event.currentTarget)) event.preventDefault();
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey && !composing) {
       event.preventDefault();
       send();
@@ -196,7 +234,9 @@ export function Composer() {
       <StatusStrip />
       {dirtyFiles > 0 ? (
         <div className="dirty-strip" data-testid="dirty-strip">
-          <span>{t('dirty.strip', dirtyFiles)}</span>
+          <span className="dirty-strip__text" title={t('dirty.strip', dirtyFiles)}>
+            {t('dirty.strip', dirtyFiles)}
+          </span>
           <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
             <SaveIcon />
             {t('dirty.saveAll')}
@@ -223,12 +263,19 @@ export function Composer() {
           onChange={(event) => {
             setText(event.target.value);
             setCaret(event.target.selectionStart);
+            setHistoryIndex(undefined);
           }}
           onSelect={syncCaret}
           onClick={syncCaret}
           onKeyDown={onKeyDown}
           placeholder={
-            connected ? (session.running ? t('composer.placeholderRunning') : t('composer.placeholder')) : t('composer.placeholderOffline')
+            connected
+              ? session.running
+                ? t('composer.placeholderRunning')
+                : t('composer.placeholder')
+              : blocked
+                ? t('composer.placeholderUnavailable')
+                : t('composer.placeholderOffline')
           }
           rows={1}
           aria-label={t('composer.label')}

@@ -8,14 +8,54 @@ import { postToHost } from '../vscode.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useT } from '../i18n.ts';
 
+/** 本地文件链接：`src/a.ts`、`src/a.ts#L12`、`src/a.ts#L12-L20`、`src/a.ts:12`、`file:///…`。 */
+export function parseFileLink(href: string): { path: string; startLine?: number; endLine?: number } | undefined {
+  if (!href || href.startsWith('#')) return undefined;
+  let target = href;
+  if (/^file:/iu.test(target)) {
+    try {
+      target = decodeURIComponent(new URL(target).pathname).replace(/^\/([A-Za-z]:\/)/u, '$1');
+    } catch {
+      return undefined;
+    }
+  } else if (/^[A-Za-z][\w+.-]+:\/\//u.test(target) || /^(?:mailto|data|javascript|vscode|command|tel):/iu.test(target)) {
+    // 其他协议不处理（`a.ts:12` 这样的行号和 Windows 盘符 `C:\` 不算协议）
+    return undefined;
+  }
+  try {
+    target = decodeURIComponent(target);
+  } catch {
+    // 保持原样
+  }
+  const hash = /#L(\d+)(?:-L?(\d+))?$/u.exec(target);
+  const colon = hash ? undefined : /:(\d+)(?:-(\d+))?$/u.exec(target);
+  const match = hash ?? colon;
+  const path = (match ? target.slice(0, match.index) : target).replace(/#.*$/u, '');
+  if (!path) return undefined;
+  const startLine = match?.[1] ? Number(match[1]) : undefined;
+  const endLine = match?.[2] ? Number(match[2]) : undefined;
+  return { path, ...(startLine ? { startLine } : {}), ...(endLine ? { endLine } : {}) };
+}
+
 function openLink(event: MouseEvent<HTMLAnchorElement>, href: string | undefined): void {
   event.preventDefault();
-  if (href && /^https?:\/\//iu.test(href)) postToHost({ type: 'openExternal', payload: { url: href } });
+  if (!href) return;
+  if (/^https?:\/\//iu.test(href)) {
+    postToHost({ type: 'openExternal', payload: { url: href } });
+    return;
+  }
+  const file = parseFileLink(href);
+  if (file) postToHost({ type: 'openFile', payload: file });
 }
 
 const components: Components = {
   a: ({ href, children }: ComponentProps<'a'>) => (
-    <a href={href} onClick={(event) => openLink(event, href)} title={href}>
+    <a
+      href={href}
+      onClick={(event) => openLink(event, href)}
+      title={href}
+      {...(href && !/^https?:/iu.test(href) && parseFileLink(href) ? { className: 'markdown__file-link' } : {})}
+    >
       {children}
     </a>
   ),

@@ -1776,3 +1776,174 @@ button.chip:hover {
     animation: none;
   }
 }
+
+/* ---------- 窄侧边栏 ---------- */
+
+/* 工具条按宽度收缩：模型名先截断，其余按钮保持完整，不会互相重叠 */
+.composer {
+  container-type: inline-size;
+}
+
+.composer__toolbar > .model-picker:first-child {
+  flex: 0 1 auto;
+}
+
+.composer__toolbar > .model-picker + .model-picker,
+.composer__toolbar > .context-ring,
+.composer__toolbar > .plan-badge,
+.composer__toolbar > .send-button {
+  flex: none;
+}
+
+@container (max-width: 300px) {
+  .permission-picker__text,
+  .context-ring__label,
+  .plan-badge .toolbar-button__text {
+    display: none;
+  }
+}
+
+/* 排队消息的操作：放不下时整体换行，单个按钮不拆开 */
+.user__meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+.user__meta .link-button,
+.user__actions .link-button {
+  white-space: nowrap;
+}
+
+/* 未保存提示只占一行，完整说明在悬停提示里 */
+.dirty-strip {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.dirty-strip__text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dirty-strip .link-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ---------- 状态提示的变体 ---------- */
+
+.banner--info .banner__title svg {
+  color: var(--vscode-notificationsInfoIcon-foreground, var(--vscode-focusBorder));
+}
+
+.banner__title .banner__close {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+}
+
+.banner__actions {
+  flex-wrap: wrap;
+}
+
+/* ---------- 回到最新 ---------- */
+
+.thread-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jump-to-bottom {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--vscode-foreground);
+  font-size: 0.85em;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.25));
+  cursor: pointer;
+}
+
+.jump-to-bottom:hover {
+  background: var(--hover);
+}
+
+.jump-to-bottom svg {
+  width: 13px;
+  height: 13px;
+}
+
+.jump-to-bottom__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-focusBorder);
+}
+
+/* ---------- 助手回复的操作 ---------- */
+
+.assistant__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: 0.85em;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.assistant:hover .assistant__actions,
+.assistant__actions:focus-within {
+  opacity: 1;
+}
+
+.assistant__actions .link-button {
+  color: var(--muted);
+}
+
+.assistant__actions .link-button:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
+.code-block__actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* 模型还在写参数的工具调用 */
+.activity--preparing .activity__name {
+  color: var(--muted);
+}
+
+/* 只给读屏软件看的文字 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 打开本地文件的链接 */
+.markdown a.markdown__file-link {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}

@@ -19,6 +19,11 @@ export function App() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  const locale = useView((s) => s.locale);
+  useEffect(() => {
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+  }, [locale]);
+
   const runtime = useView((s) => s.runtime);
   const connection = useView((s) => s.connection);
   const empty = useView((s) => s.items.length === 0 && s.interactions.length === 0 && !s.session.running && !s.session.hasOlder);
