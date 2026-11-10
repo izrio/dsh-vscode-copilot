@@ -35,7 +35,7 @@ const summary = (items: ReturnType<typeof project>['items']) =>
       case 'assistant':
         return `assistant:${item.markdown}${item.interrupted ? '[interrupted]' : ''}`;
       case 'activity':
-        return `activity:${item.label}:${item.status}`;
+        return `activity:${[item.label, item.detail].filter(Boolean).join('  ')}:${item.status}`;
       case 'explore':
         return `explore:${item.summary}:${item.status}`;
       case 'changes':
@@ -149,7 +149,7 @@ describe('project：按工具类型渲染（M2）', () => {
   it('bash：命令行，保留输出', () => {
     const journal = journalOf('bash');
     const activity = project({ events: journal.events, pending: [] }).items.find((item) => item.kind === 'activity');
-    expect(activity).toMatchObject({ variant: 'command', label: 'bash  echo m0-bash-ok', status: 'ok' });
+    expect(activity).toMatchObject({ variant: 'command', label: 'bash', detail: 'echo m0-bash-ok', status: 'ok' });
     expect(activity?.kind === 'activity' && activity.output).toContain('m0-bash-ok');
   });
 
@@ -230,7 +230,7 @@ describe('project：规则', () => {
       workspacePath: '/w',
     }).items;
     expect(items).toEqual([
-      { kind: 'activity', id: 'live-tool:a1:1', tool: 'write', variant: 'edit', label: 'write  src/big.ts', status: 'running', preparing: true },
+      { kind: 'activity', id: 'live-tool:a1:1', tool: 'write', variant: 'edit', label: 'write', detail: 'src/big.ts', status: 'running', preparing: true },
     ]);
   });
 
@@ -262,12 +262,12 @@ describe('project：规则', () => {
 
 describe('activityLabel', () => {
   it('按命令 > 文件 > 搜索词 > 目录的优先级选摘要', () => {
-    expect(activityLabel('bash', JSON.stringify({ command: 'pnpm test\n--watch', description: 'Run tests' }))).toBe('bash  pnpm test …');
-    expect(activityLabel('read', JSON.stringify({ file_path: '/w/src/a.ts' }), '/w')).toBe('read  src/a.ts');
-    expect(activityLabel('grep', JSON.stringify({ pattern: 'answer', path: '.' }))).toBe('grep  answer');
-    expect(activityLabel('glob', JSON.stringify({ path: '/w/src' }), '/w')).toBe('glob  src');
-    expect(activityLabel('todo_write', '{"todos":[]}')).toBe('todo_write');
-    expect(activityLabel('broken', 'not json')).toBe('broken');
+    expect(activityLabel('bash', JSON.stringify({ command: 'pnpm test\n--watch', description: 'Run tests' }))).toEqual({ label: 'bash', detail: 'pnpm test …' });
+    expect(activityLabel('read', JSON.stringify({ file_path: '/w/src/a.ts' }), '/w')).toEqual({ label: 'read', detail: 'src/a.ts' });
+    expect(activityLabel('grep', JSON.stringify({ pattern: 'answer', path: '.' }))).toEqual({ label: 'grep', detail: 'answer' });
+    expect(activityLabel('glob', JSON.stringify({ path: '/w/src' }), '/w')).toEqual({ label: 'glob', detail: 'src' });
+    expect(activityLabel('todo_write', '{"todos":[]}')).toEqual({ label: 'todo_write' });
+    expect(activityLabel('broken', 'not json')).toEqual({ label: 'broken' });
   });
 
   it('工作区外的路径保持绝对路径', () => {
@@ -308,7 +308,7 @@ describe('project：提问工具', () => {
   it('ask：显示问题，结果转成可读的回答', () => {
     const journal = journalOf('ask');
     const activity = project({ events: journal.events, pending: [] }).items.find((item) => item.kind === 'activity');
-    expect(activity).toMatchObject({ label: '提问  改动范围？', output: '回答：只改测试' });
+    expect(activity).toMatchObject({ label: '提问', detail: '改动范围？', output: '回答：只改测试' });
   });
 });
 
@@ -326,8 +326,8 @@ describe('project：M3', () => {
       pending: [],
     }).items;
     expect(items).toEqual([
-      { kind: 'activity', id: 'cmd:c1', tool: 'slash', variant: 'generic', label: '/compact  Compacted 3 history items (~277 tokens).', status: 'ok' },
-      { kind: 'activity', id: 'cmd:c2', tool: 'slash', variant: 'generic', label: '/feedback  Feedback text is required. Usage: /feedback <text>', status: 'error' },
+      { kind: 'activity', id: 'cmd:c1', tool: 'slash', variant: 'generic', label: '/compact', detail: 'Compacted 3 history items (~277 tokens).', status: 'ok' },
+      { kind: 'activity', id: 'cmd:c2', tool: 'slash', variant: 'generic', label: '/feedback', detail: 'Feedback text is required. Usage: /feedback <text>', status: 'error' },
     ]);
   });
 
@@ -391,10 +391,10 @@ describe('project：M4', () => {
       ],
       pending: [],
     }).items;
-    expect(items.map((item) => item.kind === 'activity' && `${item.label}:${item.status}`)).toEqual([
-      '计划  重构计划  继续完善:ok',
-      '计划  重构计划  已批准:ok',
-      '计划  重构计划:error',
+    expect(items.map((item) => item.kind === 'activity' && `${item.label} | ${item.detail}:${item.status}`)).toEqual([
+      '计划 | 重构计划 · 继续完善:ok',
+      '计划 | 重构计划 · 已批准:ok',
+      '计划 | 重构计划:error',
     ]);
   });
 

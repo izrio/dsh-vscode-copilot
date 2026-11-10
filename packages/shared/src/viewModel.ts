@@ -87,8 +87,10 @@ export type Item =
       readonly tool: string;
       /** 渲染样式：命令、文件修改、其他。 */
       readonly variant: 'command' | 'edit' | 'generic';
-      /** 一行摘要，例如 `bash  pnpm test`、`write  src/a.ts`。 */
+      /** 行首的名称：工具名（`bash`）、斜杠命令（`/compact`），文件修改时是文件路径。 */
       readonly label: string;
+      /** 名称后面的说明：命令、搜索词、命令结果等。 */
+      readonly detail?: string;
       readonly status: 'running' | 'ok' | 'error';
       /** 展开后显示的结果文本（已截断）。 */
       readonly output?: string;
@@ -107,7 +109,8 @@ export type Item =
       readonly id: string;
       readonly summary: string;
       readonly status: 'running' | 'ok' | 'error';
-      readonly entries: readonly { readonly id: string; readonly label: string; readonly status: 'running' | 'ok' | 'error' }[];
+      /** 每一步：工具名（`read`、`grep`）和目标。 */
+      readonly entries: readonly { readonly id: string; readonly label: string; readonly detail?: string; readonly status: 'running' | 'ok' | 'error' }[];
     }
   | {
       /** 一轮结束时的改动汇总。 */

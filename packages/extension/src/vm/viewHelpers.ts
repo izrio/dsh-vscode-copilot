@@ -84,6 +84,18 @@ export function keepPlanningLabel(q: { options?: { label: string }[]; intent?: {
   return q.options?.find((o) => o.label !== q.intent?.approve)?.label;
 }
 
+/** 计划模式（`/plan`）是否开启（`plan` 投影）。 */
+export function inPlanMode(projections: Readonly<Record<string, unknown>>): boolean {
+  const plan = projections.plan;
+  return typeof plan === 'object' && plan !== null && (plan as { active?: unknown }).active === true;
+}
+
+/** 当前会话的权限预设（`permissions` 投影的 currentValue）。 */
+export function currentPermissionOf(projections: Readonly<Record<string, unknown>>): string | undefined {
+  const value = (projections.permissions as { currentValue?: unknown } | undefined)?.currentValue;
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function todosOf(projections: Readonly<Record<string, unknown>>): Pick<SessionHeader, 'todos'> {
   const todos = projections.todos;
   if (!Array.isArray(todos) || todos.length === 0) return {};

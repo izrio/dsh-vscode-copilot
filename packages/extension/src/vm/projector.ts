@@ -8,13 +8,16 @@
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
 import type { ChangedFileView, Item, LineStats } from '@dsh-copilot/shared';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';
 import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
 import type { LiveAttempt } from '../dsh/session/journal.ts';
 import { splitContext } from './context.ts';
 import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
+import { displayPath } from './paths.ts';
+
+export { displayPath } from './paths.ts';
 import { t } from '../i18n.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
@@ -166,7 +169,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         items[at.index] = {
           ...previous,
           status: data.kind === 'error' ? 'error' : 'ok',
-          label: result ? `${previous.label}  ${firstLine(result)}` : previous.label,
+          ...(result ? { detail: firstLine(result) } : {}),
           ...(result.includes('\n') ? { output: truncate(result) } : {}),
         };
         break;
@@ -202,9 +205,9 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         // 待办由输入框上方的状态条显示，不在对话流里重复
         if (tool === 'todo_write') break;
         const variant = toolVariant(tool);
-        const label = activityLabel(tool, args, input.workspacePath);
+        const title = activityLabel(tool, args, input.workspacePath);
         if (variant === 'explore') {
-          const entry = { id: callId, label, status: 'running' as const };
+          const entry = { id: callId, ...title, status: 'running' as const };
           const index = openExplore();
           if (index !== undefined) {
             const group = items[index] as Explore;
@@ -222,7 +225,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           id: `t:${callId}`,
           tool,
           variant,
-          label: variant === 'edit' && file ? displayPath(file, input.workspacePath) : label,
+          ...(variant === 'edit' && file ? { label: displayPath(file, input.workspacePath) } : title),
           status: 'running',
         });
         break;
@@ -257,7 +260,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
                   ? t('plan.dismissed')
                   : undefined;
           items[at.index] = outcome
-            ? { ...previous, status: 'ok', label: `${previous.label}  ${outcome}` }
+            ? { ...previous, status: 'ok', detail: [previous.detail, outcome].filter(Boolean).join(' · ') }
             : { ...previous, status, ...(result ? { output: truncate(result) } : {}) };
           break;
         }
@@ -334,7 +337,8 @@ export function project(input: ProjectionInput, base: EventsProjection = project
         id: `live-tool:${live.attemptId}:${index}`,
         tool: block.toolName,
         variant: variant === 'explore' ? 'generic' : variant,
-        label: target ? `${block.toolName}  ${variant === 'edit' ? displayPath(target, input.workspacePath) : firstLine(target)}` : block.toolName,
+        label: block.toolName,
+        ...(target ? { detail: variant === 'edit' ? displayPath(target, input.workspacePath) : firstLine(target) } : {}),
         status: 'running',
         preparing: true,
       });
@@ -415,7 +419,7 @@ function summarizeExplore(group: Explore): Explore {
   let searches = 0;
   let lists = 0;
   for (const entry of group.entries) {
-    const tool = entry.label.split('  ', 1)[0] ?? '';
+    const tool = entry.label;
     if (tool === 'read' || tool === 'read_image') reads++;
     else if (tool === 'ls' || tool === 'list') lists++;
     else searches++;
@@ -560,31 +564,31 @@ export function truncate(text: string): string {
   return `${clean.slice(0, head)}\n${t('output.omitted', clean.length - OUTPUT_LIMIT)}\n${clean.slice(-tail)}`;
 }
 
-/** 工具调用的一行摘要：取最能说明这次调用的参数。 */
-export function activityLabel(tool: string, rawArguments: unknown, workspacePath?: string): string {
+/** 工具调用的一行摘要：工具名，加上最能说明这次调用的参数。 */
+export function activityLabel(tool: string, rawArguments: unknown, workspacePath?: string): { label: string; detail?: string } {
   const args = parseArguments(rawArguments);
   const pick = (...keys: string[]): string | undefined => stringArg(args, ...keys);
-  // 优先级：命令 > 目标文件 > 搜索词 / URL > 目录 > 描述
+  const withDetail = (detail: string | undefined) => (detail ? { label: tool, detail } : { label: tool });
   if (tool === 'exit_plan_mode') {
     const plan = typeof args.plan === 'string' ? args.plan : '';
     const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
-    return `${t('plan.label')}  ${heading ?? t('plan.untitled')}`;
+    return { label: t('plan.label'), detail: heading ?? t('plan.untitled') };
   }
   if (tool === 'ask_user_question') {
     const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
-    return typeof first === 'string' ? `${t('question.label')}  ${firstLine(first)}` : t('question.label');
+    return typeof first === 'string' ? { label: t('question.label'), detail: firstLine(first) } : { label: t('question.label') };
   }
+  // 优先级：命令 > 目标文件 > 搜索词 / URL > 目录 > 描述
   const command = pick('command', 'cmd');
-  if (command) return `${tool}  ${firstLine(command)}`;
+  if (command) return withDetail(firstLine(command));
   const file = pick('file_path', 'notebook_path');
-  if (file) return `${tool}  ${displayPath(file, workspacePath)}`;
+  if (file) return withDetail(displayPath(file, workspacePath));
   const target = pick('pattern', 'query', 'url');
-  if (target) return `${tool}  ${firstLine(target)}`;
+  if (target) return withDetail(firstLine(target));
   const path = pick('path');
-  if (path) return `${tool}  ${displayPath(path, workspacePath)}`;
+  if (path) return withDetail(displayPath(path, workspacePath));
   const other = pick('description', 'prompt', 'name');
-  if (other) return `${tool}  ${firstLine(other)}`;
-  return tool;
+  return withDetail(other ? firstLine(other) : undefined);
 }
 
 function firstLine(text: string): string {
@@ -592,11 +596,6 @@ function firstLine(text: string): string {
   return line.length < text.length ? `${line} …` : line;
 }
 
-export function displayPath(path: string, workspacePath?: string): string {
-  if (!workspacePath || !isAbsolute(path)) return path;
-  const rel = relative(workspacePath, path);
-  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : path;
-}
 
 function turnEndNotice(seq: number, reason: unknown): Item | undefined {
   const r = reason as { kind?: string; error?: { message?: string; code?: string } } | undefined;

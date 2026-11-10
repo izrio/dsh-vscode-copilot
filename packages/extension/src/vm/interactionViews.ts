@@ -3,7 +3,8 @@
  */
 import type { PendingInteraction } from '@dsh-copilot/shared';
 import type { Pending } from '../dsh/InteractionService.ts';
-import { displayPath, toolVariant, type ToolCallInfo } from './projector.ts';
+import { toolVariant, type ToolCallInfo } from './projector.ts';
+import { displayPath } from './paths.ts';
 import { keepPlanningLabel } from './viewHelpers.ts';
 import { getLocale } from '../i18n.ts';
 

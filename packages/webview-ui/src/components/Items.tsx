@@ -283,8 +283,8 @@ function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon
 function ActivityRow({ item }: { item: Of<'activity'> }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [name, ...rest] = item.label.split('  ');
-  const detail = rest.join('  ');
+  const name = item.label;
+  const detail = item.detail ?? '';
   const expandable = Boolean(item.output);
   const command = item.variant === 'command';
   return (
@@ -295,7 +295,7 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
         aria-expanded={expandable ? open : undefined}
         disabled={!expandable}
         onClick={() => setOpen(!open)}
-        title={item.label}
+        title={[item.label, item.detail].filter(Boolean).join('  ')}
       >
         <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <GenericToolIcon tool={item.tool} />} />
         {command ? (
@@ -313,14 +313,13 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
 /** 模型还在写参数的工具调用：「准备中 write src/a.ts」。 */
 function PreparingRow({ item }: { item: Of<'activity'> }) {
   const t = useT();
-  const [name, ...rest] = item.label.split('  ');
   const icon = item.variant === 'command' ? <TerminalIcon /> : item.variant === 'edit' ? <FileEditIcon /> : <GenericToolIcon tool={item.tool} />;
   return (
     <div className="activity activity--running activity--preparing" data-testid="preparing-row">
-      <div className="activity__row" title={item.label}>
+      <div className="activity__row" title={[item.label, item.detail].filter(Boolean).join('  ')}>
         <StatusIcon status="running" icon={icon} />
         <span className="activity__name">{t('activity.preparing')}</span>
-        <span className="activity__detail">{rest.length ? `${name}  ${rest.join('  ')}` : name}</span>
+        <span className="activity__detail">{[item.label, item.detail].filter(Boolean).join('  ')}</span>
       </div>
     </div>
   );
@@ -390,11 +389,10 @@ function ExploreRow({ item }: { item: Of<'explore'> }) {
       {open ? (
         <ul className="explore__list">
           {item.entries.map((entry) => {
-            const [name, ...rest] = entry.label.split('  ');
             return (
               <li key={entry.id} className={`explore__entry explore__entry--${entry.status}`}>
-                <span className="explore__tool">{name}</span>
-                <span className="explore__target">{rest.join('  ')}</span>
+                <span className="explore__tool">{entry.label}</span>
+                <span className="explore__target">{entry.detail ?? ''}</span>
                 {entry.status === 'error' ? <ErrorIcon className="explore__error" /> : null}
               </li>
             );

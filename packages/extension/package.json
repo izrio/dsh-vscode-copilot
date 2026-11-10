@@ -226,7 +226,8 @@
     "smoke": "tsx scripts/m0-smoke.ts",
     "package": "vsce package --no-dependencies --skip-license",
     "e2e": "tsx scripts/ui-e2e.ts",
-    "vscode-e2e": "tsx scripts/vscode-e2e.ts"
+    "vscode-e2e": "tsx scripts/vscode-e2e.ts",
+    "bench": "tsx scripts/bench.ts"
   },
   "dependencies": {
     "@dsh-copilot/shared": "workspace:*",
