@@ -20,8 +20,12 @@
   "capabilities": {
     "virtualWorkspaces": false,
     "untrustedWorkspaces": {
-      "supported": false,
-      "description": "%capabilities.untrusted%"
+      "supported": "limited",
+      "description": "%capabilities.untrusted%",
+      "restrictedConfigurations": [
+        "dsh.runtime.path",
+        "dsh.runtime.profile"
+      ]
     }
   },
   "categories": [
@@ -133,7 +137,9 @@
         "dsh.runtime.profile": {
           "type": "string",
           "default": "web",
-          "markdownDescription": "%config.runtime.profile%"
+          "markdownDescription": "%config.runtime.profile%",
+          "pattern": "^[\\w.-]{1,64}$",
+          "patternErrorMessage": "%config.runtime.profile.pattern%"
         },
         "dsh.context.includeActiveEditor": {
           "type": "boolean",

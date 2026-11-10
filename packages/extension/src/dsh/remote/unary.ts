@@ -65,7 +65,7 @@ export class UnaryClient {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new TransportError(`${endpoint}: HTTP ${response.status}`);
+      throw new TransportError(`${endpoint}: HTTP ${response.status}`, { status: response.status });
     }
     const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     if (mediaType === 'multipart/form-data') {

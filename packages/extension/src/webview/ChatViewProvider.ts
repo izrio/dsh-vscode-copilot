@@ -4,19 +4,23 @@
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@dsh-copilot/shared';
+import { t } from '../i18n.ts';
+import { parseWebviewMessage, type HostToWebview, type Locale, type WebviewToHost } from '@dsh-copilot/shared';
 
 export interface ChatViewHost {
   /** 已校验的 Webview 消息。 */
   readonly onMessage: (message: WebviewToHost) => void;
   /** 视图第一次打开时调用（用于按需启动 dsh）。 */
   readonly onViewVisible: () => void;
+  /** 页面的 lang 属性（之后切换语言时由 Webview 自己更新）。 */
+  readonly locale?: () => Locale;
   readonly log: (line: string) => void;
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   static readonly viewId = 'dsh.chatView';
   private view: vscode.WebviewView | undefined;
+  private badgeCount = 0;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -27,7 +31,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const webviewRoot = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     view.webview.options = { enableScripts: true, localResourceRoots: [webviewRoot] };
-    view.webview.html = renderHtml(view.webview, webviewRoot);
+    view.webview.html = renderHtml(view.webview, webviewRoot, this.host.locale?.() ?? 'zh');
+    this.applyBadge();
     view.webview.onDidReceiveMessage((raw: unknown) => {
       const message = parseWebviewMessage(raw);
       if (message) this.host.onMessage(message);
@@ -43,13 +48,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return this.view?.visible ?? false;
   }
 
+  /** 视图图标上的数字：等待处理的审批和提问（视图收起时也能看到）。 */
+  setBadge(count: number): void {
+    this.badgeCount = count;
+    this.applyBadge();
+  }
+
+  private applyBadge(): void {
+    if (!this.view) return;
+    this.view.badge = this.badgeCount > 0 ? { value: this.badgeCount, tooltip: t('badge.attention', this.badgeCount) } : undefined;
+  }
+
   /** 视图还没打开时丢弃消息：Webview 加载后会发 ready 取完整快照。 */
   post(message: HostToWebview): void {
     void this.view?.webview.postMessage(message);
   }
 }
 
-function renderHtml(webview: vscode.Webview, root: vscode.Uri): string {
+function renderHtml(webview: vscode.Webview, root: vscode.Uri, locale: Locale): string {
   const nonce = randomBytes(16).toString('base64');
   const script = webview.asWebviewUri(vscode.Uri.joinPath(root, 'index.js'));
   const style = webview.asWebviewUri(vscode.Uri.joinPath(root, 'index.css'));
@@ -62,7 +78,7 @@ function renderHtml(webview: vscode.Webview, root: vscode.Uri): string {
     `script-src 'nonce-${nonce}' ${webview.cspSource}`,
   ].join('; ');
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale === 'zh' ? 'zh-CN' : 'en'}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

@@ -25,5 +25,6 @@
   "config.title": "DSH",
   "container.title": "DSH",
   "extension.description": "DeepSeek Harness（dsh）的 VS Code 前端：Codex 风格的对话、审批与改动查看。",
-  "capabilities.untrusted": "dsh 会在工作区中读写文件和执行命令，需要先信任工作区。"
+  "capabilities.untrusted": "未受信任的工作区里可以打开对话视图，但不会启动 dsh：dsh 会在工作区中读写文件和执行命令。",
+  "config.runtime.profile.pattern": "只能包含字母、数字、点、下划线和连字符"
 }

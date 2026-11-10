@@ -12,6 +12,7 @@ import { SELECTION_LIMIT } from '../vm/context.ts';
 import { proposedContent, reverseHunks, reverseToolDiffs, unifiedFromHunks, unifiedFromToolDiffs } from '../vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../vm/workbench.ts';
 import { t } from '../i18n.ts';
+import { describeError as describe } from '../util/errors.ts';
 
 export const DIFF_SCHEME = 'dsh-diff';
 /** 只保留最近打开过的虚拟文档内容。 */
@@ -118,6 +119,17 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
     );
   }
 
+  /** 插入到最近使用的文本编辑器（Webview 获得焦点后 activeTextEditor 可能为空，退回第一个可见编辑器）。 */
+  async insertText(text: string): Promise<boolean> {
+    const editor = vscode.window.activeTextEditor ?? vscode.window.visibleTextEditors[0];
+    if (!editor) return false;
+    const applied = await editor.edit((edit) => {
+      for (const selection of editor.selections) edit.replace(selection, text);
+    });
+    if (applied) await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, preserveFocus: false });
+    return applied;
+  }
+
   async confirm(message: string, detail: string, action: string): Promise<boolean> {
     return (await vscode.window.showWarningMessage(message, { modal: true, detail }, action)) === action;
   }
@@ -203,8 +215,4 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
       return undefined; // 文件不存在
     }
   }
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

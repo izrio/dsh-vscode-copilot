@@ -79,6 +79,11 @@ export class InteractionService {
     return [...this.waiting.values()].map((w) => w.pending).filter((p) => p.sessionId === sessionId);
   }
 
+  /** 所有会话里等待处理的请求数。 */
+  get count(): number {
+    return this.waiting.size;
+  }
+
   get(id: string): Pending | undefined {
     return this.waiting.get(id)?.pending;
   }

@@ -9,13 +9,19 @@ import type { RuntimeStatus } from '@dsh-copilot/shared';
 import { DshConnection } from './dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from './runtime/RuntimeManager.ts';
 import { ChatController } from './vm/ChatController.ts';
+import type { TemplateName } from './vm/context.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
-import { resolveLocale, setLocale, t } from './i18n.ts';
+import { getLocale, resolveLocale, setLocale, t } from './i18n.ts';
 import { redactSecrets } from './util/redact.ts';
 
 const ACTIVE_SESSION_KEY = 'dsh.activeSessionId';
 const FOLDER_KEY = 'dsh.folder';
+const SELECTION_COMMANDS: readonly [string, TemplateName][] = [
+  ['dsh.explainSelection', 'explain'],
+  ['dsh.fixSelection', 'fix'],
+  ['dsh.testSelection', 'test'],
+];
 
 let runtime: RuntimeManager | undefined;
 let connection: DshConnection | undefined;
@@ -31,14 +37,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const runtimeOutput = vscode.window.createOutputChannel('DSH Runtime', { log: true });
   context.subscriptions.push(output, runtimeOutput);
 
-  // 多根工作区：用上次选择的文件夹，默认第一个；dsh 的会话按文件夹（dsh Workspace）分开
+  // 多根工作区：用上次选择的文件夹，默认第一个；dsh 的会话按文件夹（dsh Workspace）分开。
+  // 没有打开文件夹时不启动 dsh：否则工作目录只能是主目录，沙箱的可写范围和会话列表都会变成整个主目录。
   const folders = (): readonly vscode.WorkspaceFolder[] => (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file');
   const savedFolder = context.workspaceState.get<string>(FOLDER_KEY);
-  let workspacePath = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath ?? homedir();
+  let workspacePath: string | undefined = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath;
   const sessionKey = () => (folders().length > 1 ? `${ACTIVE_SESSION_KEY}:${workspacePath}` : ACTIVE_SESSION_KEY);
 
   const manager = new RuntimeManager({
-    getConfig: () => readRuntimeConfig(workspacePath),
+    getConfig: () => readRuntimeConfig(workspacePath ?? homedir()),
     log: log,
     runtimeLog: (line, stream) => (stream === 'stderr' ? runtimeOutput.warn(line) : runtimeOutput.info(line)),
   });
@@ -50,8 +57,14 @@ export function activate(context: vscode.ExtensionContext): void {
   status.command = 'dsh.openChat';
   context.subscriptions.push(status);
   let modelLabel: string | undefined;
+  let attention = 0;
 
-  const currentStatus = (): RuntimeStatus => (vscode.workspace.isTrusted ? manager.currentStatus : { kind: 'untrusted' });
+  const currentStatus = (): RuntimeStatus => {
+    if (!vscode.workspace.isTrusted) return { kind: 'untrusted' };
+    if (!workspacePath) return { kind: 'noFolder' };
+    return manager.currentStatus;
+  };
+  const refreshStatusBar = (): void => renderStatusBar(status, currentStatus(), modelLabel, attention);
 
   const openExternal = (url: string): void => {
     const uri = vscode.Uri.parse(url);
@@ -63,7 +76,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const chat = new ChatController({
     workbench,
     includeActiveEditor: () => vscode.workspace.getConfiguration('dsh.context').get<boolean>('includeActiveEditor', true),
-    workspacePath,
+    workspacePath: workspacePath ?? homedir(),
     post: (message) => provider?.post(message),
     log: log,
     loadActiveSessionId: () => context.workspaceState.get<string>(sessionKey()),
@@ -71,7 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
     folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
     selectFolder: () => void vscode.commands.executeCommand('dsh.selectFolder'),
     openExternal,
-    restartRuntime: () => void manager.restart(),
+    restartRuntime: () => void restartIfReady(),
     showLogs: () => output.show(),
     openWebUI: () => {
       const endpoint = manager.endpoint;
@@ -82,34 +95,55 @@ export function activate(context: vscode.ExtensionContext): void {
       // 启动令牌让浏览器完成一次认证，之后 dsh 用 Cookie 维持会话
       openExternal(`${endpoint.origin}/?token=${encodeURIComponent(endpoint.token)}`);
     },
+    openSettings: (query) => void vscode.commands.executeCommand('workbench.action.openSettings', query === 'dsh' ? '@ext:izrio.dsh-copilot' : query),
+    manageTrust: () => void vscode.commands.executeCommand('workbench.trust.manage'),
+    openFolder: () => void vscode.commands.executeCommand('vscode.openFolder'),
     onModelChange: (label) => {
       modelLabel = label;
-      renderStatusBar(status, currentStatus(), modelLabel);
+      refreshStatusBar();
+    },
+    onAttentionChange: (count) => {
+      attention = count;
+      provider?.setBadge(count);
+      refreshStatusBar();
     },
   });
   controller = chat;
   context.subscriptions.push(workbench.register(() => chat.workspaceChanged()));
 
-  const startIfTrusted = (): void => {
-    if (!vscode.workspace.isTrusted) {
-      output.info('工作区未受信任，不启动 dsh');
+  /** 视图打开过才启动 dsh（按需启动）；未受信任或没有文件夹时不启动。 */
+  let viewOpened = false;
+  const startIfReady = (): void => {
+    if (!vscode.workspace.isTrusted || !workspacePath) {
       chat.setRuntimeStatus(currentStatus());
+      refreshStatusBar();
       return;
     }
-    void manager.start();
+    if (viewOpened) void manager.start();
+  };
+  const restartIfReady = async (): Promise<void> => {
+    if (!vscode.workspace.isTrusted || !workspacePath) {
+      startIfReady();
+      return;
+    }
+    await manager.restart();
   };
 
   provider = new ChatViewProvider(context.extensionUri, {
     onMessage: (message) => void chat.handle(message),
-    onViewVisible: startIfTrusted,
+    onViewVisible: () => {
+      viewOpened = true;
+      startIfReady();
+    },
+    locale: getLocale,
     log: log,
   });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider));
 
   const disposers = [
-    manager.onStatus((value) => {
+    manager.onStatus(() => {
       chat.setRuntimeStatus(currentStatus());
-      renderStatusBar(status, value, modelLabel);
+      refreshStatusBar();
     }),
     // Host 每次就绪（包括重启后令牌变化）都重新连接
     manager.onEndpoint((endpoint) => dsh.setEndpoint(endpoint)),
@@ -117,7 +151,8 @@ export function activate(context: vscode.ExtensionContext): void {
     dsh.onStatus((value) => chat.setConnectionStatus(value)),
   ];
   context.subscriptions.push({ dispose: () => disposers.forEach((dispose) => dispose()) });
-  renderStatusBar(status, manager.currentStatus, modelLabel);
+  chat.setRuntimeStatus(currentStatus());
+  refreshStatusBar();
 
   const focusView = () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
   context.subscriptions.push(
@@ -153,24 +188,14 @@ export function activate(context: vscode.ExtensionContext): void {
         });
       }
     }),
-    vscode.commands.registerCommand('dsh.explainSelection', async () => {
-      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
-      const sending = chat.askAboutSelection('explain');
-      await focusView();
-      await sending;
-    }),
-    vscode.commands.registerCommand('dsh.fixSelection', async () => {
-      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
-      const sending = chat.askAboutSelection('fix');
-      await focusView();
-      await sending;
-    }),
-    vscode.commands.registerCommand('dsh.testSelection', async () => {
-      // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
-      const sending = chat.askAboutSelection('test');
-      await focusView();
-      await sending;
-    }),
+    ...SELECTION_COMMANDS.map(([id, template]) =>
+      vscode.commands.registerCommand(id, async () => {
+        // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
+        const sending = chat.askAboutSelection(template);
+        await focusView();
+        await sending;
+      }),
+    ),
     vscode.commands.registerCommand('dsh.addToChat', async () => {
       chat.pinActiveEditor();
       await focusView();
@@ -188,24 +213,45 @@ export function activate(context: vscode.ExtensionContext): void {
         { placeHolder: t('ext.selectFolder') },
       );
       if (!picked || picked.folder.uri.fsPath === workspacePath) return;
-      workspacePath = picked.folder.uri.fsPath;
-      await context.workspaceState.update(FOLDER_KEY, workspacePath);
-      chat.setWorkspace(workspacePath);
+      await useFolder(picked.folder.uri.fsPath);
     }),
-    vscode.commands.registerCommand('dsh.restartRuntime', () => manager.restart()),
+    vscode.commands.registerCommand('dsh.restartRuntime', restartIfReady),
     vscode.commands.registerCommand('dsh.openWebUI', () => chat.handle({ type: 'openWebUI', payload: {} })),
     vscode.commands.registerCommand('dsh.showLogs', () => output.show()),
-    vscode.workspace.onDidGrantWorkspaceTrust(startIfTrusted),
+    vscode.workspace.onDidGrantWorkspaceTrust(startIfReady),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => void foldersChanged()),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('dsh.runtime')) output.info('dsh 运行时设置已修改，执行「DSH：重启 dsh」后生效');
       if (event.affectsConfiguration('dsh.context')) chat.workspaceChanged();
       if (event.affectsConfiguration('dsh.ui.language')) {
         applyLocale();
         chat.localeChanged();
-        renderStatusBar(status, manager.currentStatus, modelLabel);
+        refreshStatusBar();
       }
     }),
   );
+
+  async function useFolder(path: string): Promise<void> {
+    workspacePath = path;
+    await context.workspaceState.update(FOLDER_KEY, path);
+    chat.setWorkspace(path);
+  }
+
+  /** 工作区文件夹增删：当前文件夹被移除时换到剩下的第一个；全部移除时停止 dsh。 */
+  async function foldersChanged(): Promise<void> {
+    const list = folders();
+    if (list.length === 0) {
+      workspacePath = undefined;
+      await manager.stop();
+      chat.setRuntimeStatus(currentStatus());
+      refreshStatusBar();
+      return;
+    }
+    const hadFolder = workspacePath !== undefined;
+    if (!list.some((f) => f.uri.fsPath === workspacePath)) await useFolder(list[0]!.uri.fsPath);
+    chat.workspaceChanged();
+    if (!hadFolder) startIfReady();
+  }
 }
 
 export async function deactivate(): Promise<void> {
@@ -231,7 +277,7 @@ function readRuntimeConfig(workspacePath: string): RuntimeConfig {
   };
 }
 
-function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus, modelLabel: string | undefined): void {
+function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus, modelLabel: string | undefined, attention: number): void {
   const text: Record<RuntimeStatus['kind'], string> = {
     idle: '$(circle-outline) DSH',
     locating: '$(loading~spin) DSH',
@@ -242,8 +288,11 @@ function renderStatusBar(item: vscode.StatusBarItem, status: RuntimeStatus, mode
     unsupportedVersion: `$(warning) ${t('status.unsupported')}`,
     failed: '$(error) DSH',
     untrusted: '$(shield) DSH',
+    noFolder: '$(folder) DSH',
   };
-  item.text = text[status.kind];
+  // 有审批或提问在等待时，状态栏换成提醒（视图可能被收起来了）
+  item.text = attention > 0 ? `$(bell-dot) ${t('status.attention', attention)}` : text[status.kind];
+  item.backgroundColor = attention > 0 ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
   item.tooltip = status.kind === 'connected' ? `dsh ${status.version}` : status.kind === 'failed' ? status.message : undefined;
   item.show();
 }

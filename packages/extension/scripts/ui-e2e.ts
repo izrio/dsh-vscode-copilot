@@ -183,6 +183,7 @@ const workbench: Workbench = {
     confirms.push(message);
     return true;
   },
+  insertText: async () => false,
 };
 const controller = new ChatController({
   workbench,

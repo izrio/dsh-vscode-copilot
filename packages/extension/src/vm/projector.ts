@@ -115,6 +115,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
   let missingCredentialRef: string | undefined;
   /** /permission 命令的预设显示名，命令结束时用。 */
   const permissionArgs = new Map<string, string>();
+  const usedIds = new Set<string>();
 
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
@@ -177,9 +178,13 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const reasoning = blocks.filter((b) => b.type === 'reasoning').map((b) => b.text ?? '').join('\n\n').trim();
         const interrupted = data.interrupted === true;
         if (!markdown && !reasoning) break;
+        // 与流式输出时用同一个 id（按轮次和步骤），结算时界面原地更新，不重新挂载
+        const stepId = assistantStepId(data.turn, data.step);
+        const id = stepId && !usedIds.has(stepId) ? stepId : `a:${event.seq}`;
+        usedIds.add(id);
         items.push({
           kind: 'assistant',
-          id: `a:${event.seq}`,
+          id,
           markdown,
           ...(reasoning ? { reasoning } : {}),
           streaming: false,
@@ -303,17 +308,35 @@ export function project(input: ProjectionInput, base: EventsProjection = project
   const items: Item[] = [...base.items];
   const { persistedRequestIds, turnOpen } = base;
 
-  // 正在流式输出的回复
+  // 正在流式输出的回复：id 与结算后的持久消息相同（见 assistantStepId），结算时原地替换
   if (input.live) {
-    const markdown = liveBlocksText(input.live.blocks, 'text');
-    const reasoning = liveBlocksText(input.live.blocks, 'reasoning');
+    const live = input.live;
+    const markdown = liveBlocksText(live.blocks, 'text');
+    const reasoning = liveBlocksText(live.blocks, 'reasoning');
     if (markdown || reasoning) {
+      const stepId = assistantStepId(live.turn, live.step);
+      const taken = stepId !== undefined && base.items.some((item) => item.id === stepId);
       items.push({
         kind: 'assistant',
-        id: `live:${input.live.attemptId}`,
+        id: stepId && !taken ? stepId : `live:${live.attemptId}`,
         markdown,
         ...(reasoning ? { reasoning } : {}),
         streaming: true,
+      });
+    }
+    // 模型正在写工具参数（例如写一个大文件）：先显示一行"准备中"，不让界面停在"思考中"
+    for (const [index, block] of [...live.blocks].sort(([a], [b]) => a - b)) {
+      if (block.kind !== 'tool' || !block.toolName) continue;
+      const variant = toolVariant(block.toolName);
+      const target = partialArgument(block.text, 'file_path', 'notebook_path', 'command', 'path', 'pattern', 'query', 'url');
+      items.push({
+        kind: 'activity',
+        id: `live-tool:${live.attemptId}:${index}`,
+        tool: block.toolName,
+        variant: variant === 'explore' ? 'generic' : variant,
+        label: target ? `${block.toolName}  ${variant === 'edit' ? displayPath(target, input.workspacePath) : firstLine(target)}` : block.toolName,
+        status: 'running',
+        preparing: true,
       });
     }
   }
@@ -501,8 +524,40 @@ function textOf(content: unknown): string {
     .trim();
 }
 
-function truncate(text: string): string {
-  return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n${t('output.truncated')}` : text;
+/** 流式输出的、还不完整的 JSON 参数里某个字符串字段的值（已经写完引号的部分）。 */
+export function partialArgument(json: string, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const match = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'u').exec(json);
+    if (!match?.[1]) continue;
+    try {
+      const value = JSON.parse(`"${match[1]}"`) as string;
+      if (value.trim()) return value.trim();
+    } catch {
+      // 转义不完整，跳过
+    }
+  }
+  return undefined;
+}
+
+/** 持久的助手消息和流式输出共用的 id。 */
+function assistantStepId(turn: unknown, step: unknown): string | undefined {
+  return typeof turn === 'number' && typeof step === 'number' ? `a:${turn}.${step}` : undefined;
+}
+
+/** 终端颜色等控制序列（CSI / OSC），显示前去掉。 */
+const ANSI = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/gu;
+
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI, '');
+}
+
+/** 过长的输出保留开头和结尾：命令的报错和结论通常在最后。 */
+export function truncate(text: string): string {
+  const clean = stripAnsi(text);
+  if (clean.length <= OUTPUT_LIMIT) return clean;
+  const head = Math.floor(OUTPUT_LIMIT * 0.3);
+  const tail = OUTPUT_LIMIT - head;
+  return `${clean.slice(0, head)}\n${t('output.omitted', clean.length - OUTPUT_LIMIT)}\n${clean.slice(-tail)}`;
 }
 
 /** 工具调用的一行摘要：取最能说明这次调用的参数。 */

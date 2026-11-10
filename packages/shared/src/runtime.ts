@@ -8,4 +8,6 @@ export type RuntimeStatus =
   | { readonly kind: 'connected'; readonly version: string; readonly newerThanTested: boolean }
   | { readonly kind: 'reconnecting'; readonly attempt: number }
   | { readonly kind: 'failed'; readonly message: string }
-  | { readonly kind: 'untrusted' };
+  | { readonly kind: 'untrusted' }
+  /** 没有打开文件夹：dsh 需要一个工作目录作为会话和沙箱的范围，不启动。 */
+  | { readonly kind: 'noFolder' };

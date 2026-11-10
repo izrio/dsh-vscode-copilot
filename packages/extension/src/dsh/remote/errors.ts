@@ -5,19 +5,24 @@ export class RemoteError extends Error {
   constructor(
     readonly endpoint: string,
     readonly code: string,
-    message: string,
+    /** dsh 给出的原始说明（不带端点和错误码）。 */
+    readonly detail: string,
     readonly details: Readonly<Record<string, unknown>> = {},
   ) {
-    super(`${endpoint}: ${code}: ${message}`);
+    super(`${endpoint}: ${code}: ${detail}`);
     this.name = 'RemoteError';
   }
 }
 
 /** 传输层失败：HTTP 状态异常、WebSocket 断开、报文格式不对等。 */
 export class TransportError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
+  /** HTTP 状态码（请求已经得到响应时）。 */
+  readonly status: number | undefined;
+
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'TransportError';
+    this.status = options?.status;
   }
 }
 
@@ -34,5 +39,5 @@ const UNAVAILABLE_CODES = new Set([
  */
 export function isMethodUnavailable(error: unknown): boolean {
   if (error instanceof RemoteError) return UNAVAILABLE_CODES.has(error.code);
-  return error instanceof TransportError && /HTTP 404\b/u.test(error.message);
+  return error instanceof TransportError && error.status === 404;
 }

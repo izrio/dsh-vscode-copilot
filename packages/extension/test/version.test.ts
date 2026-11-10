@@ -37,9 +37,13 @@ describe('checkVersionSupport', () => {
     expect(checkVersionSupport('0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'tooOld' });
   });
 
-  it('范围内为 supported，高于已测试版本时标记 newerThanTested', () => {
+  it('范围内为 supported，版本线高于已测试版本时才标记 newerThanTested', () => {
     expect(checkVersionSupport('0.2.1-rc.5', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: false });
-    expect(checkVersionSupport('0.2.2', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: true });
+    // 同一版本线（0.2）的预发布和补丁版不提示
+    expect(checkVersionSupport('0.2.2-rc.1', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: false });
+    expect(checkVersionSupport('0.2.9', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: false });
+    expect(checkVersionSupport('0.3.0-alpha.1', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: true });
+    expect(checkVersionSupport('1.0.0', '0.2.1-rc.5', '0.2.2-alpha.3')).toEqual({ kind: 'supported', newerThanTested: true });
   });
 
   it('无法解析时 invalid', () => {

@@ -40,6 +40,11 @@ export interface Workbench {
   saveAll(): Promise<void>;
   /** 模态确认框。 */
   confirm(message: string, detail: string, action: string): Promise<boolean>;
+  /**
+   * 把文字插入到当前编辑器的光标处（有选区时替换选区）。只改编辑器里的内容，不保存。
+   * @returns 没有可编辑的编辑器时返回 false。
+   */
+  insertText(text: string): Promise<boolean>;
   /** 原生输入框（密码输入时内容不经过 Webview）。取消时返回 undefined。 */
   input(options: { readonly title: string; readonly prompt?: string; readonly value?: string; readonly placeHolder?: string; readonly password?: boolean }): Promise<string | undefined>;
 }
@@ -53,5 +58,6 @@ export const noWorkbench: Workbench = {
   dirtyFiles: () => [],
   saveAll: () => Promise.resolve(),
   confirm: () => Promise.resolve(false),
+  insertText: () => Promise.resolve(false),
   input: () => Promise.resolve(undefined),
 };

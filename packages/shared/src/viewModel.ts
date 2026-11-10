@@ -98,6 +98,8 @@ export type Item =
       readonly created?: boolean;
       /** 可以打开 Diff。 */
       readonly diff?: DiffRef;
+      /** 模型还在流式写这个工具调用的参数（还没开始执行）。 */
+      readonly preparing?: boolean;
     }
   | {
       /** 连续的只读操作（读文件、搜索）合并成一行。 */

@@ -7,6 +7,9 @@ import type { FollowFrame } from '../src/dsh/remote/follow.ts';
 import { ChangesUnavailableError } from '../src/dsh/DshClient.ts';
 import { ChatController } from '../src/vm/ChatController.ts';
 import { noWorkbench, type DiffRequest, type Workbench } from '../src/vm/workbench.ts';
+import { TransportError } from '../src/dsh/remote/errors.ts';
+import { ChangesCache } from '../src/vm/ChangesCache.ts';
+import { setLocale } from '../src/i18n.ts';
 
 /** 只实现 SessionService / SessionStream 用到的方法；follow 由测试控制。 */
 function fakeClient() {
@@ -182,8 +185,8 @@ describe('ChatController', () => {
     const patch = patches().at(-1)!;
     expect(patches().length).toBe(before + 1);
     expect(patch.reset).toBe(false);
-    expect(patch.upsert.map((item) => item.id)).toEqual(['a:2']);
-    expect(patch.order).toEqual(['u:1', 'a:2']);
+    expect(patch.upsert.map((item) => item.id)).toEqual(['a:1.1']);
+    expect(patch.order).toEqual(['u:1', 'a:1.1']);
   });
 
   it('断线期间继续显示原来的内容，标记为 disconnected', async () => {
@@ -246,10 +249,11 @@ describe('ChatController', () => {
     expect(controller.snapshot().session.id).toBeUndefined();
   });
 
-  it('未连接时发送给出提示，不抛错', async () => {
+  it('未连接时发送给出提示，不抛错，文字还给输入框', async () => {
     const { controller, posted } = setup();
     await controller.handle({ type: 'sendMessage', payload: { text: 'x' } });
-    expect(posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: 'x' } });
   });
 
   it('模型目录转成选项，默认选中目录给出的默认模型', async () => {
@@ -529,7 +533,8 @@ describe('ChatController', () => {
       await flush();
       await empty.controller.handle({ type: 'sendMessage', payload: { text: '/explain' } });
       expect(empty.fake.prompts).toHaveLength(0);
-      expect(empty.posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      expect(empty.posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      expect(empty.posted.at(-1)).toMatchObject({ type: 'restoreDraft', payload: { text: '/explain' } });
     });
 
     it('dsh 命令交给 dsh 执行（新对话先创建会话）；/export 不出现在列表里；不认识的命令按普通消息发送', async () => {
@@ -738,6 +743,138 @@ describe('ChatController', () => {
       controller.workspaceChanged();
       await flush();
       expect(patches().length).toBe(before);
+    });
+  });
+
+  describe('发送失败和断线', () => {
+    const users = (controller: ChatController) =>
+      controller.snapshot().items.flatMap((i) => (i.kind === 'user' ? [[i.text, i.pending ?? 'persisted']] : []));
+
+    it('创建会话失败时把文字还给输入框', async () => {
+      const { controller, fake, posted } = setup();
+      (fake.client as unknown as { createSession: () => Promise<string> }).createSession = async () => {
+        throw new TransportError('session/create 请求失败');
+      };
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '很长的一段需求' } });
+      expect(posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: '很长的一段需求' } });
+      expect(users(controller)).toEqual([]);
+    });
+
+    it('发送失败的消息在重连后仍然可以重试', async () => {
+      const { controller, fake, posted } = setup();
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '第一条' } });
+      const client = fake.client as unknown as { prompt: (...args: unknown[]) => Promise<string> };
+      const ok = client.prompt;
+      client.prompt = async () => {
+        throw new TransportError('session/prompt 请求失败');
+      };
+      await controller.handle({ type: 'sendMessage', payload: { text: '断线时发的' } });
+      // 有可以重试的回显，不再把文字还给输入框
+      expect(posted.some((m) => m.type === 'restoreDraft')).toBe(false);
+      controller.setClient(undefined);
+      client.prompt = ok;
+      controller.setClient(fake.client);
+      await flush();
+      await flush();
+      expect(users(controller)).toContainEqual(['断线时发的', 'failed']);
+      const failed = controller.snapshot().items.find((i) => i.kind === 'user' && i.pending === 'failed');
+      await controller.handle({ type: 'retryPending', payload: { requestId: (failed as { requestId: string }).requestId } });
+      expect(fake.prompts.at(-1)?.text).toBe('断线时发的');
+    });
+
+    it('英文界面：传输错误给出可读的提示，审批原因用英文', async () => {
+      setLocale('en');
+      try {
+        const { controller, fake, posted } = setup();
+        (fake.client as unknown as { prompt: () => Promise<string> }).prompt = async () => {
+          throw new TransportError('session/prompt 请求失败');
+        };
+        controller.setClient(fake.client);
+        await flush();
+        await controller.handle({ type: 'sendMessage', payload: { text: 'hi' } });
+        const toast = posted.find((m) => m.type === 'toast');
+        expect(toast).toMatchObject({ payload: { text: 'Failed to send: Could not communicate with dsh. See the log for details' } });
+
+        const approval = fake.waterfall('approval/request', 's1', { toolName: 'bash', displayReason: { en: 'Needs network', zh: '需要网络' } });
+        await flush();
+        expect(controller.snapshot().interactions[0]).toMatchObject({ kind: 'approval', reason: 'Needs network' });
+        approval.cancel();
+      } finally {
+        setLocale('zh');
+      }
+    });
+
+    it('等待处理的请求数变化时通知（视图徽标）', async () => {
+      const counts: number[] = [];
+      const posted: HostToWebview[] = [];
+      const controller = new ChatController({
+        workspacePath: '/w',
+        post: (m) => posted.push(m),
+        log: () => undefined,
+        loadActiveSessionId: () => undefined,
+        saveActiveSessionId: () => undefined,
+        openExternal: () => undefined,
+        restartRuntime: () => undefined,
+        showLogs: () => undefined,
+        openWebUI: () => undefined,
+        onAttentionChange: (count) => counts.push(count),
+        renderDelayMs: 0,
+      });
+      const fake = fakeClient();
+      controller.setClient(fake.client);
+      await flush();
+      const request = fake.waterfall('approval/request', 'other-session', { toolName: 'bash' });
+      await flush();
+      request.cancel();
+      await flush();
+      expect(counts).toEqual([1, 0]);
+    });
+  });
+
+  describe('ChangesCache', () => {
+    it('临时错误按退避重试，成功后不再读取；404 直接记为不可用', async () => {
+      let calls = 0;
+      const client = {
+        changesSummary: async (_id: string, seq: number) => {
+          calls++;
+          if (seq === 2) throw new ChangesUnavailableError();
+          if (calls === 1) throw new TransportError('/api/changes.summary 请求失败');
+          return { turn: 1, files: [], total: 0 };
+        },
+      } as unknown as DshClient;
+      let changes = 0;
+      const cache = new ChangesCache({ onChange: () => changes++, log: () => undefined, retryDelayMs: () => 10 });
+      cache.load(client, 's', [1]);
+      await flush();
+      expect(cache.lookup('s')(1)).toBeUndefined();
+      // 退避期间不重试
+      cache.load(client, 's', [1]);
+      expect(calls).toBe(1);
+      await flush();
+      cache.load(client, 's', [1]);
+      await flush();
+      expect(cache.lookup('s')(1)).toEqual({ turn: 1, files: [], total: 0 });
+      cache.load(client, 's', [1, 2]);
+      await flush();
+      expect(calls).toBe(3);
+      expect(cache.lookup('s')(2)).toBe('unavailable');
+      expect(changes).toBeGreaterThan(0);
+      cache.dispose();
+    });
+
+    it('连续失败到上限后记为不可用', async () => {
+      const client = { changesSummary: async () => Promise.reject(new TransportError('x')) } as unknown as DshClient;
+      const cache = new ChangesCache({ onChange: () => undefined, log: () => undefined, retryDelayMs: () => 0, maxAttempts: 2 });
+      cache.load(client, 's', [1]);
+      await flush();
+      cache.load(client, 's', [1]);
+      await flush();
+      expect(cache.lookup('s')(1)).toBe('unavailable');
+      cache.dispose();
     });
   });
 });

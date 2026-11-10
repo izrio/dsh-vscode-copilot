@@ -57,7 +57,7 @@ export async function connectApiPeer(
   // 响应体不需要，读掉以释放连接
   await response.body?.cancel().catch(() => undefined);
   if (response.status !== 302) {
-    throw new TransportError(`/connect 返回 HTTP ${response.status}`);
+    throw new TransportError(`/connect 返回 HTTP ${response.status}`, { status: response.status });
   }
   const cookie = pickAuthCookie(response.headers.getSetCookie());
   if (!cookie) throw new TransportError('/connect 没有返回认证 Cookie');

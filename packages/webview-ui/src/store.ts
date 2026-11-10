@@ -45,8 +45,11 @@ export interface ViewState {
   /** 最近一次 `@` 补全的结果。 */
   readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
   readonly toasts: readonly Toast[];
-  /** 把一段文字放进输入框（"编辑后重发"）；`n` 每次递增，输入框据此更新。 */
-  readonly prefill: { readonly text: string; readonly n: number };
+  /**
+   * 把一段文字放进输入框；`n` 每次递增，输入框据此更新。
+   * `replace`：替换现有内容（"编辑后重发"）；`restore`：没发出去的消息放回来，输入框里已经有新内容时放在前面。
+   */
+  readonly prefill: { readonly text: string; readonly n: number; readonly mode: 'replace' | 'restore' };
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
 }
@@ -68,7 +71,7 @@ const initialState: ViewState = {
   commands: [],
   fileCandidates: { requestId: -1, items: [] },
   toasts: [],
-  prefill: { text: '', n: 0 },
+  prefill: { text: '', n: 0, mode: 'replace' },
   focusRequests: 0,
 };
 
@@ -95,8 +98,8 @@ export function useView<T>(selector: (state: ViewState) => T): T {
   );
 }
 
-export function requestPrefill(text: string): void {
-  set({ prefill: { text, n: state.prefill.n + 1 } });
+export function requestPrefill(text: string, mode: 'replace' | 'restore' = 'replace'): void {
+  set({ prefill: { text, n: state.prefill.n + 1, mode } });
 }
 
 export function dismissToast(id: number): void {
@@ -183,6 +186,9 @@ export function applyHostMessage(message: HostToWebview): void {
     }
     case 'focusComposer':
       set({ focusRequests: state.focusRequests + 1 });
+      return;
+    case 'restoreDraft':
+      requestPrefill(message.payload.text, 'restore');
       return;
   }
 }

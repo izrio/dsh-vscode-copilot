@@ -253,3 +253,19 @@ export const ReplyIcon = (p: IconProps) => (
     <path d="M6.5 4 3 7.5 6.5 11M3 7.5h6a4 4 0 0 1 4 4v1" />
   </svg>
 );
+export const GearIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="8" cy="8" r="2" />
+    <path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6" />
+  </svg>
+);
+export const ArrowDownIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M8 3v10M4 9l4 4 4-4" />
+  </svg>
+);
+export const InsertIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 3.5h10M3 12.5h10M8 5.5v5M5.8 8.3 8 10.5l2.2-2.2" />
+  </svg>
+);

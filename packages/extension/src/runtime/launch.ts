@@ -71,6 +71,27 @@ function needsShell(command: string, platform: NodeJS.Platform): boolean {
 }
 
 /**
+ * Windows 下 `.cmd` / `.bat` 只能经 cmd.exe 运行。Node 用 `cmd.exe /d /s /c "<命令行>"` 执行，
+ * 把命令和参数直接用空格拼起来、不加引号：路径里有空格（`C:\Program Files\…`）时会被拆开。
+ * 这里给每一段加上引号（内部的引号写成两个）。
+ */
+export function quoteForCmd(arg: string): string {
+  if (arg === '') return '""';
+  return /[\s"&|<>^()%!,;=]/u.test(arg) ? `"${arg.replace(/"/gu, '""')}"` : arg;
+}
+
+/** 按平台准备 spawn / execFile 的命令和参数。 */
+export function commandLine(command: string, args: readonly string[], platform: NodeJS.Platform = process.platform): { file: string; args: string[]; shell: boolean } {
+  if (!needsShell(command, platform)) return { file: command, args: [...args], shell: false };
+  return { file: quoteForCmd(command), args: args.map(quoteForCmd), shell: true };
+}
+
+/** profile 名只允许字母、数字、点、下划线和连字符：它会出现在命令行里。 */
+export function isValidProfile(profile: string): boolean {
+  return /^[\w.-]{1,64}$/u.test(profile);
+}
+
+/**
  * 执行 `dsh --version`。
  * @returns 去掉首尾空白的版本输出。
  */
@@ -79,11 +100,12 @@ export function probeVersion(
   env: Readonly<Record<string, string | undefined>>,
   timeoutMs = 15_000,
 ): Promise<string> {
+  const line = commandLine(command, ['--version']);
   return new Promise((resolve, reject) => {
     execFile(
-      command,
-      ['--version'],
-      { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: needsShell(command, process.platform), windowsHide: true },
+      line.file,
+      line.args,
+      { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: line.shell, windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {
           reject(new LaunchError(t('runtime.versionFailed', error.message), redactSecrets(String(stderr))));
@@ -117,7 +139,8 @@ class LineSplitter {
  * @throws LaunchError 进程提前退出、超时或无法启动时。
  */
 export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> {
-  const args = buildLaunchArgs(options.profile, options.launcherArgs);
+  if (!isValidProfile(options.profile)) return Promise.reject(new LaunchError(t('runtime.badProfile', options.profile), ''));
+  const line = commandLine(options.command, buildLaunchArgs(options.profile, options.launcherArgs));
   const timeoutMs = options.readyTimeoutMs ?? 60_000;
   const tail: string[] = [];
   const remember = (line: string): string => {
@@ -129,15 +152,16 @@ export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> 
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    const child = spawn(options.command, args, {
+    const child = spawn(line.file, line.args, {
       cwd: options.cwd,
       env: { ...options.env, NO_COLOR: '1' } as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       // POSIX 下放进独立进程组，退出时能连同 dsh 的子进程一起结束
       detached: process.platform !== 'win32',
-      shell: needsShell(options.command, process.platform),
+      shell: line.shell,
       windowsHide: true,
     });
+    killOnHostExit(child);
 
     const fail = (message: string): void => {
       if (settled) return;
@@ -197,6 +221,26 @@ export async function stopRuntime(child: ChildProcess, graceMs = 5_000): Promise
     signalGroup(pid, 'SIGKILL');
     await Promise.race([exited, delay(1_000)]);
   }
+}
+
+/**
+ * 独立进程组不会随 Extension Host 一起退出。Host 没走 deactivate 就退出时（例如重新加载窗口时超时被结束），
+ * 在 process 的 exit 事件里同步结束 dsh 的进程组。Host 被强制杀掉（SIGKILL）时无法处理。
+ */
+function killOnHostExit(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  const onExit = (): void => {
+    if (process.platform === 'win32') {
+      try {
+        process.kill(pid);
+      } catch {
+        // 已经退出
+      }
+    } else signalGroup(pid, 'SIGKILL');
+  };
+  process.once('exit', onExit);
+  child.once('exit', () => process.removeListener('exit', onExit));
 }
 
 function signalGroup(pid: number, signal: NodeJS.Signals): void {

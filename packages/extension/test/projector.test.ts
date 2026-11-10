@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { followFrameSchema, type FollowFrame } from '../src/dsh/remote/follow.ts';
 import { SessionJournal } from '../src/dsh/session/journal.ts';
-import { activityLabel, displayPath, project, projectEvents } from '../src/vm/projector.ts';
+import { activityLabel, displayPath, partialArgument, project, projectEvents, truncate } from '../src/vm/projector.ts';
 import { plainTitle } from '../src/vm/ChatController.ts';
 
 /** 用 M0 录制的真实帧回放出 journal，再投影成界面条目。 */
@@ -197,7 +197,55 @@ describe('project：规则', () => {
       live: { attemptId: 'a1', turn: 1, step: 1, startedAfterSeq: 0, nextIndex: 2, blocks: new Map([[0, { kind: 'text', text: '部分' }]]) },
       pending: [],
     }).items;
-    expect(items).toEqual([{ kind: 'assistant', id: 'live:a1', markdown: '部分', streaming: true }]);
+    // 与结算后的持久消息同一个 id，结算时界面原地更新
+    expect(items).toEqual([{ kind: 'assistant', id: 'a:1.1', markdown: '部分', streaming: true }]);
+  });
+
+  it('流式回复和结算后的持久消息 id 相同；同一步已经有消息时退回按序号', () => {
+    const settled = project({
+      events: [event(3, 'assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: '部分完整' }] } }, { surfaceOp: 'append' })],
+      pending: [],
+    }).items;
+    expect(settled.map((i) => i.id)).toEqual(['a:1.1']);
+    const live = project({
+      events: [event(3, 'assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条' }] } }, { surfaceOp: 'append' })],
+      live: { attemptId: 'x', turn: 1, step: 1, startedAfterSeq: 3, nextIndex: 1, blocks: new Map([[0, { kind: 'text', text: '第二条' }]]) },
+      pending: [],
+    }).items;
+    expect(live.map((i) => i.id)).toEqual(['a:1.1', 'live:x']);
+  });
+
+  it('模型正在写工具参数时显示一行准备中的活动', () => {
+    const items = project({
+      events: [],
+      live: {
+        attemptId: 'a1',
+        turn: 1,
+        step: 1,
+        startedAfterSeq: 0,
+        nextIndex: 3,
+        blocks: new Map([[1, { kind: 'tool', toolName: 'write', text: '{"file_path":"/w/src/big.ts","content":"exp' }]]),
+      },
+      pending: [],
+      workspacePath: '/w',
+    }).items;
+    expect(items).toEqual([
+      { kind: 'activity', id: 'live-tool:a1:1', tool: 'write', variant: 'edit', label: 'write  src/big.ts', status: 'running', preparing: true },
+    ]);
+  });
+
+  it('过长的输出保留开头和结尾，去掉终端颜色', () => {
+    expect(truncate('\u001b[32mPASS\u001b[0m ok')).toBe('PASS ok');
+    const long = `${'a'.repeat(3_000)}${'b'.repeat(3_000)}END`;
+    const result = truncate(long);
+    expect(result.startsWith('a'.repeat(1_200))).toBe(true);
+    expect(result.endsWith('bEND')).toBe(true);
+    expect(result).toContain('2003');
+  });
+
+  it('partialArgument 只取已经写完的字符串字段', () => {
+    expect(partialArgument('{"command":"pnpm te', 'command')).toBeUndefined();
+    expect(partialArgument('{"command":"echo \\"hi\\"","x', 'command')).toBe('echo "hi"');
   });
 
   it('turn/end 的错误原因显示为错误提示', () => {

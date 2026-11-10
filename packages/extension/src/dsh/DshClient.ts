@@ -322,7 +322,7 @@ export class DshClient {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new TransportError(`${path}: HTTP ${response.status}`);
+      throw new TransportError(`${path}: HTTP ${response.status}`, { status: response.status });
     }
     return response.json();
   }

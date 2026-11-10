@@ -19,12 +19,15 @@ import type {
   SessionListItem,
   WebviewToHost,
 } from '@dsh-copilot/shared';
-import { ChangesUnavailableError, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
+import { ChangesUnavailableError, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
+import { ChangesCache } from './ChangesCache.ts';
 import type { ConnectionStatus } from '../dsh/DshConnection.ts';
 import { InteractionService } from '../dsh/InteractionService.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { SessionService } from '../dsh/SessionService.ts';
 import { SessionStream } from '../dsh/session/SessionStream.ts';
+import { PendingPrompts } from '../dsh/session/pendingPrompts.ts';
+import { userMessage } from '../util/errors.ts';
 import {
   CONTEXT_OPEN,
   isTemplate,
@@ -77,6 +80,12 @@ export interface ChatControllerOptions {
   readonly selectFolder?: () => void;
   /** 多根工作区时当前文件夹的显示名。 */
   readonly folderLabel?: () => string | undefined;
+  /** 打开 VS Code 设置（插件的全部设置，或 dsh 路径）。 */
+  readonly openSettings?: (query: 'dsh' | 'dsh.runtime.path') => void;
+  readonly manageTrust?: () => void;
+  readonly openFolder?: () => void;
+  /** 等待处理的审批和提问总数变化时调用（视图徽标、状态栏）。 */
+  readonly onAttentionChange?: (count: number) => void;
   readonly renderDelayMs?: number;
 }
 
@@ -110,12 +119,10 @@ export class ChatController {
   /** 新对话选择的权限预设，创建会话时应用。 */
   private draftPermission: string | undefined;
   private interactions: InteractionService | undefined;
-  /** 每轮改动汇总的读取结果，键是 `sessionId:seq`。 */
-  private readonly changes = new Map<string, ChangesSummary | 'unavailable' | 'loading'>();
+  /** 每轮改动汇总的读取结果。 */
+  private readonly changes: ChangesCache;
   /** 当前会话最近一次投影里的工具调用，用于打开 Diff 和审批预览。 */
   private toolCalls: ReadonlyMap<string, ToolCallInfo> = new Map();
-  /** 改动汇总来自哪个 Host；Host 重启（换了端口）后内存里的汇总都没了，要重新读取。 */
-  private changesOrigin: string | undefined;
   /** 用「添加到对话」固定的上下文，发送后清空。 */
   private pinned: (ContextAttachment & { id: string })[] = [];
   private pinCounter = 0;
@@ -127,17 +134,20 @@ export class ChatController {
   private credentialRef: string | undefined;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private serviceGeneration = 0;
+  /** 上次通知的等待处理请求数。 */
+  private attention = 0;
 
   /** 持久事件投影的缓存（流式输出时持久事件不变）。 */
   private eventsMemo: { readonly key: readonly unknown[]; readonly value: EventsProjection } | undefined;
-  /** 改动汇总每读到一份递增，作为缓存键的一部分。 */
-  private changesVersion = 0;
   private readonly publisher: ViewPublisher;
+  /** 本地回显：跨连接保留，断线重连后发送失败的消息仍然可以重试。 */
+  private readonly pendingPrompts = new PendingPrompts();
 
   constructor(private readonly options: ChatControllerOptions) {
     this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
+    this.changes = new ChangesCache({ onChange: () => this.scheduleRender(), log: options.log });
   }
 
   /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
@@ -157,6 +167,7 @@ export class ChatController {
 
   dispose(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer);
+    this.changes.dispose();
     this.stream?.dispose();
     this.service?.dispose();
     this.interactions?.dispose();
@@ -231,21 +242,16 @@ export class ChatController {
     // 挂起的审批和提问绑定在旧连接上，dsh 会在新连接上重新转发还在等待的请求
     this.interactions?.dispose();
     this.interactions = undefined;
-    for (const [key, value] of this.changes) if (value === 'loading') this.changes.delete(key);
+    this.changes.connectionChanged(client?.credential?.origin);
     this.scheduleRender();
     if (!client) return;
     this.interactions = new InteractionService(client, () => this.scheduleRender(), this.options.log);
-    const origin = client.credential?.origin;
-    if (origin !== this.changesOrigin) {
-      this.changes.clear();
-      this.changesVersion++;
-      this.changesOrigin = origin;
-    }
     const service = new SessionService({
       client,
       workspacePath: this.workspacePath,
       onChange: () => this.scheduleRender(),
       log: this.options.log,
+      pending: this.pendingPrompts,
     });
     this.service = service;
     // 只校验初始化开始时就已打开的会话；初始化期间新建的会话不在刚读到的列表里，不能误判为已删除
@@ -268,7 +274,7 @@ export class ChatController {
       (error: unknown) => {
         if (generation !== this.serviceGeneration) return;
         this.options.log(`初始化会话服务失败：${describe(error)}`);
-        this.toast('error', t('error.readSessions', describe(error)));
+        this.toast('error', t('error.readSessions', userMessage(error)));
       },
     );
   }
@@ -298,8 +304,14 @@ export class ChatController {
       case 'ready':
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
-      case 'sendMessage':
-        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true });
+      case 'sendMessage': {
+        const { text } = message.payload;
+        // 没有发出去、也没有留下可以重试的回显时，把文字还给输入框（输入框发送时已经清空）
+        if (!(await this.send(text, { includeActive: message.payload.includeActive ?? true }))) {
+          this.options.post({ type: 'restoreDraft', payload: { text } });
+        }
+        return;
+      }
       case 'searchFiles':
         return this.searchFiles(message.payload.requestId, message.payload.query);
       case 'queueAction':
@@ -366,6 +378,18 @@ export class ChatController {
         return this.selectPermission(message.payload.preset);
       case 'saveAll':
         return this.workbench.saveAll();
+      case 'openSettings':
+        this.options.openSettings?.(message.payload.query);
+        return;
+      case 'manageTrust':
+        this.options.manageTrust?.();
+        return;
+      case 'openFolder':
+        this.options.openFolder?.();
+        return;
+      case 'insertCode':
+        if (!(await this.workbench.insertText(message.payload.code))) this.toast('info', t('insert.noEditor'));
+        return;
     }
   }
 
@@ -417,11 +441,9 @@ export class ChatController {
     } catch (error) {
       if (error instanceof ChangesUnavailableError) {
         // 汇总已经不在 Host 内存里：卡片改为按文件工具汇总，那里的 Diff 来自会话日志
-        this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
-        this.changesVersion++;
-        this.scheduleRender();
+        this.changes.markUnavailable(sessionId, ref.seq);
         this.toast('info', t('diff.turnGone'));
-      } else this.toast('error', t('diff.readFailed', describe(error)));
+      } else this.toast('error', t('diff.readFailed', userMessage(error)));
     }
   }
 
@@ -442,7 +464,7 @@ export class ChatController {
     try {
       await this.service.setPermission(this.activeId, preset);
     } catch (error) {
-      this.toast('error', t('permission.failed', describe(error)));
+      this.toast('error', t('permission.failed', userMessage(error)));
     }
   }
 
@@ -453,19 +475,19 @@ export class ChatController {
   /**
    * 发送一条消息。以 `/` 开头时先看是不是斜杠命令：插件模板展开成提示词，dsh 命令交给 dsh 执行。
    * 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。
+   * @returns 消息已经发出，或者留下了可以重试的回显；false 表示什么都没留下（调用方应把文字还给用户）。
    */
-  async send(text: string, options: SendOptions = {}): Promise<void> {
+  async send(text: string, options: SendOptions = {}): Promise<boolean> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
       this.setActive(undefined);
-      if (slash.args.trim()) await this.send(slash.args, options);
-      return;
+      return slash.args.trim() ? this.send(slash.args, options) : true;
     }
     if (slash && isTemplate(slash.name)) {
       const attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
       if (attachments.length === 0 && !slash.args.trim()) {
         this.toast('info', t('template.needsContext', slash.name));
-        return;
+        return false;
       }
       return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments);
     }
@@ -480,23 +502,33 @@ export class ChatController {
     return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
   }
 
-  private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<void> {
+  private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
+    }
+    let sessionId: string;
+    try {
+      sessionId = await this.ensureSession(service);
+    } catch (error) {
+      this.options.log(`创建会话失败：${describe(error)}`);
+      this.toast('error', friendlyError(error));
+      return false;
+    }
+    // 固定的上下文已经拼进这条消息（失败时回显带着它，重试会一起发送）
+    if (this.pinned.length) {
+      this.pinned = [];
+      this.scheduleRender();
     }
     try {
-      const sessionId = await this.ensureSession(service);
       await service.prompt(sessionId, withContext(text, attachments, this.workspacePath));
-      if (this.pinned.length) {
-        this.pinned = [];
-        this.scheduleRender();
-      }
     } catch (error) {
+      // 回显已经标记为失败，可以重试或删除
       this.options.log(`发送失败：${describe(error)}`);
       this.toast('error', friendlyError(error));
     }
+    return true;
   }
 
   private async queueAction(payload: Extract<WebviewToHost, { type: 'queueAction' }>['payload']): Promise<void> {
@@ -521,7 +553,7 @@ export class ChatController {
       }
     } catch (error) {
       // 消息可能刚好被送达，已经不在队列里
-      this.toast('info', error instanceof RemoteError ? t('queue.alreadySent') : t('queue.failed', describe(error)));
+      this.toast('info', error instanceof RemoteError ? t('queue.alreadySent') : t('queue.failed', userMessage(error)));
       this.options.log(`修改排队消息失败：${describe(error)}`);
     }
   }
@@ -539,7 +571,7 @@ export class ChatController {
     try {
       await service.rename(sessionId, title);
     } catch (error) {
-      this.toast('error', t('rename.failed', describe(error)));
+      this.toast('error', t('rename.failed', userMessage(error)));
     }
   }
 
@@ -569,23 +601,25 @@ export class ChatController {
       this.credentialRef = undefined;
       this.toast('info', t('apiKey.saved'));
     } catch (error) {
-      this.toast('error', t('apiKey.failed', describe(error)));
+      this.toast('error', t('apiKey.failed', userMessage(error)));
     }
   }
 
   /** dsh 的斜杠命令：结果以 command/run、command/done 事件出现在对话里。 */
-  private async runCommand(line: string): Promise<void> {
+  private async runCommand(line: string): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
     }
     try {
       const sessionId = await this.ensureSession(service);
       await service.client.executeCommand(sessionId, line);
+      return true;
     } catch (error) {
       this.options.log(`执行 ${line} 失败：${describe(error)}`);
-      this.toast('error', t('command.failed', describe(error)));
+      this.toast('error', t('command.failed', userMessage(error)));
+      return false;
     }
   }
 
@@ -602,7 +636,7 @@ export class ChatController {
     }
     if (this.draftPermission && this.draftPermission !== service.permissions?.defaultPreset) {
       await service.setPermission(sessionId, this.draftPermission).catch((error: unknown) => {
-        this.toast('error', t('permission.newSessionFailed', describe(error)));
+        this.toast('error', t('permission.newSessionFailed', userMessage(error)));
       });
     }
     this.draftPermission = undefined;
@@ -645,7 +679,7 @@ export class ChatController {
       await this.service.cancel(this.activeId);
     } catch (error) {
       // 会话已经空闲时 dsh 会拒绝取消，不需要打扰用户
-      if (!(error instanceof RemoteError)) this.toast('error', t('stop.failed', describe(error)));
+      if (!(error instanceof RemoteError)) this.toast('error', t('stop.failed', userMessage(error)));
       this.options.log(`停止失败：${describe(error)}`);
     }
   }
@@ -659,7 +693,7 @@ export class ChatController {
     try {
       await this.service.selectModel(this.activeId, selection);
     } catch (error) {
-      this.toast('error', t('model.failed', describe(error)));
+      this.toast('error', t('model.failed', userMessage(error)));
     }
   }
 
@@ -716,6 +750,11 @@ export class ChatController {
   /** 计算当前视图并推送变化的部分。 */
   render(): void {
     this.publisher.publish(this.compute());
+    const attention = this.interactions?.count ?? 0;
+    if (attention !== this.attention) {
+      this.attention = attention;
+      this.options.onAttentionChange?.(attention);
+    }
   }
 
   private compute(): ControllerView {
@@ -732,11 +771,8 @@ export class ChatController {
     const pending = sessionId && service ? service.pending(sessionId) : [];
     const streamLive = stream?.status.kind === 'live';
     const events = stream?.journal.events ?? [];
-    const changes = (seq: number) => {
-      const value = sessionId ? this.changes.get(`${sessionId}:${seq}`) : undefined;
-      return value === 'loading' ? undefined : value;
-    };
-    const key = [events, events.length, events[0]?.seq, events.at(-1)?.seq, this.workspacePath, this.changesVersion, getLocale()];
+    const changes = this.changes.lookup(sessionId);
+    const key = [events, events.length, events[0]?.seq, events.at(-1)?.seq, this.workspacePath, this.changes.version, getLocale()];
     if (!this.eventsMemo || this.eventsMemo.key.some((part, i) => part !== key[i])) {
       this.eventsMemo = { key, value: projectEvents({ events, workspacePath: this.workspacePath, changes }) };
     }
@@ -751,7 +787,7 @@ export class ChatController {
     }, this.eventsMemo.value);
     this.toolCalls = projection.toolCalls;
     if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
-    if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
+    if (sessionId && streamLive && !showingStale && this.service) this.changes.load(this.service.client, sessionId, projection.changeSeqs);
     // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
     if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
       service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
@@ -821,27 +857,6 @@ export class ChatController {
       includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
       pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
     };
-  }
-
-  /** 读取还没读过的改动汇总。Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。 */
-  private loadChanges(sessionId: string, seqs: readonly number[]): void {
-    const client = this.service?.client;
-    if (!client) return;
-    for (const seq of seqs) {
-      const key = `${sessionId}:${seq}`;
-      if (this.changes.has(key)) continue;
-      this.changes.set(key, 'loading');
-      void client.changesSummary(sessionId, seq).then(
-        (summary) => this.changes.set(key, summary),
-        (error: unknown) => {
-          if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
-          this.changes.set(key, 'unavailable');
-        },
-      ).finally(() => {
-        this.changesVersion++;
-        this.scheduleRender();
-      });
-    }
   }
 
   /** 当前会话可选的模型和当前选择（供命令面板的模型选择使用）。 */

@@ -10,16 +10,12 @@ import { randomUUID } from 'node:crypto';
 import { isAbsolute, relative } from 'node:path';
 import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, SessionSummaryWire } from './DshClient.ts';
 import { isMethodUnavailable } from './remote/errors.ts';
+import { PendingPrompts, type PendingPrompt } from './session/pendingPrompts.ts';
+import { describeError as describe, userMessage } from '../util/errors.ts';
+
+export type { PendingPrompt } from './session/pendingPrompts.ts';
 
 export type Projections = Readonly<Record<string, unknown>>;
-
-export interface PendingPrompt {
-  readonly requestId: string;
-  readonly text: string;
-  readonly sentAt: number;
-  readonly state: 'sending' | 'accepted' | 'failed';
-  readonly error?: string;
-}
 
 export interface SessionServiceOptions {
   readonly client: DshClient;
@@ -27,6 +23,8 @@ export interface SessionServiceOptions {
   readonly workspacePath: string;
   readonly onChange: () => void;
   readonly log?: (line: string) => void;
+  /** 本地回显；由上层持有，重连后不丢失。不传时用自己的。 */
+  readonly pending?: PendingPrompts;
 }
 
 const LIST_EVENTS = ['api-session/added', 'api-session/removed', 'api-session/status', 'api-session/activity'];
@@ -35,7 +33,7 @@ export class SessionService {
   private workspaceId: string | undefined;
   private summaries: SessionSummaryWire[] = [];
   private readonly projectionValues = new Map<string, Record<string, unknown>>();
-  private readonly pendingBySession = new Map<string, PendingPrompt[]>();
+  private readonly pendingPrompts: PendingPrompts;
   private catalog: ModelCatalog | undefined;
   private permissionCatalog: PermissionCatalog | undefined;
   private readonly abort = new AbortController();
@@ -43,7 +41,9 @@ export class SessionService {
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private ready = false;
 
-  constructor(private readonly options: SessionServiceOptions) {}
+  constructor(private readonly options: SessionServiceOptions) {
+    this.pendingPrompts = options.pending ?? new PendingPrompts();
+  }
 
   /** init 已完成：会话列表和模型目录可用。 */
   get initialized(): boolean {
@@ -125,18 +125,12 @@ export class SessionService {
   }
 
   pending(sessionId: string): readonly PendingPrompt[] {
-    return this.pendingBySession.get(sessionId) ?? [];
+    return this.pendingPrompts.list(sessionId);
   }
 
   /** 撤掉已经出现在持久历史里的本地回显。 */
   retirePending(sessionId: string, persistedRequestIds: ReadonlySet<string>): void {
-    const list = this.pendingBySession.get(sessionId);
-    if (!list) return;
-    const remaining = list.filter((item) => !persistedRequestIds.has(item.requestId));
-    if (remaining.length !== list.length) {
-      this.pendingBySession.set(sessionId, remaining);
-      this.options.onChange();
-    }
+    if (this.pendingPrompts.remove(sessionId, persistedRequestIds)) this.options.onChange();
   }
 
   async createSession(): Promise<string> {
@@ -150,21 +144,19 @@ export class SessionService {
    * @returns requestId。
    */
   async prompt(sessionId: string, text: string, requestId: string = randomUUID()): Promise<string> {
-    this.setPending(sessionId, requestId, { requestId, text, sentAt: Date.now(), state: 'sending' });
+    this.setPending(sessionId, { requestId, text, sentAt: Date.now(), state: 'sending' });
     try {
       await this.client.prompt(sessionId, text, requestId);
       this.updatePending(sessionId, requestId, { state: 'accepted' });
     } catch (error) {
-      this.updatePending(sessionId, requestId, { state: 'failed', error: describe(error) });
+      this.updatePending(sessionId, requestId, { state: 'failed', error: userMessage(error) });
       throw error;
     }
     return requestId;
   }
 
   discardPending(sessionId: string, requestId: string): void {
-    const list = this.pendingBySession.get(sessionId) ?? [];
-    this.pendingBySession.set(sessionId, list.filter((item) => item.requestId !== requestId));
-    this.options.onChange();
+    if (this.pendingPrompts.remove(sessionId, new Set([requestId]))) this.options.onChange();
   }
 
   cancel(sessionId: string): Promise<void> {
@@ -191,17 +183,13 @@ export class SessionService {
     this.options.onChange();
   }
 
-  private setPending(sessionId: string, requestId: string, value: PendingPrompt): void {
-    const list = (this.pendingBySession.get(sessionId) ?? []).filter((item) => item.requestId !== requestId);
-    this.pendingBySession.set(sessionId, [...list, value]);
+  private setPending(sessionId: string, value: PendingPrompt): void {
+    this.pendingPrompts.set(sessionId, value);
     this.options.onChange();
   }
 
-  private updatePending(sessionId: string, requestId: string, patch: Partial<PendingPrompt>): void {
-    const list = this.pendingBySession.get(sessionId);
-    if (!list) return;
-    this.pendingBySession.set(sessionId, list.map((item) => (item.requestId === requestId ? { ...item, ...patch } : item)));
-    this.options.onChange();
+  private updatePending(sessionId: string, requestId: string, patch: Partial<Omit<PendingPrompt, 'requestId'>>): void {
+    if (this.pendingPrompts.update(sessionId, requestId, patch)) this.options.onChange();
   }
 
   private scheduleRefresh(): void {
@@ -266,8 +254,4 @@ function isInside(root: string, path: string | undefined): boolean {
   if (!path) return false;
   const rel = relative(root, path);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

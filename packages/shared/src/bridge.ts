@@ -85,6 +85,14 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('selectPermission'), payload: z.object({ preset: z.string().min(1) }) }),
   z.object({ type: z.literal('saveAll'), payload: empty }),
+  /** 打开 VS Code 设置并定位到插件的设置项。 */
+  z.object({ type: z.literal('openSettings'), payload: z.object({ query: z.enum(['dsh', 'dsh.runtime.path']) }) }),
+  /** 打开工作区信任设置。 */
+  z.object({ type: z.literal('manageTrust'), payload: empty }),
+  /** 打开文件夹（没有打开文件夹时 dsh 不启动）。 */
+  z.object({ type: z.literal('openFolder'), payload: empty }),
+  /** 把代码插入到当前编辑器的光标处（替换选区）。 */
+  z.object({ type: z.literal('insertCode'), payload: z.object({ code: z.string().max(1_000_000) }) }),
 ]);
 
 export type WebviewToHost = z.infer<typeof webviewToHostSchema>;
@@ -131,7 +139,9 @@ export type HostToWebview =
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
   | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }
-  | { readonly type: 'focusComposer'; readonly payload: Record<string, never> };
+  | { readonly type: 'focusComposer'; readonly payload: Record<string, never> }
+  /** 消息没有发出去（例如创建会话失败）：把文字还给输入框。 */
+  | { readonly type: 'restoreDraft'; readonly payload: { readonly text: string } };
 
 /**
  * 解析来自 Webview 的消息；格式不对时返回 undefined，由调用方记录日志并丢弃。

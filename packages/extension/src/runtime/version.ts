@@ -3,7 +3,9 @@
  *
  * 支持范围见 docs/DSH-INTEGRATION.md 第 8 节：
  * - 低于 MINIMUM_DSH_VERSION：不启动，提示升级；
- * - 高于 TESTED_DSH_VERSION：照常启动，提示"版本较新"，靠能力探测降级。
+ * - 版本线（major.minor）高于 TESTED_DSH_VERSION：照常启动，提示"版本较新"，靠能力探测降级。
+ *   同一版本线里的补丁版和预发布版（例如 0.2.2-alpha.3 → 0.2.2-rc.1 → 0.2.5）不提示：
+ *   每晚的兼容性 CI 会用 dsh 的 latest / alpha 跑一遍，提示只用来提醒跨版本线的升级。
  */
 
 /** 支持的最低 dsh 版本（M0 实测）。 */
@@ -86,5 +88,6 @@ export function checkVersionSupport(
   const max = parseVersion(tested);
   if (!version || !min || !max) return { kind: 'invalid' };
   if (compareVersions(version, min) < 0) return { kind: 'tooOld' };
-  return { kind: 'supported', newerThanTested: compareVersions(version, max) > 0 };
+  const newerLine = version.major !== max.major ? version.major > max.major : version.minor > max.minor;
+  return { kind: 'supported', newerThanTested: newerLine };
 }

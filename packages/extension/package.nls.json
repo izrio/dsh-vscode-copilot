@@ -25,5 +25,6 @@
   "config.title": "DSH",
   "container.title": "DSH",
   "extension.description": "Codex-style VS Code front end for DeepSeek Harness (dsh)",
-  "capabilities.untrusted": "dsh reads and writes files and runs commands in the workspace, so the workspace must be trusted."
+  "capabilities.untrusted": "In an untrusted workspace the chat view opens but dsh is not started, because dsh reads and writes files and runs commands in the workspace.",
+  "config.runtime.profile.pattern": "Only letters, digits, dots, underscores and hyphens"
 }

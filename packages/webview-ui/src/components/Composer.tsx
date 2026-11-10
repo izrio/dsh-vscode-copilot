@@ -67,15 +67,18 @@ export function Composer() {
     ref.current?.focus();
   }, [focusRequests, session.id]);
 
-  // "编辑后重发"：把历史消息放回输入框，光标放到末尾
+  // "编辑后重发"把历史消息放进输入框；没发出去的消息放回来（不覆盖之后输入的内容）。光标放到末尾
   useEffect(() => {
     if (prefill.n === 0) return;
-    setText(prefill.text);
-    setCaret(prefill.text.length);
+    // 只在 prefill 变化时执行；这里读到的 text 就是此刻输入框里的内容
+    const next = prefill.mode === 'restore' && text.trim() ? `${prefill.text}\n\n${text}` : prefill.text;
+    setText(next);
+    setCaret(next.length);
     requestAnimationFrame(() => {
       ref.current?.focus();
-      ref.current?.setSelectionRange(prefill.text.length, prefill.text.length);
+      ref.current?.setSelectionRange(next.length, next.length);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 
   const trigger = dismissedFor === text ? undefined : triggerAt(text, caret);

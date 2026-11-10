@@ -5,6 +5,7 @@ import type { Item, ModelOption, ModelState, SessionHeader } from '@dsh-copilot/
 import type { ModelCatalog, ModelSelection } from '../dsh/DshClient.ts';
 import { RemoteError } from '../dsh/remote/errors.ts';
 import { t } from '../i18n.ts';
+import { describeError, userMessage } from '../util/errors.ts';
 import type { SelectionContext } from './context.ts';
 
 export const newSessionTitle = (): string => t('session.new');
@@ -116,9 +117,7 @@ export function withoutDiagnostics(selection: SelectionContext): SelectionContex
   return rest;
 }
 
-export function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+export const describe = describeError;
 
 /** 把 dsh 的错误码翻译成用户能看懂、知道下一步怎么做的提示。 */
 export function friendlyError(error: unknown): string {
@@ -134,8 +133,8 @@ export function friendlyError(error: unknown): string {
       case 'session/agent-busy':
         return t('send.busy');
       default:
-        return t('send.failed', error.message);
+        return t('send.failed', error.detail);
     }
   }
-  return t('send.failed', describe(error));
+  return t('send.failed', userMessage(error));
 }
