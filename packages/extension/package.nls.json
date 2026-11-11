@@ -38,6 +38,7 @@
   "config.backends.args": "Arguments, e.g. `[\"acp\"]`.",
   "config.backends.env": "Extra environment variables for the agent process.",
   "config.backends.installHint": "Shown when the command cannot be found.",
+  "config.backends.singleSession": "Set to `true` if the agent only streams live updates for one session per process (CodeBuddy 2.x). The agent is then restarted before sending in another session. Overrides the built-in value when the entry replaces a built-in backend.",
   "config.backendTrace": "Troubleshooting: write every ACP message exchanged with the backend (raw JSON, long ones truncated) to the \"Harness Deck: Backend\" output channel. Use it to check what the agent actually sent, for example whether a reply had text between tool calls. Turn it off afterwards: messages include file contents.",
   "config.ui.palette": "Text colors in the chat panel. `soft` (default) tones the theme foreground down a little so long reading is easier on the eyes; `theme` uses the theme colors as they are. High-contrast themes always use the theme colors.",
   "config.ui.palette.soft": "Soft: easier on the eyes",

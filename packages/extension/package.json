@@ -181,6 +181,10 @@
               "installHint": {
                 "type": "string",
                 "markdownDescription": "%config.backends.installHint%"
+              },
+              "singleSession": {
+                "type": "boolean",
+                "markdownDescription": "%config.backends.singleSession%"
               }
             }
           }

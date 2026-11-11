@@ -108,6 +108,10 @@ pnpm install
 ```
 
 ```bash
+pnpm lint
+```
+
+```bash
 pnpm typecheck
 ```
 
@@ -161,7 +165,7 @@ pnpm --filter harness-deck acp-e2e -- --claude "$(command -v claude-agent-acp)"
 pnpm --filter harness-deck vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
 ```
 
-CI 每次提交跑类型检查、单元测试和 dsh 的测试；`acp-compat` 每天对 oh-my-pi、CodeBuddy、Claude 适配器的固定版本和最新版本各跑一次界面端到端测试。
+CI 每次提交跑 lint、类型检查、单元测试和打包（单元测试另在 macOS、Windows 上各跑一遍）；`acp-compat` 每天对 oh-my-pi、CodeBuddy、Claude 适配器的固定版本和最新版本各跑一次界面端到端测试。
 
 ### 目录结构
 
@@ -171,9 +175,9 @@ packages/
 ├── extension/     VS Code 插件（Extension Host）
 │   ├── src/backend/      底层：配置（内置 + 设置）、dsh 与 ACP 两种底层的启动和生命周期
 │   ├── src/acp/          ACP 连接（stdio JSON-RPC）、会话投影、ACP 控制器
-│   ├── src/dsh/          dsh 协议客户端、会话事件日志、连接与会话服务
+│   ├── src/dsh/          dsh 协议客户端、会话事件日志、连接与会话服务；view/ 是 dsh 事件 → 界面条目的投影和控制器
 │   ├── src/runtime/      定位、版本检查、启动和监控子进程
-│   ├── src/vm/           dsh 事件 → 界面条目的投影、对话控制器、Diff 还原（不依赖 vscode）
+│   ├── src/vm/           两种底层共用：标签、编辑器上下文、推送、Diff 还原、工具行摘要（不依赖 vscode）
 │   ├── src/webview/      侧边栏视图宿主
 │   ├── src/workbench/    打开 Diff、未保存文件、确认框的 vscode 实现
 │   ├── media/            标志、插件图标、侧边栏图标
@@ -209,4 +213,4 @@ packages/
 - **Install**: download `harness-deck-<version>.vsix` from [Releases](https://github.com/izrio/dsh-vscode-copilot/releases/latest) and run `code --install-extension harness-deck-<version>.vsix`, then install at least one backend (see the table above). The panel asks which backend to use on first open.
 - **Usage, backend differences and settings**: [packages/extension/README.md](./packages/extension/README.md).
 - **Architecture**: the webview only knows a backend-neutral view model; each backend has a controller that projects its sessions into it. dsh is reached over HTTP and WebSocket, ACP agents over stdio JSON-RPC. The extension itself makes no model requests. See [docs/DESIGN.md](./docs/DESIGN.md), section 15.
-- **Development**: `pnpm install`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm package`. End-to-end tests run real agents against a local mock model (no keys needed): `pnpm --filter harness-deck e2e -- --dsh …` and `pnpm --filter harness-deck acp-e2e -- --omp … | --codebuddy … | --claude …`.
+- **Development**: `pnpm install`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm package`. End-to-end tests run real agents against a local mock model (no keys needed): `pnpm --filter harness-deck e2e -- --dsh …` and `pnpm --filter harness-deck acp-e2e -- --omp … | --codebuddy … | --claude …`.

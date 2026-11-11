@@ -1,5 +1,42 @@
 # 更新记录 / Changelog
 
+## 未发布 / Unreleased
+
+**全面审查后的修复**：底层的启动和切换、ACP 底层的安全保护、发送失败不再丢输入；输入框上方的状态栏合并成一行；对比度、点击区域和读屏支持。
+
+**Fixes from a full review**: backend start-up and switching, safety parity on ACP backends, no more lost input when sending fails; the bars above the input are merged into one; contrast, hit targets and screen-reader support.
+
+- 修复：面板隐藏时切换底层（或在设置里删掉当前底层），再打开面板一直停在「正在查找…」。现在面板每次显示都会确保当前底层已经启动。
+  Fixed: switching backends while the panel was hidden (or removing the current backend in settings) left the panel stuck on "Looking for…". The active backend is now started whenever the panel is shown.
+- 修复：连续快速切换底层时，先启动的那个底层进程没有被结束。切换现在按顺序执行。
+  Fixed: switching backends twice in quick succession left the first backend's process running. Switches are now serialized.
+- 修复：ACP 代理关闭输入或提前退出时出现未捕获异常、请求一直等待；设置里的命令不是 ACP 代理时一直停在「启动中」（现在 30 秒后提示）。
+  Fixed: an uncaught error and a request that never finished when an ACP agent closed its input or exited early; a command that is not an ACP agent no longer stays on "Starting" forever (it fails after 30 s with a hint).
+- 修复：dsh 还在启动时关闭窗口、重启或切换底层要等启动跑完（最长一分多钟），窗口关闭后 dsh 可能残留。现在立即结束还没就绪的进程，扩展宿主退出时也会带走自己启动的子进程。
+  Fixed: closing the window, restarting or switching while dsh was still starting waited for the launch to finish (over a minute in the worst case) and could leave dsh behind. The launch is now aborted, and child processes are terminated when the extension host exits.
+- 修复（Windows，未在真机验证）：命令是 `.cmd` / `.bat`（npm 全局安装的都是）且路径带空格时启动失败；参数里的 `&`、`|` 不再被当成命令分隔符。dsh 的 profile 名只接受字母、数字和 `. _ -`。
+  Fixed (Windows, not verified on a real machine): launching a `.cmd` / `.bat` command (every npm global install) from a path with spaces; `&` and `|` in arguments are no longer treated as command separators. The dsh profile name only accepts letters, digits and `. _ -`.
+- ACP 底层补上和 DeepSeek 一样的保护：审批要修改的文件有未保存内容时先让你保存；切换到不再逐项询问的模式（Bypass Permissions、YOLO、Full Access 等）前先确认；代理的输出和排查日志写进输出面板前先脱敏。
+  ACP backends get the same protections as DeepSeek: an approval is blocked while its target file has unsaved changes; switching to a mode that stops asking (Bypass Permissions, YOLO, Full Access…) asks for confirmation; agent output and trace logs are redacted before they reach the output panel.
+- ACP 审批卡片：代理提供「始终允许」时多一个按钮。等着审批的会话在会话列表里有提醒点（它的标签可能已经关了）。
+  ACP approval cards show the agent's "always allow" option when it offers one. Sessions waiting for approval are flagged in the session list, even after their tab was closed.
+- 消息没能发出去（没连上、建不了会话、单会话代理正忙）时，文字会回到输入框。ACP 代理中途退出时，排队的消息保留在队列里；固定的上下文在消息真正发出后才清空。新对话里连发两条消息不再建两个会话。
+  When a message cannot be handed over (not connected, session could not be created, a single-session agent is busy) its text returns to the input. Queued messages survive an ACP agent exiting; pinned context is cleared only once the message is accepted. Two quick sends in a new chat no longer create two sessions.
+- 输入框上方的待办、未保存提示和改动栏合并成一行状态栏，各占一段，点「待办」或「改动」在上方展开列表。窄侧边栏里底部不再占掉三四成高度。
+  The to-do, unsaved-files and changes bars above the input are merged into one status row; click To-dos or the file count to expand the list above it. The bottom of a narrow side bar no longer takes a third of the height.
+- 运行中输入了文字时，停止按钮仍然在（和发送并排）；输入框里按 Esc 停止生成。
+  The Stop button stays while you type during a run (next to Send); Esc in the input stops generation.
+- 标签不再被挤成一个字：放不下时横向滚动。面板拖得很宽时，正文保持在适合阅读的行宽内并居中。
+  Tabs scroll instead of shrinking to one character. On a wide panel the conversation keeps a readable line width, centered.
+- 修改行里文件名在前、目录在后（太长时省略的是目录）；失败的命令写明「运行失败」；回复里的文件路径（`src/a.ts:12`）和浏览行里读过的文件可以点开；回复右上角有复制按钮。
+  Edit rows show the file name first and the directory after it (the directory is what gets truncated); failed commands say "Failed"; file paths in replies (`src/a.ts:12`) and files in a browse row open on click; replies have a copy button.
+- 错误提示不再自动消失，有关闭按钮；启动失败的横幅先显示一行，点开看完整信息；首页放不下时可以滚动，不再被裁掉上半截。
+  Error toasts stay until dismissed and have a close button; the start-up failure banner shows one line with the rest behind "Show full message"; the home screen scrolls when it does not fit instead of clipping its top.
+- 无障碍：链接、警告和错误文字、次要文字的对比度到 4.5:1 以上；按钮的点击区域至少 24px；弹出菜单支持 ↑↓ / Home / End，关闭后焦点回到打开它的按钮；流式输出不再逐段播报，读屏只在开始回复、回复完成、需要你处理时播报一次；页面语言跟随界面语言。
+  Accessibility: link, warning, error and secondary text reach 4.5:1; controls are at least 24px; popup menus support ↑↓ / Home / End and return focus to their button; streaming text is no longer announced piece by piece — screen readers hear one message when a reply starts, finishes, or needs you; the page language follows the UI language.
+- 面板隐藏时不再按流式输出的节奏计算和推送；长回复流式输出时界面更跟手。
+  The extension no longer recomputes and posts at streaming rate while the panel is hidden; long streaming replies stay responsive.
+
 ## 0.3.2
 
 **ACP 底层（Claude、oh-my-pi、CodeBuddy）也有多开标签和会话改动栏**；新对话沿用上次选的模型；dsh 底层改叫 DeepSeek；护眼配色、滚动到底部、skill 补全和一轮界面打磨。

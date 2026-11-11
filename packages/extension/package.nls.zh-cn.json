@@ -38,6 +38,7 @@
   "config.backends.args": "参数，例如 `[\"acp\"]`。",
   "config.backends.env": "给代理进程额外加的环境变量。",
   "config.backends.installHint": "找不到命令时显示的安装提示。",
+  "config.backends.singleSession": "代理的一个进程只给一个会话推送实时更新时设为 `true`（CodeBuddy 2.x 是这样）：在别的会话里发消息前会先重启代理。覆盖内置底层时以这里写的为准。",
   "config.backendTrace": "排查用：把和底层之间收发的每条 ACP 消息（原始 JSON，过长的截断）写到输出面板「Harness Deck: Backend」。可以用来确认代理实际发了什么，例如工具调用之间有没有文字。查完记得关掉：消息里会有文件内容。",
   "config.ui.palette": "对话面板的文字配色。`soft`（默认）把主题前景色调柔和一些，长时间阅读不刺眼；`theme` 直接用主题的颜色。高对比度主题始终用主题颜色。",
   "config.ui.palette.soft": "柔和：护眼",
