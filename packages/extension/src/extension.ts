@@ -106,6 +106,8 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const updateStatusBar = (): void => renderStatusBar(status, active, modelLabel);
 
+  // 下面的回调在视图创建之前就要引用它，所以先声明、后赋值
+  // eslint-disable-next-line prefer-const
   let provider: ChatViewProvider | undefined;
   const workbench = new VscodeWorkbench(log);
 

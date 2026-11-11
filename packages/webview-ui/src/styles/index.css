@@ -1,0 +1,16 @@
+/*
+ * 样式入口。各部分按下面的顺序拼成一个 index.css（后面的规则可以覆盖前面的，顺序不要随意调整）。
+ * 只使用 VS Code 主题变量和 01-base.css 里定义的变量，自动适配亮色、暗色和高对比度主题。
+ */
+@import './01-base.css';
+@import './02-header-and-menus.css';
+@import './03-banners-and-empty-state.css';
+@import './04-thread.css';
+@import './05-markdown.css';
+@import './06-composer-and-dock.css';
+@import './07-toasts-animations-buttons.css';
+@import './08-home-and-backend-chooser.css';
+@import './09-loading-and-context-ring.css';
+@import './10-images.css';
+@import './11-appearance-panel.css';
+@import './12-subagent.css';

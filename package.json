@@ -8,17 +8,23 @@
   "scripts": {
     "build": "pnpm --filter @harness-deck/webview-ui run build && pnpm --filter harness-deck run build",
     "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
     "test": "vitest run",
     "smoke": "pnpm --filter harness-deck run smoke",
     "package": "pnpm run build && pnpm --filter harness-deck run package",
     "dev": "pnpm --parallel --filter @harness-deck/webview-ui --filter harness-deck run watch"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.10.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.5.0",
     "jsdom": "^26.1.0",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^3.2.0"
   },
   "pnpm": {

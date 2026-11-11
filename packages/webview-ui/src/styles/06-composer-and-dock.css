@@ -1,0 +1,804 @@
+/* ---------- 输入框 ---------- */
+
+/* ---------- 上下文标签、补全 ---------- */
+
+.composer-wrap {
+  position: relative;
+  width: 100%;
+  max-width: calc(var(--content-width) + 8px);
+  margin: 0 auto;
+}
+
+.context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  background: var(--hover);
+}
+
+.chip svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.chip__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+
+.chip__hint {
+  flex: none;
+  color: var(--muted);
+}
+
+.chip--excluded {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.chip--excluded .chip__label {
+  text-decoration: line-through;
+}
+
+.chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 图标只有 13px：点击区域撑到 24px，用负边距抵消，标签本身不变高 */
+  width: 24px;
+  height: 24px;
+  margin: -5px -6px -5px -4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chip__remove:hover svg {
+  color: var(--text);
+}
+
+.chip--small {
+  font-size: 0.8em;
+}
+
+.completion {
+  position: absolute;
+  z-index: 15;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% - 4px);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-editorSuggestWidget-background, var(--surface));
+  color: var(--vscode-editorSuggestWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+.completion__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.7;
+}
+
+.completion__item--selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--vscode-editorSuggestWidget-foreground, inherit);
+}
+
+.completion__tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.78em;
+  line-height: 1.6;
+}
+
+.completion__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.completion__item--selected .completion__icon {
+  color: inherit;
+}
+
+.completion__label {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.completion__hint {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.completion__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.completion__item--selected .completion__hint,
+.completion__item--selected .completion__detail {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.completion__empty {
+  padding: 2px 6px;
+  color: var(--muted);
+}
+
+.mention {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font-family: var(--mono);
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.mention:hover {
+  text-decoration: underline;
+}
+
+.user__actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  font-size: 0.85em;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.user:hover .user__actions,
+.user__actions:focus-within {
+  opacity: 1;
+}
+
+/* 回复右上角的操作：悬停或键盘聚焦时出现。浮在回复上面，不占高度（工具行之间不多出空白） */
+.assistant {
+  position: relative;
+}
+
+.assistant__actions {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.assistant:hover .assistant__actions,
+.assistant__actions:focus-within {
+  opacity: 1;
+}
+
+.user__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 4px;
+}
+
+.plan-badge {
+  gap: 4px;
+  color: var(--accent);
+}
+
+/* 输入框顶边的拖动条：上下拖动调整高度 */
+.composer__resize {
+  position: absolute;
+  top: -5px;
+  left: 12px;
+  right: 12px;
+  height: 9px;
+  z-index: 1;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.composer__resize::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  margin-left: -16px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.composer__resize:hover::after,
+.composer__resize:focus-visible::after,
+body.resizing .composer__resize::after {
+  opacity: 0.8;
+}
+
+.composer__resize:focus-visible {
+  outline: none;
+}
+
+body.resizing {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+/* ---------- 会话改动栏：输入框正上方，收起时一行 ---------- */
+
+.session-changes__list {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.session-changes__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 12px 3px 28px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-changes__file:hover {
+  background: var(--hover);
+}
+
+.session-changes__file:hover .changes__name {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+/* ---------- 输入框上方的状态栏：待办、改动、未保存合在一行，目标单独一行 ---------- */
+
+.dock {
+  /* 按状态栏自己的宽度决定显示多少文字（见本节末尾的 @container） */
+  container-type: inline-size;
+  margin: 0 10px 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: 0.88em;
+}
+
+.dock__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 2px;
+  padding: 2px;
+}
+
+.dock__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 8px 2px 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock__seg:hover,
+.dock__seg[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.dock__seg svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.dock__seg .todo-card__icon {
+  color: var(--accent);
+}
+
+/*
+ * 待办那一段占满剩下的宽度，显示正在做的那一项。基准宽度留得够放下几个字：
+ * 一行放不下三段时，改动和未保存换到第二行，待办独占第一行，而不是被挤得只剩标题。
+ */
+.dock__seg--todos {
+  flex: 1 1 16em;
+}
+
+.dock__seg-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock__seg-label {
+  white-space: nowrap;
+}
+
+.dock__spacer {
+  flex: 1;
+}
+
+.dock__group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+}
+
+.dock__group--dirty {
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 12%, transparent);
+}
+
+.dock__panel {
+  max-height: min(40vh, 260px);
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.dock .status-strip__goal {
+  border-bottom: 1px solid var(--border);
+}
+
+/* 很窄的面板：改动和未保存只留图标、数字和操作 */
+@container (max-width: 300px) {
+  .dock__group .dock__seg-label {
+    display: none;
+  }
+}
+
+/* 只给读屏的文字 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.status-strip__goal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.status-strip svg {
+  flex: none;
+}
+
+.status-strip__label {
+  flex: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.status-strip__text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.status-strip__meta {
+  flex: none;
+  margin-left: auto;
+}
+
+.status-strip__goal--blocked .status-strip__meta {
+  color: var(--error-text);
+}
+
+/* 待办：一张卡片，标题行 + 进度条，展开后是带状态标记的列表 */
+.todo-card__header .todo-card__icon {
+  color: var(--accent);
+}
+
+.todo-card__count {
+  flex: none;
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.9em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-card__count--done {
+  background: color-mix(in srgb, var(--vscode-charts-green, #3fb950) 18%, transparent);
+  color: var(--vscode-charts-green, #3fb950);
+}
+
+.todo-progress {
+  height: 2px;
+  margin: 0;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  overflow: hidden;
+}
+
+.todo-progress__bar {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.todo-list {
+  margin: 0;
+  padding: 6px 10px 8px;
+  list-style: none;
+}
+
+.todo {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  line-height: 1.55;
+}
+
+/* 相邻条目之间的竖线，把状态标记串成一条时间线 */
+.todo + .todo::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 8px;
+  height: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.todo__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.todo__mark svg {
+  width: 12px;
+  height: 12px;
+}
+
+.todo--completed .todo__mark {
+  background: var(--vscode-charts-green, #3fb950);
+  color: var(--vscode-editor-background, #fff);
+}
+
+.todo--completed .todo__mark svg {
+  stroke-width: 2.4;
+}
+
+.todo--in_progress .todo__mark {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent);
+}
+
+.todo__dot {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent);
+  border-radius: 50%;
+}
+
+.todo--in_progress .todo__dot {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  background: var(--accent);
+}
+
+.todo__text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo--completed .todo__text {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.todo--pending .todo__text {
+  color: color-mix(in srgb, var(--vscode-foreground) 80%, transparent);
+}
+
+.todo--in_progress .todo__text {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.todo__badge {
+  flex: none;
+  margin-top: 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.82em;
+  line-height: 1.7;
+}
+
+/* 排队消息的编辑框 */
+.queue-editor {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground, inherit);
+  font: inherit;
+  resize: vertical;
+}
+
+/* 计划审阅 */
+.interaction__plan {
+  max-height: 320px;
+  overflow: auto;
+  padding: 2px 10px;
+  border-left: 2px solid var(--border);
+}
+
+.interaction__feedback {
+  resize: vertical;
+}
+
+.interaction__skip {
+  margin-left: auto;
+  font-size: 0.9em;
+}
+
+.empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 未保存文件提示，贴在输入框上方 */
+.dirty-strip__icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--vscode-charts-yellow, #cca700);
+}
+
+.composer {
+  position: relative;
+  margin: 0 10px 10px;
+  /* 平时淡淡的强调色描边，聚焦时完整的强调色 */
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  border-radius: var(--radius-lg);
+  background: var(--vscode-input-background);
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.composer__input {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px 4px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+  line-height: 1.5;
+}
+
+.composer__input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--muted));
+  /* 占位文字只占一行，窄的时候截断，不换行 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 6px 6px;
+}
+
+/* 模型名可以被压缩（省略号），其余的按钮保持自己的宽度，窄面板里不会叠在一起 */
+.composer__toolbar > * {
+  flex: none;
+}
+
+/* 只有模型名那一个可以被压缩；权限选择在窄面板里已经只剩图标，不能再压 */
+.composer__toolbar > .model-picker:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer__toolbar > .composer__spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+
+.composer__spacer {
+  flex: 1;
+}
+
+.model-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  /* 在输入框的底色上：按输入框的前景和背景混，不用页面背景上的次要色（那样对比度不够） */
+  color: color-mix(in srgb, var(--vscode-input-foreground, var(--vscode-foreground)) 72%, var(--vscode-input-background, var(--bg)));
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.toolbar-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.toolbar-button--danger,
+.toolbar-button--danger:hover:not(:disabled) {
+  color: var(--warning-text);
+}
+
+.toolbar-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.toolbar-button__text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.context-usage {
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.send-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 停止和发送同时出现时，停止是次要的那个：描边样式 */
+.send-button--secondary {
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
+  background: transparent;
+  color: var(--text);
+}
+
+.send-button--secondary:hover:not(:disabled) {
+  background: var(--hover);
+}

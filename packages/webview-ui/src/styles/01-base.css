@@ -1,0 +1,107 @@
+/*
+ * 只使用 VS Code 主题变量，自动适配亮色、暗色和高对比度主题。
+ * 布局原则见 docs/DESIGN.md 3.1：对话是主角，其他元素有内容才出现。
+ * 字号和字体可以用设置 harnessDeck.ui.* 指定（--hd-* 变量由 App 设置）；不设置时字号比 VS Code 工作台大 1px。
+ */
+:root {
+  color-scheme: light dark;
+  --gap: 12px;
+  /* 正文的最大行宽 */
+  --content-width: 820px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.35)));
+  --surface: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+  /*
+   * 强调色：按钮、输入框边框、焦点、链接、图标、进度。运行时由 theme.ts 从主题色里挑第一个有颜色的覆盖
+   * （不少主题的 button.background、focusBorder 是灰色或透明）；这里是脚本运行前的默认值。
+   */
+  --accent: var(--vscode-textLink-foreground, #3794ff);
+  --accent-foreground: #ffffff;
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--vscode-foreground));
+  /*
+   * 文字链接（回复里的链接、可点的路径、「全部保存」这类文字按钮）用主题的链接色：它是为放在背景上读而选的。
+   * 强调色优先取按钮背景色，当文字用对比度不够（Dark Modern 下约 3.9:1）。
+   */
+  --link: var(--vscode-textLink-foreground, var(--accent));
+  /* 警告、错误的文字色。浅色主题下主题给的黄和红太浅（约 3:1），见下面 body.vscode-light 的覆盖。 */
+  --warning-text: var(--vscode-editorWarning-foreground, var(--muted));
+  --error-text: var(--vscode-errorForeground, #f14c4c);
+  --mono: var(--hd-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
+  /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
+  --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+  /*
+   * 文字层级。「跟随主题」配色（data-palette="theme"）直接用主题前景色；
+   * 默认的柔和配色把前景色往背景色混一些：深色主题下正文不再接近纯白，对比度仍在 8:1 左右。
+   */
+  --bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
+  --text: var(--vscode-foreground);
+  --text-strong: var(--vscode-foreground);
+}
+
+:root:not([data-palette='theme']) {
+  --text: color-mix(in srgb, var(--vscode-foreground) 82%, var(--bg));
+  --text-strong: color-mix(in srgb, var(--vscode-foreground) 93%, var(--bg));
+  --muted: color-mix(in srgb, var(--vscode-descriptionForeground) 90%, var(--bg));
+  --bubble: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+}
+
+/* 浅色主题本来就不刺眼：只稍微柔和一点，保证对比度；次要文字不再往背景混（主题给的灰已经贴着 4.5:1） */
+:root:not([data-palette='theme']) body.vscode-light {
+  --text: color-mix(in srgb, var(--vscode-foreground) 90%, var(--bg));
+  --text-strong: var(--vscode-foreground);
+  --muted: color-mix(in srgb, var(--vscode-descriptionForeground) 85%, var(--vscode-foreground));
+}
+
+/* 浅色主题：警告黄和错误红往前景色混一些，文字对比度到 4.5:1 以上 */
+body.vscode-light {
+  --warning-text: color-mix(in srgb, var(--vscode-editorWarning-foreground, #bf8803) 58%, var(--vscode-foreground));
+  --error-text: color-mix(in srgb, var(--vscode-errorForeground, #f85149) 58%, var(--vscode-foreground));
+}
+
+/* 高对比度主题保持原色 */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --text: var(--vscode-foreground);
+  --text-strong: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--text);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  font-family: var(--hd-font-family, var(--vscode-font-family));
+  font-size: var(--hd-font-size, calc(var(--vscode-font-size, 13px) + 1px));
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}

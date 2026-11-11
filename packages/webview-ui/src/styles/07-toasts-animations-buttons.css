@@ -1,0 +1,145 @@
+/* ---------- 通知 ---------- */
+
+.toasts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 10px 6px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+
+.toast > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 5px;
+}
+
+.toast--error > svg {
+  color: var(--error-text);
+}
+
+.toast__text {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: none;
+}
+
+.toast--error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+/* ---------- 动画 ---------- */
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/*
+ * 系统要求减少动画时（Windows 关了「动画效果」、远程桌面会话默认如此）只停掉装饰性的动画。
+ * 加载中的转圈、运行中的圆点和「思考中」的明暗变化表示 dsh 还在工作，是必要的反馈，照常播放
+ * （转圈放慢一些；明暗变化不涉及位移）。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 1.6s;
+  }
+
+  .cursor,
+  .assistant--streaming .markdown > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
+  .assistant--streaming .markdown > :is(ul, ol):last-child > li:last-child::after {
+    animation: none;
+  }
+}
+
+/* 权限菜单：向左展开（按钮在工具条中间，向右会超出视图）；名称完整显示，说明可以截断 */
+.permission-menu {
+  left: auto;
+  right: 0;
+}
+
+.permission-menu .menu-item__label {
+  flex: none;
+}
+
+.permission-menu .menu-item__hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 侧边栏较窄时权限只显示图标（锁 / 笔 / 开锁，悬停提示里有完整名称），把位置留给模型名 */
+@media (max-width: 400px) {
+  .permission-picker__text {
+    display: none;
+  }
+}
+
+/* ---------- 按钮里的图标 ---------- */
+.button svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.link-button svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 菜单项前的图标 */
+.menu-item__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.menu-item--active .menu-item__icon,
+.menu-item:hover .menu-item__icon {
+  color: inherit;
+}

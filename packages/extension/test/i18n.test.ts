@@ -3,7 +3,7 @@ import { resolveLocale, setLocale, t } from '../src/i18n.ts';
 import { pluginCommands, templatePrompt } from '../src/vm/context.ts';
 import { project } from '../src/dsh/view/projector.ts';
 
-const CJK = /[　-〿一-鿿＀-￯]/u;
+const CJK = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/u;
 
 describe('界面语言', () => {
   afterEach(() => setLocale('zh'));

@@ -69,6 +69,8 @@ function fakeClient() {
       default: { provider: 'deepseek-official', model: 'deepseek-flash' },
       groups: [{ id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' }] }],
     }),
+    // 假的 control 流：一直不产出，直到被中止
+    // eslint-disable-next-line require-yield
     async *control(signal?: AbortSignal) {
       await new Promise((resolve) => signal?.addEventListener('abort', resolve, { once: true }));
     },

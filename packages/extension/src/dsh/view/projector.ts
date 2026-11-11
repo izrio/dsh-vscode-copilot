@@ -8,7 +8,7 @@
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
 import { joinLabel, splitLabel, type ChangedFileView, type ImageView, type Item, type LineStats, type SessionChangesView } from '@harness-deck/shared';
-import { isAbsolute, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { ChangesSummary } from '../DshClient.ts';
 import type { PendingPrompt } from '../SessionService.ts';
 import { liveBlocksText, type WireEvent } from '../remote/follow.ts';

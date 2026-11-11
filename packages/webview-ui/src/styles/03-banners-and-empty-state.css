@@ -1,0 +1,128 @@
+/* ---------- 状态提示 ---------- */
+
+.banner {
+  margin: 4px 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.banner--warn {
+  border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
+}
+
+.banner--inline {
+  color: var(--muted);
+}
+
+.banner__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.banner__title svg {
+  flex: none;
+}
+
+.banner--warn .banner__title svg {
+  color: var(--warning-text);
+}
+
+.banner__detail {
+  margin: 4px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.banner__summary {
+  margin: 0;
+}
+
+.banner__full {
+  max-height: 160px;
+  margin: 0 0 4px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+.banner__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  color: var(--accent-foreground);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--accent-hover);
+}
+
+.button--secondary {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+
+.button--secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ---------- 空状态 ---------- */
+
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* safe：放不下时从顶部开始排，不会把上半截裁到滚动范围之外 */
+  justify-content: safe center;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.empty__title {
+  margin: 0 0 6px;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.empty__hint {
+  margin: 0 auto;
+  max-width: 280px;
+  color: var(--muted);
+}

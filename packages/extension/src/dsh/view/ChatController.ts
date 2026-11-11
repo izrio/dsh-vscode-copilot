@@ -11,7 +11,6 @@ import type {
   ConnectionState,
   DiffRef,
   HostSnapshot,
-  HostToWebview,
   ModelState,
   PermissionState,
   RuntimeStatus,
