@@ -5,7 +5,7 @@ import { AsyncQueue } from '../src/dsh/remote/asyncQueue.ts';
 import type { WaterfallHandler, WaterfallOutcome } from '../src/dsh/remote/events.ts';
 import type { FollowFrame } from '../src/dsh/remote/follow.ts';
 import { ChangesUnavailableError } from '../src/dsh/DshClient.ts';
-import { ChatController } from '../src/vm/ChatController.ts';
+import { ChatController } from '../src/dsh/view/ChatController.ts';
 import { noWorkbench, type DiffRequest, type Workbench } from '../src/vm/workbench.ts';
 
 /** 只实现 SessionService / SessionStream 用到的方法；follow 由测试控制。 */

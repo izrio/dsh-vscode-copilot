@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveLocale, setLocale, t } from '../src/i18n.ts';
 import { pluginCommands, templatePrompt } from '../src/vm/context.ts';
-import { project } from '../src/vm/projector.ts';
+import { project } from '../src/dsh/view/projector.ts';
 
 const CJK = /[　-〿一-鿿＀-￯]/u;
 

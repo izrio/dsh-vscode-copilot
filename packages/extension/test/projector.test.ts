@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { followFrameSchema, type FollowFrame } from '../src/dsh/remote/follow.ts';
 import { SessionJournal } from '../src/dsh/session/journal.ts';
-import { activityLabel, displayPath, project, projectEvents } from '../src/vm/projector.ts';
-import { plainTitle } from '../src/vm/ChatController.ts';
+import { project, projectEvents } from '../src/dsh/view/projector.ts';
+import { displayPath } from '../src/vm/paths.ts';
+import { activityLabel } from '../src/vm/toolRows.ts';
+import { plainTitle } from '../src/dsh/view/ChatController.ts';
 
 /** 用 M0 录制的真实帧回放出 journal，再投影成界面条目。 */
 function journalOf(name: string): SessionJournal {

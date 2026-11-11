@@ -9,17 +9,16 @@
  */
 import { joinLabel, splitLabel, type ChangedFileView, type ImageView, type Item, type LineStats, type SessionChangesView } from '@harness-deck/shared';
 import { isAbsolute, resolve } from 'node:path';
-import type { ChangesSummary } from '../dsh/DshClient.ts';
-import type { PendingPrompt } from '../dsh/SessionService.ts';
-import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
-import type { LiveAttempt } from '../dsh/session/journal.ts';
-import { splitContext } from './context.ts';
-import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
-import { t } from '../i18n.ts';
-import { canonicalTool } from './toolNames.ts';
-import { displayPath } from './paths.ts';
-
-export { displayPath } from './paths.ts';
+import type { ChangesSummary } from '../DshClient.ts';
+import type { PendingPrompt } from '../SessionService.ts';
+import { liveBlocksText, type WireEvent } from '../remote/follow.ts';
+import type { LiveAttempt } from '../session/journal.ts';
+import { splitContext } from '../../vm/context.ts';
+import { countLines, lineStats, sumStats, type ToolDiff } from '../../vm/diffs.ts';
+import { t } from '../../i18n.ts';
+import { canonicalTool } from '../../vm/toolNames.ts';
+import { displayPath } from '../../vm/paths.ts';
+import { activityLabel, FILE_KEYS, firstLine, parseArguments, stringArg, toolVariant } from '../../vm/toolRows.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
 export type ChangesLookup = (seq: number) => ChangesSummary | 'unavailable' | undefined;
@@ -90,20 +89,6 @@ export interface Projection {
 }
 
 const OUTPUT_LIMIT = 4_000;
-
-const COMMAND_TOOLS = new Set(['bash', 'pwsh', 'powershell', 'shell']);
-const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'apply_patch', 'notebook_edit']);
-const EXPLORE_TOOLS = new Set(['read', 'read_image', 'glob', 'grep', 'ls', 'list']);
-
-/** 按工具类型渲染；带前缀或别名的工具（`ops_grep`、`read_files`）按归一后的名字判断。 */
-export function toolVariant(tool: string): 'command' | 'edit' | 'explore' | 'subagent' | 'generic' {
-  const name = canonicalTool(tool);
-  if (name === 'subagent') return 'subagent';
-  if (COMMAND_TOOLS.has(name)) return 'command';
-  if (EDIT_TOOLS.has(name)) return 'edit';
-  if (EXPLORE_TOOLS.has(name)) return 'explore';
-  return 'generic';
-}
 
 interface ContentBlock {
   readonly type?: string;
@@ -704,42 +689,6 @@ function isToolDiff(value: unknown): value is ToolDiff {
   return typeof d.newText === 'string' && (d.oldText === null || d.oldText === undefined || typeof d.oldText === 'string');
 }
 
-/** 工具参数是 JSON 字符串；不是合法 JSON 时当作没有参数。 */
-export function parseArguments(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw !== 'string') return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-/** 表示目标文件的参数名（各家工具叫法不同）。 */
-const FILE_KEYS = ['file_path', 'notebook_path', 'file', 'filename', 'target_file', 'filepath'] as const;
-
-/** 字符串数组参数；元素也可以是带 path 的对象。 */
-function stringList(args: Readonly<Record<string, unknown>>, ...keys: string[]): string[] {
-  for (const key of keys) {
-    const value = args[key];
-    if (!Array.isArray(value)) continue;
-    const list = value
-      .map((item) => (typeof item === 'string' ? item : item && typeof item === 'object' ? (item as { path?: unknown; file_path?: unknown }).path ?? (item as { file_path?: unknown }).file_path : undefined))
-      .filter((item): item is string => typeof item === 'string' && item.trim() !== '');
-    if (list.length) return list;
-  }
-  return [];
-}
-
-function stringArg(args: Readonly<Record<string, unknown>>, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = args[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-
 /** 消息里的图片：dsh 收下后存成附件 `{ type: 'image', attachment: { attachmentId, mediaType, width, height, name } }`。 */
 function imagesOf(content: unknown): ImageView[] {
   if (!Array.isArray(content)) return [];
@@ -772,43 +721,6 @@ function textOf(content: unknown): string {
 function truncate(text: string): string {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n${t('output.truncated')}` : text;
 }
-
-/** 工具调用的一行摘要：取最能说明这次调用的参数。 */
-export function activityLabel(tool: string, rawArguments: unknown, workspacePath?: string): string {
-  const args = parseArguments(rawArguments);
-  const pick = (...keys: string[]): string | undefined => stringArg(args, ...keys);
-  const kind = canonicalTool(tool);
-  // 优先级：命令 > 目标文件 > 搜索词 / URL > 目录 > 描述
-  if (kind === 'exit_plan_mode') {
-    const plan = typeof args.plan === 'string' ? args.plan : '';
-    const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
-    return joinLabel(t('plan.label'), heading ?? t('plan.untitled'));
-  }
-  if (kind === 'ask_user_question') {
-    const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
-    return typeof first === 'string' ? joinLabel(t('question.label'), firstLine(first)) : t('question.label');
-  }
-  const command = pick('command', 'cmd', 'script');
-  if (command) return joinLabel(tool, firstLine(command));
-  const file = pick(...FILE_KEYS);
-  if (file) return joinLabel(tool, displayPath(file, workspacePath));
-  // 一次读多个文件的工具（read_files）：第一个文件 + 其余数量
-  const files = stringList(args, 'paths', 'files', 'file_paths');
-  if (files.length) return joinLabel(tool, `${displayPath(files[0]!, workspacePath)}${files.length > 1 ? ` +${files.length - 1}` : ''}`);
-  const target = pick('pattern', 'query', 'url');
-  if (target) return joinLabel(tool, firstLine(target));
-  const path = pick('path');
-  if (path) return joinLabel(tool, displayPath(path, workspacePath));
-  const other = pick('description', 'prompt', 'name');
-  if (other) return joinLabel(tool, firstLine(other));
-  return tool;
-}
-
-function firstLine(text: string): string {
-  const line = text.split('\n', 1)[0] ?? '';
-  return line.length < text.length ? `${line} …` : line;
-}
-
 
 function turnEndNotice(seq: number, reason: unknown): Item | undefined {
   const r = reason as { kind?: string; error?: { message?: string; code?: string } } | undefined;

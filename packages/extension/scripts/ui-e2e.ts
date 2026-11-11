@@ -17,7 +17,7 @@ import { parseWebviewMessage, type HostToWebview } from '@harness-deck/shared';
 import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { setLocale } from '../src/i18n.ts';
-import { ChatController } from '../src/vm/ChatController.ts';
+import { ChatController } from '../src/dsh/view/ChatController.ts';
 import { reverseToolDiffs } from '../src/vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';

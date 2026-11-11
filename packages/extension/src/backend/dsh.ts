@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@harness-deck/shared';
 import { DshConnection } from '../dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from '../runtime/RuntimeManager.ts';
-import { ChatController } from '../vm/ChatController.ts';
+import { ChatController } from '../dsh/view/ChatController.ts';
 import { webUIUrl } from '../util/webUrl.ts';
 import { t } from '../i18n.ts';
 import { settings } from '../settings.ts';

@@ -12,7 +12,7 @@
 import { joinLabel, splitLabel, type Item, type LineStats } from '@harness-deck/shared';
 import { splitContext } from '../vm/context.ts';
 import { countLines, lineStats, sumStats } from '../vm/diffs.ts';
-import { activityLabel, toolVariant } from '../vm/projector.ts';
+import { activityLabel, toolVariant } from '../vm/toolRows.ts';
 import { displayPath } from '../vm/paths.ts';
 import { canonicalTool } from '../vm/toolNames.ts';
 import { t } from '../i18n.ts';

@@ -5,7 +5,7 @@
  * 推送按约 30ms 合并，流式输出时不会产生消息风暴。不依赖 vscode API，便于测试。
  */
 import { isAbsolute, resolve } from 'node:path';
-import { renderDelay, type ChatBackendController, type ControllerHostOptions } from '../backend/types.ts';
+import { renderDelay, type ChatBackendController, type ControllerHostOptions } from '../../backend/types.ts';
 import type {
   CommandView,
   ConnectionState,
@@ -20,12 +20,12 @@ import type {
   TabsState,
   WebviewToHost,
 } from '@harness-deck/shared';
-import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
-import type { ConnectionStatus } from '../dsh/DshConnection.ts';
-import { InteractionService } from '../dsh/InteractionService.ts';
-import { RemoteError } from '../dsh/remote/errors.ts';
-import { SessionService, type PendingImage } from '../dsh/SessionService.ts';
-import { SessionStream } from '../dsh/session/SessionStream.ts';
+import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../DshClient.ts';
+import type { ConnectionStatus } from '../DshConnection.ts';
+import { InteractionService } from '../InteractionService.ts';
+import { RemoteError } from '../remote/errors.ts';
+import { SessionService, type PendingImage } from '../SessionService.ts';
+import { SessionStream } from '../session/SessionStream.ts';
 import {
   CONTEXT_OPEN,
   isTemplate,
@@ -36,14 +36,14 @@ import {
   withContext,
   type ContextAttachment,
   type TemplateName,
-} from './context.ts';
+} from '../../vm/context.ts';
 import { project, projectEvents, type EventsProjection, type FileStep, type Projection, type ToolCallInfo } from './projector.ts';
-import { EditorContext, type GatherOptions } from './EditorContext.ts';
-import { TabsModel } from './TabsModel.ts';
-import { lineStats, reverseHunks, reverseToolDiffs } from './diffs.ts';
-import { noWorkbench, type Workbench } from './workbench.ts';
+import { EditorContext, type GatherOptions } from '../../vm/EditorContext.ts';
+import { TabsModel } from '../../vm/TabsModel.ts';
+import { lineStats, reverseHunks, reverseToolDiffs } from '../../vm/diffs.ts';
+import { noWorkbench, type Workbench } from '../../vm/workbench.ts';
 import { approvalView, interactionView, type ViewContext } from './interactionViews.ts';
-import { ViewPublisher, type ControllerView } from './ViewPublisher.ts';
+import { ViewPublisher, type ControllerView } from '../../vm/ViewPublisher.ts';
 import {
   buildModelState,
   contextUsageOf,
@@ -57,7 +57,7 @@ import {
 } from './viewHelpers.ts';
 
 export { friendlyError, plainTitle } from './viewHelpers.ts';
-import { getLocale, t } from '../i18n.ts';
+import { getLocale, t } from '../../i18n.ts';
 
 export interface ChatControllerOptions extends ControllerHostOptions {
   readonly workspacePath: string;
