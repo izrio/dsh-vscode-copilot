@@ -48,10 +48,11 @@
   --bubble: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
 }
 
-/* 浅色主题本来就不刺眼：只稍微柔和一点，保证对比度 */
+/* 浅色主题本来就不刺眼：只稍微柔和一点，保证对比度；次要文字不再往背景混（主题给的灰已经贴着 4.5:1） */
 :root:not([data-palette='theme']) body.vscode-light {
   --text: color-mix(in srgb, var(--vscode-foreground) 90%, var(--bg));
   --text-strong: var(--vscode-foreground);
+  --muted: color-mix(in srgb, var(--vscode-descriptionForeground) 85%, var(--vscode-foreground));
 }
 
 /* 浅色主题：警告黄和错误红往前景色混一些，文字对比度到 4.5:1 以上 */
@@ -806,6 +807,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-height: 24px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1013,11 +1015,12 @@ button {
 }
 
 .stats__add {
-  color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #3fb950));
+  color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #3fb950)) 88%, var(--vscode-foreground));
 }
 
+/* 主题的删除色在深色背景上只有 3.8:1 左右：往前景色混一点，小字号也读得清 */
 .stats__del {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f85149));
+  color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f85149)) 78%, var(--vscode-foreground));
 }
 
 .explore__list {
@@ -1147,7 +1150,7 @@ button {
   padding: 0 4px;
   border-radius: 3px;
   background: var(--bubble);
-  color: var(--muted);
+  color: var(--text);
   font-size: 0.85em;
 }
 
@@ -1252,8 +1255,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
@@ -1599,13 +1602,13 @@ button.inline-code--link:hover {
   justify-content: space-between;
   padding: 0 2px 0 10px;
   min-height: 24px;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--vscode-foreground) 70%, transparent);
   font-size: 0.85em;
 }
 
 .code-block__bar .icon-button {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   opacity: 0;
 }
 
@@ -1670,6 +1673,7 @@ button.inline-code--link:hover {
   gap: 4px;
   max-width: 100%;
   min-width: 0;
+  min-height: 24px;
   padding: 1px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1853,11 +1857,20 @@ button.chip:hover {
   opacity: 1;
 }
 
-/* 回复下面的操作：和用户消息的一样，悬停或键盘聚焦时出现 */
+/* 回复右上角的操作：悬停或键盘聚焦时出现。浮在回复上面，不占高度（工具行之间不多出空白） */
+.assistant {
+  position: relative;
+}
+
 .assistant__actions {
+  position: absolute;
+  top: -4px;
+  right: 0;
   display: flex;
   gap: 2px;
-  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
   opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -1954,6 +1967,8 @@ body.resizing {
 /* ---------- 输入框上方的状态栏：待办、改动、未保存合在一行，目标单独一行 ---------- */
 
 .dock {
+  /* 按状态栏自己的宽度决定显示多少文字（见本节末尾的 @container） */
+  container-type: inline-size;
   margin: 0 10px 6px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -1999,9 +2014,12 @@ body.resizing {
   color: var(--accent);
 }
 
-/* 待办那一段占满剩下的宽度，显示正在做的那一项 */
+/*
+ * 待办那一段占满剩下的宽度，显示正在做的那一项。基准宽度留得够放下几个字：
+ * 一行放不下三段时，改动和未保存换到第二行，待办独占第一行，而不是被挤得只剩标题。
+ */
 .dock__seg--todos {
-  flex: 1 1 9em;
+  flex: 1 1 16em;
 }
 
 .dock__seg-text {
@@ -2045,6 +2063,13 @@ body.resizing {
 
 .dock .status-strip__goal {
   border-bottom: 1px solid var(--border);
+}
+
+/* 很窄的面板：改动和未保存只留图标、数字和操作 */
+@container (max-width: 300px) {
+  .dock__group .dock__seg-label {
+    display: none;
+  }
 }
 
 /* 只给读屏的文字 */
@@ -2331,7 +2356,8 @@ body.resizing {
   flex: none;
 }
 
-.composer__toolbar > .model-picker {
+/* 只有模型名那一个可以被压缩；权限选择在窄面板里已经只剩图标，不能再压 */
+.composer__toolbar > .model-picker:first-child {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -2341,11 +2367,6 @@ body.resizing {
   min-width: 0;
 }
 
-.composer__input::placeholder {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .composer__spacer {
   flex: 1;
@@ -2361,11 +2382,13 @@ body.resizing {
   align-items: center;
   gap: 2px;
   max-width: 100%;
+  min-height: 24px;
   padding: 2px 6px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--muted);
+  /* 在输入框的底色上：按输入框的前景和背景混，不用页面背景上的次要色（那样对比度不够） */
+  color: color-mix(in srgb, var(--vscode-input-foreground, var(--vscode-foreground)) 72%, var(--vscode-input-background, var(--bg)));
   font-size: 0.9em;
   cursor: pointer;
 }

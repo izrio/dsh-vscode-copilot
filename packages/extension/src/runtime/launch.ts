@@ -99,9 +99,9 @@ export function spawnSpec(command: string, args: readonly string[], platform: No
   return { file: env.ComSpec ?? env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], windowsVerbatimArguments: true };
 }
 
-/** dsh 的 profile 名只能是字母、数字和 `. _ -`；其他值（包括想夹带参数的）退回默认的 web。 */
+/** dsh 的 profile 名以字母或数字开头，只含字母、数字和 `. _ -`；其他值（包括想夹带参数的）退回默认的 web。 */
 export function safeProfile(profile: string): string {
-  return /^[\w.-]+$/u.test(profile) ? profile : 'web';
+  return /^[A-Za-z0-9][\w.-]*$/u.test(profile) ? profile : 'web';
 }
 
 /**

@@ -360,7 +360,7 @@ try {
   if (agent !== 'omp') {
     await send('TODO 列个计划');
     await page.locator('.assistant', { hasText: '列好计划了' }).waitFor({ timeout: 30_000 });
-    const todo = page.locator('.todo-card');
+    const todo = page.locator('.todo-card__header');
     await todo.waitFor({ timeout: 10_000 }).then(
       async () => check('待办显示在输入框上方的状态条', (await todo.innerText()).includes('改代码') && (await todo.innerText()).includes('1/2'), await todo.innerText()),
       () => check('待办显示在输入框上方的状态条', false),

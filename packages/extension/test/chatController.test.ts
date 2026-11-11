@@ -152,6 +152,20 @@ describe('ChatController', () => {
     expect(echo).toMatchObject({ kind: 'user', text: '你好', pending: 'sending' });
   });
 
+  it('新对话里连发两条消息：共用同一个会话，不建两个', async () => {
+    const { controller, fake, saved } = setup();
+    controller.setClient(fake.client);
+    await flush();
+    // 第二条在第一条还在创建会话时发出（连按两次发送、发送后马上右键「解释」）
+    await Promise.all([
+      controller.handle({ type: 'sendMessage', payload: { text: '第一条' } }),
+      controller.handle({ type: 'sendMessage', payload: { text: '第二条' } }),
+    ]);
+    await flush();
+    expect(saved()).toBe('s1');
+    expect(fake.prompts.map((p) => p.sessionId)).toEqual(['s1', 's1']);
+  });
+
   it('持久消息到达后本地回显撤掉，只剩一条用户消息', async () => {
     const { controller, fake } = setup();
     controller.setClient(fake.client);

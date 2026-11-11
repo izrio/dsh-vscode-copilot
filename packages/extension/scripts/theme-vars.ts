@@ -57,7 +57,9 @@ export const DARK_THEME = `${common}
 --vscode-inputValidation-warningBorder: #b89500;
 --vscode-inputValidation-errorBorder: #be1100;
 --vscode-progressBar-background: #0078d4;
---vscode-editorCursor-foreground: #aeafad;`;
+--vscode-editorCursor-foreground: #aeafad;
+--vscode-gitDecoration-addedResourceForeground: #81b88b;
+--vscode-gitDecoration-deletedResourceForeground: #c74e39;`;
 
 export const LIGHT_THEME = `${common}
 --vscode-textPreformat-foreground: #a31515;
@@ -96,4 +98,6 @@ export const LIGHT_THEME = `${common}
 --vscode-inputValidation-warningBorder: #bf8803;
 --vscode-inputValidation-errorBorder: #be1100;
 --vscode-progressBar-background: #005fb8;
---vscode-editorCursor-foreground: #000000;`;
+--vscode-editorCursor-foreground: #000000;
+--vscode-gitDecoration-addedResourceForeground: #587c0c;
+--vscode-gitDecoration-deletedResourceForeground: #ad0707;`;

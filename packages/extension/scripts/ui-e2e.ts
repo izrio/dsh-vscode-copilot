@@ -393,7 +393,8 @@ try {
   const changesBar = page.getByTestId('session-changes');
   check('输入框上方显示本会话改动栏', (await changesBar.innerText()).includes('2 个文件'), await changesBar.innerText().catch(() => ''));
   await changesBar.locator('.session-changes__toggle').click();
-  await changesBar.locator('.session-changes__file', { hasText: 'README.md' }).click();
+  // 文件列表展开在状态栏上方（和待办共用一个位置），不在「改动」那一段里面
+  await page.getByTestId('dock').locator('.session-changes__file', { hasText: 'README.md' }).click();
   await page.waitForTimeout(300);
   const sessionDiff = diffRequests.at(-1);
   check(
@@ -728,8 +729,8 @@ try {
   const strip = page.getByTestId('status-strip');
   check('待办显示在输入框上方（1/3，正在做的事）', (await strip.innerText()).includes('待办') && (await strip.innerText()).includes('1/3') && (await strip.innerText()).includes('修改启动逻辑'));
   check('待办不在对话流里重复出现', (await page.locator('.activity', { hasText: 'todo_write' }).count()) === 0);
-  await strip.locator('.todo-card__header').click();
-  check('点开待办看到全部条目', (await strip.locator('.todo').count()) === 3);
+  await strip.click();
+  check('点开待办看到全部条目', (await page.getByTestId('dock').locator('.todo').count()) === 3);
   await shot('23-todos');
 
   // 2k. 计划审阅

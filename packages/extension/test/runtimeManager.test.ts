@@ -19,6 +19,7 @@ if (mode === 'exit-early') {
   process.exit(3);
 }
 console.log('loading plugins…');
+if (mode === 'never-ready') { setInterval(() => {}, 1000); return; }
 setTimeout(() => console.log('dsh web: http://127.0.0.1:45678/?token=fake-token-1'), 50);
 if (mode === 'crash-after-ready') setTimeout(() => process.exit(9), 300);
 setInterval(() => {}, 1000);
@@ -94,5 +95,20 @@ describe.skipIf(process.platform === 'win32')('RuntimeManager', () => {
     managers.push(manager);
     await manager.start();
     expect(manager.currentStatus.kind).toBe('notInstalled');
+  });
+
+  it('启动途中停止：立即结束还没就绪的进程，不等启动超时', async () => {
+    const { manager, statuses } = await setup({ FAKE_DSH_MODE: 'never-ready' });
+    const starting = manager.start();
+    // 等到进程已经起来、正在等就绪 URL
+    await expect.poll(() => statuses.at(-1)?.kind, { timeout: 3_000 }).toBe('starting');
+    const began = Date.now();
+    await manager.stop();
+    // 就绪超时是 5 秒：远早于它返回，说明没有等启动跑完
+    expect(Date.now() - began).toBeLessThan(2_000);
+    await expect(starting).resolves.toBeUndefined();
+    expect(statuses.at(-1)).toEqual({ kind: 'idle' });
+    // 中止不算失败：不显示「启动失败」
+    expect(statuses.some((s) => s.kind === 'failed')).toBe(false);
   });
 });
