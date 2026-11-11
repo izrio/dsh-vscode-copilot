@@ -5,13 +5,10 @@
  * 推送按约 30ms 合并，流式输出时不会产生消息风暴。不依赖 vscode API，便于测试。
  */
 import { isAbsolute, resolve } from 'node:path';
-import type { ChatBackendController } from '../backend/types.ts';
+import { renderDelay, type ChatBackendController, type ControllerHostOptions } from '../backend/types.ts';
 import type {
-  AppearanceState,
-  BackendsState,
   CommandView,
   ConnectionState,
-  ContextState,
   DiffRef,
   HostSnapshot,
   HostToWebview,
@@ -40,9 +37,11 @@ import {
   type ContextAttachment,
   type TemplateName,
 } from './context.ts';
-import { displayPath, project, projectEvents, type EventsProjection, type FileStep, type ToolCallInfo } from './projector.ts';
+import { project, projectEvents, type EventsProjection, type FileStep, type Projection, type ToolCallInfo } from './projector.ts';
+import { EditorContext, type GatherOptions } from './EditorContext.ts';
+import { TabsModel } from './TabsModel.ts';
 import { lineStats, reverseHunks, reverseToolDiffs } from './diffs.ts';
-import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
+import { noWorkbench, type Workbench } from './workbench.ts';
 import { approvalView, interactionView, type ViewContext } from './interactionViews.ts';
 import { ViewPublisher, type ControllerView } from './ViewPublisher.ts';
 import {
@@ -55,53 +54,24 @@ import {
   queuedText,
   titleOf,
   todosOf,
-  withoutDiagnostics,
 } from './viewHelpers.ts';
 
 export { friendlyError, plainTitle } from './viewHelpers.ts';
 import { getLocale, t } from '../i18n.ts';
 
-export interface ChatControllerOptions {
+export interface ChatControllerOptions extends ControllerHostOptions {
   readonly workspacePath: string;
-  readonly post: (message: HostToWebview) => void;
-  readonly log: (line: string) => void;
   /** 记住每个工作区上次打开的会话（VS Code workspaceState）。 */
   readonly loadActiveSessionId: () => string | undefined;
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
   /** 记住每个工作区打开的会话标签（VS Code workspaceState）。 */
   readonly loadOpenTabs?: () => readonly string[] | undefined;
   readonly saveOpenTabs?: (sessionIds: readonly string[]) => void;
-  readonly openExternal: (url: string) => void;
   readonly restartRuntime: () => void;
-  readonly showLogs: () => void;
   /** 在浏览器中打开 dsh；`sessionTitle` 是当前会话的标题（dsh 网页不支持直接定位到会话，提示用户在列表里选）。 */
   readonly openWebUI: (sessionTitle?: string) => void;
-  /** 当前模型的显示名变化时调用（状态栏用）。 */
-  readonly onModelChange?: (label: string | undefined) => void;
-  /** 打开 Diff、未保存文件、确认框、当前编辑器。 */
-  readonly workbench?: Workbench;
-  /** 设置 `dsh.context.includeActiveEditor`：默认附带当前编辑器。 */
-  readonly includeActiveEditor?: () => boolean;
-  /** 多根工作区：让用户选择文件夹（选好后调用 setWorkspace）。 */
-  readonly selectFolder?: () => void;
-  /** 多根工作区时当前文件夹的显示名。 */
-  readonly folderLabel?: () => string | undefined;
-  readonly renderDelayMs?: number;
-  /** 界面字号和字体（设置 `dsh.ui.*`）。 */
-  readonly appearance?: () => AppearanceState;
-  /** 打开插件的界面设置。 */
-  readonly openSettings?: () => void;
-  /** 可选的底层和当前底层（随快照下发，Webview 的「…」菜单里切换）。 */
-  readonly backends?: () => BackendsState;
-  /** 写入字体设置（dsh.ui.*）；值为 null 时恢复默认。 */
-  readonly setAppearance?: (patch: {
-    readonly fontSize?: number | null;
-    readonly fontFamily?: string | null;
-    readonly codeFontFamily?: string | null;
-    readonly palette?: 'soft' | 'theme' | null;
-  }) => Promise<void>;
   /**
-   * 每轮结束时在对话流里显示改动汇总卡片（设置 `dsh.ui.showTurnChanges`）。不传时显示。
+   * 每轮结束时在对话流里显示改动汇总卡片（设置 `harnessDeck.ui.showTurnChanges`）。不传时显示。
    * 关掉时改动只在输入框上方的会话改动栏里显示，汇总仍会读取，用于打开 Diff。
    */
   readonly showTurnChanges?: () => boolean;
@@ -112,23 +82,12 @@ const SUMMARY_CONCURRENCY = 2;
 /** 后台标签最多保留几个 follow 流：切回这些标签时内容立即可见，更多的标签切回时重新打开。 */
 const MAX_BACKGROUND_STREAMS = 4;
 
-interface Tab {
-  readonly key: string;
-  sessionId: string | undefined;
-}
-
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
 /** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
 const HIDDEN_DSH_COMMANDS = new Set(['export']);
 
-export interface SendOptions {
-  /** 附带当前编辑器（默认 true；输入框上方的标签被关掉时为 false）。 */
-  readonly includeActive?: boolean;
-  /** 额外附带的上下文（右键菜单的选区）。 */
-  readonly extra?: readonly ContextAttachment[];
-  /** 附带选区的诊断信息（/fix）。 */
-  readonly diagnostics?: boolean;
+export interface SendOptions extends GatherOptions {
   /** 粘贴或拖进来的图片。 */
   readonly images?: readonly PendingImage[];
 }
@@ -155,9 +114,10 @@ export class ChatController implements ChatBackendController {
   private toolCalls: ReadonlyMap<string, ToolCallInfo> = new Map();
   /** 改动汇总来自哪个 Host；Host 重启（换了端口）后内存里的汇总都没了，要重新读取。 */
   private changesOrigin: string | undefined;
-  /** 用「添加到对话」固定的上下文，发送后清空。 */
-  private pinned: (ContextAttachment & { id: string })[] = [];
-  private pinCounter = 0;
+  /** 当前编辑器和用「添加到对话」固定的上下文。 */
+  private readonly editorContext: EditorContext;
+  /** 新对话正在创建的会话：连续发两条消息时共用同一个，不建两个会话。 */
+  private creatingSession: Promise<string> | undefined;
   /** dsh 的斜杠命令目录（各会话相同），打开会话时读取。 */
   private dshCommands: CommandView[] = [];
   /** 正在读取命令和 skill 的会话（同一个会话不重复读）。 */
@@ -184,9 +144,7 @@ export class ChatController implements ChatBackendController {
   private summaryQueue: { readonly sessionId: string; readonly seq: number }[] = [];
   private summariesInFlight = 0;
   /** 对话面板里打开的标签；当前标签的会话就是 activeId。 */
-  private tabs: Tab[] = [];
-  private activeTab = '';
-  private tabCounter = 0;
+  private readonly tabs: TabsModel;
   /** 子代理会话 → 父会话：从父会话里打开时由 Webview 告知，会话列表刷新后也能从 dsh 读到。 */
   private readonly subagentParents = new Map<string, string>();
   /** 子代理会话 → 任务描述：dsh 给子代理会话起的标题带着给子代理的说明，用描述代替。 */
@@ -211,28 +169,29 @@ export class ChatController implements ChatBackendController {
     this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
-    this.restoreTabs();
-  }
-
-  /** 按保存的标签和上次打开的会话恢复标签；上次停在新对话时末尾加一个新对话标签。 */
-  private restoreTabs(): void {
-    const ids = [...new Set(this.options.loadOpenTabs?.() ?? [])];
-    if (this.activeId && !ids.includes(this.activeId)) ids.push(this.activeId);
-    this.tabs = ids.map((sessionId) => ({ key: this.nextTabKey(), sessionId }));
-    let active = this.tabs.find((tab) => tab.sessionId === this.activeId);
-    if (!active) {
-      active = { key: this.nextTabKey(), sessionId: undefined };
-      this.tabs.push(active);
-    }
-    this.activeTab = active.key;
-  }
-
-  private nextTabKey(): string {
-    return `tab-${++this.tabCounter}`;
-  }
-
-  private saveTabs(): void {
-    this.options.saveOpenTabs?.(this.tabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
+    this.editorContext = new EditorContext(
+      () => this.workbench,
+      () => this.options.includeActiveEditor?.() ?? true,
+      () => this.workspacePath,
+    );
+    this.tabs = new TabsModel({
+      keyPrefix: 'tab',
+      load: () => this.options.loadOpenTabs?.(),
+      save: (ids) => this.options.saveOpenTabs?.(ids),
+      onActivate: (sessionId) => this.setActive(sessionId),
+      onClose: (tab) => {
+        if (!tab.sessionId) return;
+        // 关掉的标签不再跟随：后台的流、或者当前正显示的流都关掉
+        this.background.get(tab.sessionId)?.dispose();
+        this.background.delete(tab.sessionId);
+        if (this.stream?.sessionId === tab.sessionId) {
+          this.stream.dispose();
+          this.stream = undefined;
+        }
+      },
+      onChange: () => this.scheduleRender(),
+    });
+    this.tabs.restore(this.activeId);
   }
 
   private disposeBackground(): void {
@@ -240,73 +199,12 @@ export class ChatController implements ChatBackendController {
     this.background.clear();
   }
 
-  /** 新对话：已有空的新对话标签时切过去，否则在当前标签后面新开一个。 */
-  private newTab(): void {
-    const blank = this.tabs.find((tab) => !tab.sessionId);
-    if (blank) return this.activateTab(blank.key);
-    const tab: Tab = { key: this.nextTabKey(), sessionId: undefined };
-    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
-    this.activateTab(tab.key);
-  }
-
-  /** 打开会话：已经在标签里时切过去；当前是空的新对话时就在当前标签打开；否则新开一个标签。 */
-  private openSessionTab(sessionId: string): void {
-    const existing = this.tabs.find((tab) => tab.sessionId === sessionId);
-    if (existing) return this.activateTab(existing.key);
-    const current = this.tabs.find((tab) => tab.key === this.activeTab);
-    if (current && !current.sessionId) {
-      this.setActive(sessionId);
-      return;
-    }
-    const tab: Tab = { key: this.nextTabKey(), sessionId };
-    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
-    this.activateTab(tab.key);
-  }
-
-  private activateTab(key: string): void {
-    const tab = this.tabs.find((t) => t.key === key);
-    if (!tab) return;
-    this.activeTab = key;
-    this.setActive(tab.sessionId);
-    this.saveTabs();
-    this.scheduleRender();
-  }
-
-  /** 关闭标签：会话仍在 dsh 里。关掉最后一个标签时换成新对话。 */
-  private closeTab(key: string): void {
-    const index = this.tabs.findIndex((t) => t.key === key);
-    const tab = this.tabs[index];
-    if (!tab) return;
-    if (tab.sessionId) {
-      this.background.get(tab.sessionId)?.dispose();
-      this.background.delete(tab.sessionId);
-    }
-    if (this.tabs.length === 1) {
-      if (!tab.sessionId) return;
-      this.tabs = [{ key: this.nextTabKey(), sessionId: undefined }];
-      this.activateTab(this.tabs[0]!.key);
-      return;
-    }
-    this.tabs.splice(index, 1);
-    if (key === this.activeTab) {
-      // 当前流属于被关掉的标签：不放进后台，直接关掉
-      if (this.stream && this.stream.sessionId === tab.sessionId) {
-        this.stream.dispose();
-        this.stream = undefined;
-      }
-      this.activateTab((this.tabs[index] ?? this.tabs[index - 1])!.key);
-    } else {
-      this.saveTabs();
-      this.scheduleRender();
-    }
-  }
-
   /** 当前会话还在某个标签里时把它的流留在后台，否则关掉。 */
   private parkStream(): void {
     const stream = this.stream;
     this.stream = undefined;
     if (!stream) return;
-    const open = this.tabs.some((tab) => tab.sessionId === stream.sessionId);
+    const open = this.tabs.items.some((tab) => tab.sessionId === stream.sessionId);
     if (!open || stream.status.kind === 'failed' || stream.status.kind === 'disconnected') {
       stream.dispose();
       return;
@@ -321,33 +219,29 @@ export class ChatController implements ChatBackendController {
   }
 
   private tabsState(service: SessionService | undefined, current: SessionHeader, attention: ReadonlySet<string>): TabsState {
-    const items = this.tabs.map((tab) => {
-      if (tab.key === this.activeTab) {
-        return { key: tab.key, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}), title: current.title, running: current.running, ...(tab.sessionId && attention.has(tab.sessionId) ? { needsAttention: true } : {}) };
-      }
-      if (!tab.sessionId) return { key: tab.key, title: newSessionTitle(), running: false };
-      const summary = service?.sessions.find((s) => s.sessionId === tab.sessionId);
-      return {
-        key: tab.key,
-        sessionId: tab.sessionId,
-        title: this.titleFor(tab.sessionId, service?.projections(tab.sessionId) ?? {}, []),
-        running: summary?.running ?? false,
-        ...(attention.has(tab.sessionId) ? { needsAttention: true } : {}),
-      };
-    });
-    return { items, active: this.activeTab };
+    const flag = (sessionId: string | undefined) => (sessionId && attention.has(sessionId) ? { needsAttention: true } : {});
+    const items = this.tabs.view(
+      { title: current.title, running: current.running, ...flag(this.tabs.current?.sessionId) },
+      (sessionId) => ({
+        title: this.titleFor(sessionId, service?.projections(sessionId) ?? {}, []),
+        running: service?.sessions.find((s) => s.sessionId === sessionId)?.running ?? false,
+        ...flag(sessionId),
+      }),
+      newSessionTitle(),
+    );
+    return { items, active: this.tabs.activeTabKey };
   }
 
   /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
   setWorkspace(path: string): void {
     if (path === this.workspacePath) return;
     this.workspacePath = path;
-    this.pinned = [];
+    this.editorContext.clearPinned();
     this.activeId = this.options.loadActiveSessionId();
     this.staleService = undefined;
     this.staleStream = undefined;
     this.disposeBackground();
-    this.restoreTabs();
+    this.tabs.restore(this.activeId);
     this.setClient(this.client);
   }
 
@@ -363,7 +257,7 @@ export class ChatController implements ChatBackendController {
     this.interactions?.dispose();
   }
 
-  /** 界面语言变化（设置 `dsh.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
+  /** 界面语言变化（设置 `harnessDeck.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
   /** 界面字号或字体的设置变化时调用。 */
   appearanceChanged(): void {
     this.options.post({ type: 'appearance', payload: this.options.appearance?.() ?? {} });
@@ -381,7 +275,7 @@ export class ChatController implements ChatBackendController {
 
   /** 右键菜单「解释 / 修复 / 写测试」：带上当前选区（没有选区时是当前文件）立即发送。 */
   async askAboutSelection(template: TemplateName): Promise<void> {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    const attachment = this.editorContext.active();
     if (!attachment) {
       this.toast('info', t('context.none'));
       return;
@@ -391,21 +285,12 @@ export class ChatController implements ChatBackendController {
 
   /** 右键菜单「添加到对话」：固定当前选区（或文件），下一条消息发送时附带。 */
   pinActiveEditor(): void {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
-    if (!attachment) {
+    if (!this.editorContext.pinActive()) {
       this.toast('info', t('context.none'));
       return;
     }
-    this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
     this.scheduleRender();
     this.options.post({ type: 'focusComposer', payload: {} });
-  }
-
-  private snapshotAttachment(editor: EditorSnapshot | undefined): ContextAttachment | undefined {
-    if (!editor) return undefined;
-    if (!editor.selection) return { kind: 'file', path: editor.path };
-    const { startLine, endLine, text, diagnostics } = editor.selection;
-    return { kind: 'selection', path: editor.path, startLine, endLine, languageId: editor.languageId, text, ...(diagnostics.length ? { diagnostics } : {}) };
   }
 
   setRuntimeStatus(status: RuntimeStatus): void {
@@ -469,10 +354,8 @@ export class ChatController implements ChatBackendController {
         const anySession = service.sessions.find((s) => s.sessionId === restoredId)?.sessionId ?? service.sessions[0]?.sessionId;
         if (anySession) this.loadCommands(anySession);
         // 已经不存在的会话（被删除或不属于这个工作区）不再保留标签
-        const before = this.tabs.length;
         const known = (id: string) => service.sessions.some((s) => s.sessionId === id) || this.parentOf(id) !== undefined;
-        this.tabs = this.tabs.filter((tab) => !tab.sessionId || tab.sessionId === restoredId || known(tab.sessionId));
-        if (this.tabs.length !== before) this.saveTabs();
+        this.tabs.prune(known);
         if (restoredId && !known(restoredId)) {
           this.options.log(`上次打开的会话 ${restoredId} 已不存在，改为新对话`);
           this.setActive(undefined);
@@ -490,7 +373,7 @@ export class ChatController implements ChatBackendController {
 
   /** Webview 加载（或重新加载）后取完整快照；之后的增量都相对于这份快照。 */
   snapshot(): HostSnapshot {
-    const view = this.compute();
+    const view = this.refresh();
     this.publisher.reset(view);
     return {
       runtime: this.runtime,
@@ -520,8 +403,12 @@ export class ChatController implements ChatBackendController {
       case 'ready':
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
-      case 'sendMessage':
-        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, ...(message.payload.images ? { images: message.payload.images } : {}) });
+      case 'sendMessage': {
+        const accepted = await this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, ...(message.payload.images ? { images: message.payload.images } : {}) });
+        // 没发出去（没连上、建不了会话…）：输入框已经清空了，把文字放回去
+        if (!accepted) this.options.post({ type: 'restoreDraft', payload: { text: message.payload.text } });
+        return;
+      }
       case 'loadImage':
         return this.loadImage(message.payload.attachmentId);
       case 'searchFiles':
@@ -536,24 +423,24 @@ export class ChatController implements ChatBackendController {
         this.options.selectFolder?.();
         return;
       case 'removeAttachment':
-        this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
+        this.editorContext.unpin(message.payload.id);
         this.scheduleRender();
         return;
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
-        this.newTab();
+        this.tabs.openNew();
         return;
       case 'switchSession':
         if (message.payload.parentId) this.subagentParents.set(message.payload.sessionId, message.payload.parentId);
         if (message.payload.label) this.subagentLabels.set(message.payload.sessionId, message.payload.label);
-        this.openSessionTab(message.payload.sessionId);
+        this.tabs.open(message.payload.sessionId);
         return;
       case 'activateTab':
-        this.activateTab(message.payload.key);
+        this.tabs.activate(message.payload.key);
         return;
       case 'closeTab':
-        this.closeTab(message.payload.key);
+        this.tabs.close(message.payload.key);
         return;
       case 'loadOlder':
         await this.stream?.loadOlder();
@@ -575,10 +462,10 @@ export class ChatController implements ChatBackendController {
         this.options.showLogs();
         return;
       case 'openWebUI':
-        this.options.openWebUI(this.activeId ? this.compute().session.title : undefined);
+        this.options.openWebUI(this.activeId ? this.buildView().view.session.title : undefined);
         return;
       case 'respondApproval':
-        return this.respondApproval(message.payload.id, message.payload.decision === 'allow');
+        return this.respondApproval(message.payload.id, message.payload.decision !== 'reject');
       case 'previewApproval':
         return this.previewApproval(message.payload.id);
       case 'answerQuestion': {
@@ -815,25 +702,25 @@ export class ChatController implements ChatBackendController {
   /**
    * 发送一条消息。以 `/` 开头时先看是不是斜杠命令：插件模板展开成提示词，dsh 命令交给 dsh 执行。
    * 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。
+   * @returns 消息是否已经交出去（进了会话或本地回显）；false 时调用方把文字还给输入框。
    */
-  async send(text: string, options: SendOptions = {}): Promise<void> {
+  async send(text: string, options: SendOptions = {}): Promise<boolean> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
-      this.newTab();
-      if (slash.args.trim()) await this.send(slash.args, options);
-      return;
+      this.tabs.openNew();
+      return slash.args.trim() ? this.send(slash.args, options) : true;
     }
     if (slash && isTemplate(slash.name)) {
-      const attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
+      const attachments = this.editorContext.gather({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
       if (attachments.length === 0 && !slash.args.trim()) {
         this.toast('info', t('template.needsContext', slash.name));
-        return;
+        return false;
       }
       return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments, options.images);
     }
     // skill 不是命令：照常作为消息发出，dsh 识别 `/name` 调用 skill
-    if (slash && this.dshCommands.some((c) => c.name === slash.name && c.source === 'dsh')) return this.runCommand(text.trim());
-    return this.sendPrompt(text, this.gatherContext(options), options.images);
+    if (slash && this.dshCommands.some((c) => c.name === slash.name && c.source === 'agent')) return this.runCommand(text.trim());
+    return this.sendPrompt(text, this.editorContext.gather(options), options.images);
   }
 
   /** 历史消息里的图片：向 dsh 读取后以 data URL 回传，Webview 缓存。读不到时回传空，显示占位。 */
@@ -852,35 +739,37 @@ export class ChatController implements ChatBackendController {
     this.options.post({ type: 'imageData', payload: { attachmentId, ...(dataUrl ? { dataUrl } : {}) } });
   }
 
-  /** 本条消息附带的上下文：固定的、额外的、当前编辑器。诊断信息只在 /fix 时附带。 */
-  private gatherContext(options: SendOptions): ContextAttachment[] {
-    const active = options.includeActive !== false ? this.snapshotAttachment(this.workbench.activeEditor()) : undefined;
-    const all = [...this.pinned.map(({ id: _id, ...rest }) => rest as ContextAttachment), ...(options.extra ?? []), ...(active ? [active] : [])];
-    return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
-  }
-
-  private async sendPrompt(text: string, attachments: readonly ContextAttachment[], images: readonly PendingImage[] = []): Promise<void> {
+  private async sendPrompt(text: string, attachments: readonly ContextAttachment[], images: readonly PendingImage[] = []): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
     }
     if (this.activeId && this.parentOf(this.activeId)) {
       // 子代理的对话由父会话里的代理驱动，这里只能查看
       this.toast('info', t('subagent.readOnly'));
-      return;
+      return false;
+    }
+    let sessionId: string;
+    try {
+      sessionId = await this.ensureSession(service);
+    } catch (error) {
+      this.options.log(`新建会话失败：${describe(error)}`);
+      this.toast('error', friendlyError(error));
+      return false;
     }
     try {
-      const sessionId = await this.ensureSession(service);
       await service.prompt(sessionId, withContext(text, attachments, this.workspacePath), undefined, images);
-      if (this.pinned.length) {
-        this.pinned = [];
+      if (this.editorContext.hasPinned) {
+        this.editorContext.clearPinned();
         this.scheduleRender();
       }
     } catch (error) {
+      // 会话服务已经留下一条「发送失败」的回显，可以在那里重试或删除，文字没有丢
       this.options.log(`发送失败：${describe(error)}`);
       this.toast('error', friendlyError(error));
     }
+    return true;
   }
 
   private async queueAction(payload: Extract<WebviewToHost, { type: 'queueAction' }>['payload']): Promise<void> {
@@ -958,24 +847,34 @@ export class ChatController implements ChatBackendController {
   }
 
   /** dsh 的斜杠命令：结果以 command/run、command/done 事件出现在对话里。 */
-  private async runCommand(line: string): Promise<void> {
+  private async runCommand(line: string): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
     }
     try {
       const sessionId = await this.ensureSession(service);
       await service.client.executeCommand(sessionId, line);
+      return true;
     } catch (error) {
       this.options.log(`执行 ${line} 失败：${describe(error)}`);
       this.toast('error', t('command.failed', describe(error)));
+      return false;
     }
   }
 
   /** 当前会话；新对话时在 dsh 里创建，并应用新对话里选好的模型和权限。 */
-  private async ensureSession(service: SessionService): Promise<string> {
-    if (this.activeId) return this.activeId;
+  private ensureSession(service: SessionService): Promise<string> {
+    if (this.activeId) return Promise.resolve(this.activeId);
+    // 会话还在创建时又来一条消息（连按两次发送、右键「解释」）：等同一个会话，不再建一个
+    this.creatingSession ??= this.createSession(service).finally(() => {
+      this.creatingSession = undefined;
+    });
+    return this.creatingSession;
+  }
+
+  private async createSession(service: SessionService): Promise<string> {
     const sessionId = await service.createSession();
     this.setActive(sessionId);
     if (this.draftModel) {
@@ -1027,7 +926,7 @@ export class ChatController implements ChatBackendController {
         ([list, skillList]) => {
           const views: CommandView[] = list
             .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
-            .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
+            .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'agent' as const }));
           const taken = new Set([...views.map((c) => c.name), ...PLUGIN_COMMAND_NAMES]);
           for (const skill of skillList) {
             if (taken.has(skill.name)) continue;
@@ -1083,14 +982,7 @@ export class ChatController implements ChatBackendController {
 
   /** 切换当前标签显示的会话（undefined 为新对话）；标签的切换、新建、关闭见 activateTab 等。 */
   private setActive(sessionId: string | undefined): void {
-    const tab = this.tabs.find((t) => t.key === this.activeTab);
-    if (tab && tab.sessionId !== sessionId) {
-      // 同一个会话不同时出现在两个标签里
-      const duplicate = sessionId ? this.tabs.find((t) => t !== tab && t.sessionId === sessionId) : undefined;
-      if (duplicate) this.tabs = this.tabs.filter((t) => t !== duplicate);
-      tab.sessionId = sessionId;
-      this.saveTabs();
-    }
+    this.tabs.setCurrentSession(sessionId);
     if (sessionId === this.activeId && (sessionId === undefined || this.stream)) return;
     this.parkStream();
     this.activeId = sessionId;
@@ -1134,18 +1026,44 @@ export class ChatController implements ChatBackendController {
     this.renderTimer = setTimeout(() => {
       this.renderTimer = undefined;
       this.render();
-    }, this.options.renderDelayMs ?? 30);
+    }, renderDelay(this.options));
   }
 
   /** 计算当前视图并推送变化的部分。 */
   render(): void {
-    this.publisher.publish(this.compute());
+    this.publisher.publish(this.refresh());
   }
 
-  private compute(): ControllerView {
-    // 新连接还没准备好时，先显示断线前的内容
+  /**
+   * 计算视图，并做随之而来的状态更新（见 `sync`）。渲染和取快照都走这里；只想看一眼当前视图时用 `buildView`。
+   */
+  private refresh(): ControllerView {
+    // 新连接已经就绪：不再需要断线前留下来显示的旧数据
     if (this.service?.initialized) this.staleService = undefined;
     if (this.stream?.status.kind === 'live') this.staleStream = undefined;
+    const built = this.buildView();
+    this.sync(built);
+    return built.view;
+  }
+
+  /**
+   * 投影带出来的状态更新：记下工具调用和文件改动历史（打开 Diff、审批预览要用），
+   * 读取新出现的每轮改动汇总，撤掉已经进了历史或 dsh 队列的本地回显。
+   */
+  private sync({ projection, sessionId, service, canLoadChanges }: ReturnType<ChatController['buildView']>): void {
+    this.toolCalls = projection.toolCalls;
+    this.fileHistory = projection.fileHistory;
+    if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
+    if (sessionId && canLoadChanges) this.loadChanges(sessionId, projection.changeSeqs);
+    // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
+    if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
+      service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
+    }
+  }
+
+  /** 从当前状态算出视图。除了更新投影缓存，不改任何状态。 */
+  private buildView(): { view: ControllerView; projection: Projection; sessionId: string | undefined; service: SessionService | undefined; canLoadChanges: boolean } {
+    // 新连接还没准备好时，先显示断线前的内容
     const service = this.service?.initialized ? this.service : (this.staleService ?? this.service);
     const sessionId = this.activeId;
     const stream = this.stream?.status.kind !== 'live' && this.staleStream?.sessionId === sessionId ? this.staleStream : this.stream;
@@ -1173,14 +1091,8 @@ export class ChatController implements ChatBackendController {
       inbox: projections.inbox,
       changes,
     }, this.eventsMemo.value);
-    this.toolCalls = projection.toolCalls;
-    this.fileHistory = projection.fileHistory;
-    if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
-    if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
-    // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
-    if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
-      service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
-    }
+    // 审批卡片要查本次投影里的工具调用（上一次 sync 记下的可能还没有它）
+    const viewContext: ViewContext = { toolCalls: projection.toolCalls, workspacePath: this.workspacePath, dirtyFiles: this.workbench.dirtyFiles() };
 
     const streamStatus = stream?.status;
     // follow 流就绪后以事件日志为准；会话列表里的 running 由通知触发刷新，会滞后
@@ -1213,7 +1125,7 @@ export class ChatController implements ChatBackendController {
       ...(attention.has(s.sessionId) ? { needsAttention: true } : {}),
     }));
 
-    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => interactionView(p, this.viewContext())) : [];
+    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => interactionView(p, viewContext)) : [];
     const catalog = service?.permissions;
     const currentPermission = sessionId
       ? (projections.permissions as { currentValue?: string } | undefined)?.currentValue
@@ -1223,7 +1135,7 @@ export class ChatController implements ChatBackendController {
       ...(currentPermission ? { current: currentPermission } : {}),
     };
 
-    return {
+    const view: ControllerView = {
       sessionKey: sessionId ?? '',
       sessions,
       tabs: this.tabsState(service, session, attention),
@@ -1233,23 +1145,10 @@ export class ChatController implements ChatBackendController {
       interactions,
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
-      context: this.contextState(),
+      context: this.editorContext.state(),
       commands: [...pluginCommands().map((c) => ({ ...c, source: 'plugin' as const })), ...this.dshCommands],
     };
-  }
-
-  private contextState(): ContextState {
-    const view = (a: ContextAttachment) => ({
-      kind: a.kind,
-      path: displayPath(a.path, this.workspacePath),
-      ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
-    });
-    const active = this.snapshotAttachment(this.workbench.activeEditor());
-    return {
-      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
-      includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
-      pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
-    };
+    return { view, projection, sessionId, service, canLoadChanges: streamLive && !showingStale };
   }
 
   /**

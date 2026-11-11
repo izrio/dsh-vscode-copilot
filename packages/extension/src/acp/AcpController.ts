@@ -13,7 +13,6 @@ import type {
   BackendsState,
   CommandView,
   ConnectionState,
-  ContextState,
   DiffRef,
   HostSnapshot,
   ImageView,
@@ -31,7 +30,7 @@ import type {
   WebviewToHost,
 } from '@harness-deck/shared';
 import { isAbsolute, resolve } from 'node:path';
-import type { ChatBackendController } from '../backend/types.ts';
+import { renderDelay, type ChatBackendController, type ControllerHostOptions } from '../backend/types.ts';
 import { getLocale, t } from '../i18n.ts';
 import {
   isTemplate,
@@ -42,12 +41,12 @@ import {
   type ContextAttachment,
   type TemplateName,
 } from '../vm/context.ts';
-import type { ChatControllerOptions } from '../vm/ChatController.ts';
 import { reverseToolDiffs } from '../vm/diffs.ts';
-import { displayPath } from '../vm/projector.ts';
+import { displayPath } from '../vm/paths.ts';
+import { EditorContext, type GatherOptions } from '../vm/EditorContext.ts';
+import { TabsModel } from '../vm/TabsModel.ts';
 import { ViewPublisher, type ControllerView } from '../vm/ViewPublisher.ts';
-import { withoutDiagnostics } from '../vm/viewHelpers.ts';
-import { noWorkbench, type EditorSnapshot, type Workbench } from '../vm/workbench.ts';
+import { noWorkbench, type Workbench } from '../vm/workbench.ts';
 import { AcpError } from './connection.ts';
 import { AcpSessionProjection, type AcpConfigOption, type AcpDiff, type AcpToolCall } from './projection.ts';
 
@@ -76,24 +75,7 @@ export interface StoredSession {
   readonly updatedAt: number;
 }
 
-export interface AcpControllerOptions
-  extends Pick<
-    ChatControllerOptions,
-    | 'post'
-    | 'log'
-    | 'workbench'
-    | 'includeActiveEditor'
-    | 'openExternal'
-    | 'showLogs'
-    | 'appearance'
-    | 'backends'
-    | 'openSettings'
-    | 'setAppearance'
-    | 'folderLabel'
-    | 'selectFolder'
-    | 'onModelChange'
-    | 'renderDelayMs'
-  > {
+export interface AcpControllerOptions extends ControllerHostOptions {
   readonly workspacePath: string;
   readonly restartRuntime: () => void;
   readonly loadActiveSessionId: () => string | undefined;
@@ -167,16 +149,14 @@ export class AcpController implements ChatBackendController {
   private readonly permissions = new Map<string, PendingPermission>();
   private permissionCounter = 0;
   private queueCounter = 0;
-  private pinned: (ContextAttachment & { id: string })[] = [];
+  /** 当前编辑器和用「添加到对话」固定的上下文。 */
+  private readonly editorContext: EditorContext;
   /** 单会话代理：当前进程推送实时更新的会话。 */
   private bound: string | undefined;
   /** 单会话代理：正在重启代理、等待绑定到这个会话。 */
   private rebinding: { readonly sessionId: string; readonly done: (ok: boolean) => void } | undefined;
-  private pinCounter = 0;
   /** 对话面板里打开的标签；当前标签的会话就是 activeId，新对话的标签（没有 sessionId）用草稿会话。 */
-  private tabs: { readonly key: string; sessionId?: string }[] = [];
-  private activeTab = '';
-  private tabCounter = 0;
+  private readonly tabs: TabsModel;
   private workspacePath: string;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly publisher: ViewPublisher;
@@ -186,7 +166,22 @@ export class AcpController implements ChatBackendController {
     this.activeId = options.loadActiveSessionId();
     this.stored = [...(options.loadSessions() ?? [])];
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
-    this.restoreTabs();
+    this.editorContext = new EditorContext(
+      () => this.workbench,
+      () => this.options.includeActiveEditor?.() ?? true,
+      () => this.workspacePath,
+    );
+    // ACP 的每个会话都有自己的投影，后台标签的会话继续收更新，切回时内容立即可见
+    this.tabs = new TabsModel({
+      keyPrefix: 'acp-tab',
+      load: () => this.options.loadOpenTabs?.(),
+      save: (ids) => this.options.saveOpenTabs?.(ids),
+      onActivate: (sessionId) => this.setActive(sessionId),
+      // 关掉的标签还在等的审批取消掉（没有地方再显示）
+      onClose: (tab) => tab.sessionId && this.cancelPermissions(tab.sessionId),
+      onChange: () => this.scheduleRender(),
+    });
+    this.tabs.restore(this.activeId);
   }
 
   private get workbench(): Workbench {
@@ -207,8 +202,7 @@ export class AcpController implements ChatBackendController {
     this.draftId = undefined;
     this.creatingDraft = undefined;
     this.bound = undefined;
-    for (const pending of this.permissions.values()) pending.resolve({ outcome: { outcome: 'cancelled' } });
-    this.permissions.clear();
+    this.cancelPermissions();
     if (link) {
       void this.refreshList();
       if (this.activeId) void this.load(this.activeId);
@@ -244,8 +238,16 @@ export class AcpController implements ChatBackendController {
 
   dispose(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer);
-    for (const pending of this.permissions.values()) pending.resolve({ outcome: { outcome: 'cancelled' } });
-    this.permissions.clear();
+    this.cancelPermissions();
+  }
+
+  /** 取消等待中的审批（代理收到 cancelled）；给了会话 id 时只取消这个会话的。 */
+  private cancelPermissions(sessionId?: string): void {
+    for (const [id, pending] of this.permissions) {
+      if (sessionId !== undefined && pending.sessionId !== sessionId) continue;
+      pending.resolve({ outcome: { outcome: 'cancelled' } });
+      this.permissions.delete(id);
+    }
   }
 
   snapshot(): HostSnapshot {
@@ -294,11 +296,11 @@ export class AcpController implements ChatBackendController {
   setWorkspace(path: string): void {
     if (path === this.workspacePath) return;
     this.workspacePath = path;
-    this.pinned = [];
+    this.editorContext.clearPinned();
     this.activeId = this.options.loadActiveSessionId();
     this.draftId = undefined;
     this.projections.clear();
-    this.restoreTabs();
+    this.tabs.restore(this.activeId);
     if (this.link) {
       void this.refreshList();
       if (this.activeId) void this.load(this.activeId);
@@ -308,7 +310,7 @@ export class AcpController implements ChatBackendController {
   }
 
   async askAboutSelection(template: TemplateName): Promise<void> {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    const attachment = this.editorContext.active();
     if (!attachment) {
       this.toast('info', t('context.none'));
       return;
@@ -317,12 +319,10 @@ export class AcpController implements ChatBackendController {
   }
 
   pinActiveEditor(): void {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
-    if (!attachment) {
+    if (!this.editorContext.pinActive()) {
       this.toast('info', t('context.none'));
       return;
     }
-    this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
     this.scheduleRender();
     this.options.post({ type: 'focusComposer', payload: {} });
   }
@@ -345,8 +345,12 @@ export class AcpController implements ChatBackendController {
       case 'ready':
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
-      case 'sendMessage':
-        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, images: message.payload.images ?? [] });
+      case 'sendMessage': {
+        const accepted = await this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, images: message.payload.images ?? [] });
+        // 没发出去（没连上、代理正忙、建不了会话…）：输入框已经清空了，把文字放回去
+        if (!accepted) this.options.post({ type: 'restoreDraft', payload: { text: message.payload.text } });
+        return;
+      }
       case 'searchFiles': {
         let items: { path: string; kind: 'file' | 'directory' }[] = [];
         try {
@@ -358,7 +362,7 @@ export class AcpController implements ChatBackendController {
         return;
       }
       case 'removeAttachment':
-        this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
+        this.editorContext.unpin(message.payload.id);
         this.scheduleRender();
         return;
       case 'queueAction':
@@ -373,16 +377,16 @@ export class AcpController implements ChatBackendController {
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
-        this.newTab();
+        this.tabs.openNew();
         return;
       case 'switchSession':
-        this.openSessionTab(message.payload.sessionId);
+        this.tabs.open(message.payload.sessionId);
         return;
       case 'activateTab':
-        this.activateTab(message.payload.key);
+        this.tabs.activate(message.payload.key);
         return;
       case 'closeTab':
-        this.closeTab(message.payload.key);
+        this.tabs.close(message.payload.key);
         return;
       case 'loadOlder':
       case 'retryPending':
@@ -404,7 +408,7 @@ export class AcpController implements ChatBackendController {
         this.toast('info', t('acp.noWebUI', this.agentName()));
         return;
       case 'respondApproval':
-        this.respondApproval(message.payload.id, message.payload.decision === 'allow');
+        this.respondApproval(message.payload.id, message.payload.decision);
         return;
       case 'answerQuestion':
         this.toast('info', t('question.ended'));
@@ -446,116 +450,22 @@ export class AcpController implements ChatBackendController {
   }
 
   // ---------------------------------------------------------------- 标签
-  // 和 dsh 的标签一样：只有一个新对话标签；打开已在标签里的会话时切过去；关掉最后一个标签时换成新对话。
-  // ACP 的每个会话都有自己的投影，后台标签的会话继续收更新，切回时内容立即可见。
-
-  /** 按保存的标签和上次打开的会话恢复标签；上次停在新对话时末尾加一个新对话标签。 */
-  private restoreTabs(): void {
-    const ids = [...new Set(this.options.loadOpenTabs?.() ?? [])];
-    if (this.activeId && !ids.includes(this.activeId)) ids.push(this.activeId);
-    this.tabs = ids.map((sessionId) => ({ key: this.nextTabKey(), sessionId }));
-    let active = this.tabs.find((tab) => tab.sessionId === this.activeId);
-    if (!active) {
-      active = { key: this.nextTabKey() };
-      this.tabs.push(active);
-    }
-    this.activeTab = active.key;
-  }
-
-  private nextTabKey(): string {
-    return `acp-tab-${++this.tabCounter}`;
-  }
-
-  private saveTabs(): void {
-    this.options.saveOpenTabs?.(this.tabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
-  }
-
-  /** 新对话：已有新对话标签时切过去，否则在当前标签后面新开一个。 */
-  private newTab(): void {
-    const blank = this.tabs.find((tab) => !tab.sessionId);
-    if (blank) return this.activateTab(blank.key);
-    const tab = { key: this.nextTabKey() };
-    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
-    this.activateTab(tab.key);
-  }
-
-  /** 打开会话：已经在标签里时切过去；当前是新对话时就在当前标签打开；否则新开一个标签。 */
-  private openSessionTab(sessionId: string): void {
-    const existing = this.tabs.find((tab) => tab.sessionId === sessionId);
-    if (existing) return this.activateTab(existing.key);
-    const current = this.tabs.find((tab) => tab.key === this.activeTab);
-    if (current && !current.sessionId) return this.setActive(sessionId);
-    const tab = { key: this.nextTabKey(), sessionId };
-    this.tabs.splice(this.tabs.findIndex((t) => t.key === this.activeTab) + 1, 0, tab);
-    this.activateTab(tab.key);
-  }
-
-  private activateTab(key: string): void {
-    const tab = this.tabs.find((t) => t.key === key);
-    if (!tab) return;
-    this.activeTab = key;
-    this.setActive(tab.sessionId);
-    this.saveTabs();
-    this.scheduleRender();
-  }
-
-  /** 关闭标签：会话仍在代理里，可以从会话列表重新打开；它还在等的审批取消掉（没有地方再显示）。 */
-  private closeTab(key: string): void {
-    const index = this.tabs.findIndex((t) => t.key === key);
-    const tab = this.tabs[index];
-    if (!tab) return;
-    if (tab.sessionId) {
-      for (const [id, pending] of this.permissions) {
-        if (pending.sessionId !== tab.sessionId) continue;
-        pending.resolve({ outcome: { outcome: 'cancelled' } });
-        this.permissions.delete(id);
-      }
-    }
-    if (this.tabs.length === 1) {
-      if (!tab.sessionId) return;
-      this.tabs = [{ key: this.nextTabKey() }];
-      this.activateTab(this.tabs[0]!.key);
-      return;
-    }
-    this.tabs.splice(index, 1);
-    if (key === this.activeTab) this.activateTab((this.tabs[index] ?? this.tabs[index - 1])!.key);
-    else {
-      this.saveTabs();
-      this.scheduleRender();
-    }
-  }
 
   private tabsState(current: SessionHeader): TabsState {
     const waiting = new Set([...this.permissions.values()].map((p) => p.sessionId));
-    const items = this.tabs.map((tab) => {
-      if (tab.key === this.activeTab) {
-        return { key: tab.key, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}), title: current.title, running: current.running, ...(tab.sessionId && waiting.has(tab.sessionId) ? { needsAttention: true } : {}) };
-      }
-      if (!tab.sessionId) return { key: tab.key, title: t('session.new'), running: false };
-      return {
-        key: tab.key,
-        sessionId: tab.sessionId,
-        title: this.titleOf(tab.sessionId),
-        running: this.projections.get(tab.sessionId)?.running ?? false,
-        ...(waiting.has(tab.sessionId) ? { needsAttention: true } : {}),
-      };
-    });
-    return { items, active: this.activeTab };
-  }
-
-  /** 当前标签显示的会话（undefined 为新对话）；同一个会话不同时出现在两个标签里。 */
-  private setTabSession(sessionId: string | undefined): void {
-    const tab = this.tabs.find((t) => t.key === this.activeTab);
-    if (!tab || tab.sessionId === sessionId) return;
-    if (sessionId) this.tabs = this.tabs.filter((t) => t === tab || t.sessionId !== sessionId);
-    tab.sessionId = sessionId;
-    this.saveTabs();
+    const flag = (sessionId: string | undefined) => (sessionId && waiting.has(sessionId) ? { needsAttention: true } : {});
+    const items = this.tabs.view(
+      { title: current.title, running: current.running, ...flag(this.tabs.current?.sessionId) },
+      (sessionId) => ({ title: this.titleOf(sessionId), running: this.projections.get(sessionId)?.running ?? false, ...flag(sessionId) }),
+      t('session.new'),
+    );
+    return { items, active: this.tabs.activeTabKey };
   }
 
   // ---------------------------------------------------------------- 会话
 
   private setActive(sessionId: string | undefined): void {
-    this.setTabSession(sessionId);
+    this.tabs.setCurrentSession(sessionId);
     if (sessionId === this.activeId && (sessionId !== undefined || this.draftId !== undefined)) return;
     this.activeId = sessionId;
     this.options.saveActiveSessionId(sessionId);
@@ -715,53 +625,60 @@ export class AcpController implements ChatBackendController {
 
   // ---------------------------------------------------------------- 发送
 
-  async send(text: string, options: { includeActive?: boolean; extra?: readonly ContextAttachment[]; diagnostics?: boolean; images?: readonly PromptImage[] } = {}): Promise<void> {
+  /**
+   * 发送一条消息（一轮进行中时在本地排队）。
+   * @returns 消息是否已经交出去（发给代理或进了队列）；false 时调用方把文字还给输入框。
+   */
+  async send(text: string, options: GatherOptions & { images?: readonly PromptImage[] } = {}): Promise<boolean> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
-      this.newTab();
-      if (slash.args.trim()) await this.send(slash.args, options);
-      return;
+      this.tabs.openNew();
+      return slash.args.trim() ? this.send(slash.args, options) : true;
     }
     // 计划模式的标记点击后发 /plan off；代理有 plan 模式时切换模式
     if (slash?.name === 'plan' && this.modeOption()?.options?.some((o) => o.value === 'plan')) {
       await this.setMode(slash.args.trim() === 'off' ? (this.modeOption()?.options?.find((o) => o.value !== 'plan')?.value ?? 'default') : 'plan');
-      if (slash.args.trim() && slash.args.trim() !== 'off') await this.send(slash.args, options);
-      return;
+      return slash.args.trim() && slash.args.trim() !== 'off' ? this.send(slash.args, options) : true;
     }
     let prompt = text;
     let attachments: ContextAttachment[];
     if (slash && isTemplate(slash.name)) {
-      attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
+      attachments = this.editorContext.gather({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
       if (attachments.length === 0 && !slash.args.trim()) {
         this.toast('info', t('template.needsContext', slash.name));
-        return;
+        return false;
       }
       prompt = templatePrompt(slash.name, slash.args);
     } else {
       // 代理自己的斜杠命令照原样发送（ACP 里命令就是以 / 开头的消息）
-      attachments = slash ? [] : this.gatherContext(options);
+      attachments = slash ? [] : this.editorContext.gather(options);
     }
     const full = withContext(prompt, attachments, this.workspacePath);
-    if (this.pinned.length) this.pinned = [];
     const link = this.link;
     if (!link) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
     }
     if (this.options.singleSession && this.boundBusy() && this.activeId !== this.bound) {
       // 另一个会话正在回复：这个代理同一时间只能进行一个会话
       this.toast('info', t('acp.singleSessionBusy', this.agentName()));
-      return;
+      return false;
     }
-    if (this.activeId && !(await this.bindTo(this.activeId))) return;
+    if (this.activeId && !(await this.bindTo(this.activeId))) return false;
     const sessionId = this.activeId ?? (await this.ensureDraft());
-    if (!sessionId) return;
+    if (!sessionId) {
+      // 新建会话失败时 ensureDraft 已经提示过原因；这里是连接刚断开等没有提示的情况
+      if (!this.link) this.toast('error', t('notConnected'));
+      return false;
+    }
+    // 到这里消息一定会交出去：固定的上下文用完了
+    this.editorContext.clearPinned();
     if (!this.activeId) {
       // 草稿会话收到第一条消息：成为正式会话，标签记住它
       this.activeId = sessionId;
       this.draftId = undefined;
       this.options.saveActiveSessionId(sessionId);
-      this.setTabSession(sessionId);
+      this.tabs.setCurrentSession(sessionId);
       this.remember(sessionId, prompt || t('acp.image'));
     }
     const projection = this.projectionFor(sessionId);
@@ -771,9 +688,10 @@ export class AcpController implements ChatBackendController {
       queue.push({ id: `q${++this.queueCounter}`, text: full, images });
       this.queues.set(sessionId, queue);
       this.scheduleRender();
-      return;
+      return true;
     }
     await this.prompt(this.link ?? link, sessionId, full, images);
+    return true;
   }
 
   // ---------------------------------------------------------------- 单会话代理
@@ -846,7 +764,8 @@ export class AcpController implements ChatBackendController {
     void this.refreshList();
     this.scheduleRender();
     // 本地排队的消息：上一轮结束后依次发送
-    const next = this.queues.get(sessionId)?.shift();
+    // 代理已经退出时队列原样留着（界面上仍显示排队中），不能取出来又发不出去
+    const next = this.link ? this.queues.get(sessionId)?.shift() : undefined;
     if (next && this.link) await this.prompt(this.link, sessionId, next.text, next.images);
     // 单会话代理：回复期间点了新对话，草稿会话这时才建
     else if (this.options.singleSession && this.link && this.activeId === undefined && this.draftId === undefined) void this.ensureDraft();
@@ -855,11 +774,7 @@ export class AcpController implements ChatBackendController {
   private async interrupt(): Promise<void> {
     const sessionId = this.currentId();
     if (!sessionId || !this.link) return;
-    for (const [id, pending] of this.permissions) {
-      if (pending.sessionId !== sessionId) continue;
-      pending.resolve({ outcome: { outcome: 'cancelled' } });
-      this.permissions.delete(id);
-    }
+    this.cancelPermissions(sessionId);
     this.link.notify('session/cancel', { sessionId });
     this.scheduleRender();
   }
@@ -957,6 +872,12 @@ export class AcpController implements ChatBackendController {
     const sessionId = this.currentId() ?? (await this.ensureDraft());
     const option = this.modeOption();
     if (!sessionId || !option || option.currentValue === mode) return;
+    // 不再逐项询问的模式（Claude 的 bypassPermissions、各家的 yolo / full access）：和 dsh 的完全访问一样先确认
+    const target = option.options?.find((o) => o.value === mode);
+    if (isUnrestrictedMode(mode, target?.name)) {
+      const name = target?.name ?? mode;
+      if (!(await this.workbench.confirm(t('acp.dangerTitle', name), t('acp.dangerDetail', this.agentName(), name), t('acp.dangerAllow', name)))) return;
+    }
     try {
       await this.setOption(sessionId, option.id, mode);
     } catch (error) {
@@ -985,17 +906,37 @@ export class AcpController implements ChatBackendController {
     });
   }
 
-  private respondApproval(id: string, allow: boolean): void {
+  private respondApproval(id: string, decision: 'allow' | 'allowAlways' | 'reject'): void {
     const pending = this.permissions.get(id);
     if (!pending) {
       this.toast('info', t('request.ended'));
       return;
     }
+    if (decision !== 'reject' && this.dirtyTargets(pending).length > 0) {
+      // 编辑器里还有未保存的内容，代理直接写磁盘后会和编辑器冲突
+      this.toast('error', t('approval.dirty'));
+      return;
+    }
     const pick = (prefix: string) => pending.options.find((o) => o.kind === `${prefix}_once`) ?? pending.options.find((o) => o.kind?.startsWith(prefix));
-    const option = allow ? pick('allow') : pick('reject');
+    const option = decision === 'allowAlways' ? (pending.options.find((o) => o.kind === 'allow_always') ?? pick('allow')) : decision === 'allow' ? pick('allow') : pick('reject');
     this.permissions.delete(id);
     pending.resolve(option ? { outcome: { outcome: 'selected', optionId: option.optionId } } : { outcome: { outcome: 'cancelled' } });
     this.scheduleRender();
+  }
+
+  /** 审批要改的文件（绝对路径）；不是修改文件的工具时为 undefined。 */
+  private editTarget(pending: PendingPermission): string | undefined {
+    const call = pending.toolCall;
+    if (call.kind !== 'edit' && call.kind !== 'delete' && call.kind !== 'move' && !(call.content ?? []).some((c) => c.type === 'diff')) return undefined;
+    const args = (call.rawInput ?? {}) as { file_path?: unknown; path?: unknown };
+    const path = call.locations?.[0]?.path ?? (typeof args.file_path === 'string' ? args.file_path : typeof args.path === 'string' ? args.path : undefined);
+    return path ? this.absolute(path) : undefined;
+  }
+
+  /** 要改的文件里在编辑器中有未保存内容的（显示用的路径）。 */
+  private dirtyTargets(pending: PendingPermission): string[] {
+    const target = this.editTarget(pending);
+    return target && this.workbench.dirtyFiles().includes(target) ? [displayPath(target, this.workspacePath)] : [];
   }
 
   private interactionOf(pending: PendingPermission): PendingInteraction {
@@ -1008,6 +949,7 @@ export class AcpController implements ChatBackendController {
         : path
           ? { subject: displayPath(path, this.workspacePath), subjectKind: 'file' as const }
           : undefined;
+    const always = pending.options.find((o) => o.kind === 'allow_always');
     return {
       kind: 'approval',
       id: pending.id,
@@ -1015,7 +957,8 @@ export class AcpController implements ChatBackendController {
       reason: call.title ?? '',
       ...(subject ?? {}),
       previewable: false,
-      dirtyFiles: [],
+      dirtyFiles: this.dirtyTargets(pending),
+      ...(always ? { allowAlways: always.name?.trim() || t('acp.allowAlways') } : {}),
     };
   }
 
@@ -1090,7 +1033,7 @@ export class AcpController implements ChatBackendController {
     this.renderTimer = setTimeout(() => {
       this.renderTimer = undefined;
       this.render();
-    }, this.options.renderDelayMs ?? 30);
+    }, renderDelay(this.options));
   }
 
   render(): void {
@@ -1125,11 +1068,14 @@ export class AcpController implements ChatBackendController {
         return changes ? { changes } : {};
       })(),
     };
+    // 等着审批的会话在列表里标出来：它的标签可能已经关了，不标就没有任何地方看得到
+    const waiting = new Set([...this.permissions.values()].map((p) => p.sessionId));
+    const state = (id: string) => ({ running: this.projections.get(id)?.running ?? false, ...(waiting.has(id) ? { needsAttention: true } : {}) });
     const known = new Map<string, SessionListItem>();
-    for (const s of this.listed) known.set(s.id, { id: s.id, title: this.titleOf(s.id), updatedAt: s.updatedAt, running: this.projections.get(s.id)?.running ?? false });
+    for (const s of this.listed) known.set(s.id, { id: s.id, title: this.titleOf(s.id), updatedAt: s.updatedAt, ...state(s.id) });
     for (const s of this.stored) {
       if (!known.has(s.id) && (this.init?.agentCapabilities?.sessionCapabilities?.list === undefined || this.projections.has(s.id))) {
-        known.set(s.id, { id: s.id, title: s.title, updatedAt: s.updatedAt, running: this.projections.get(s.id)?.running ?? false });
+        known.set(s.id, { id: s.id, title: s.title, updatedAt: s.updatedAt, ...state(s.id) });
       }
     }
     const sessions = [...known.values()].filter((s) => s.id !== this.draftId).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -1145,7 +1091,7 @@ export class AcpController implements ChatBackendController {
         name: c.name,
         description: c.description ?? '',
         ...(c.input?.hint ? { hint: c.input.hint } : {}),
-        source: c._meta?.type === 'skill' ? ('skill' as const) : ('dsh' as const),
+        source: c._meta?.type === 'skill' ? ('skill' as const) : ('agent' as const),
       })),
     ];
     return {
@@ -1158,37 +1104,8 @@ export class AcpController implements ChatBackendController {
       interactions,
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
-      context: this.contextState(),
+      context: this.editorContext.state(),
       commands,
-    };
-  }
-
-  // ---------------------------------------------------------------- 上下文
-
-  private snapshotAttachment(editor: EditorSnapshot | undefined): ContextAttachment | undefined {
-    if (!editor) return undefined;
-    if (!editor.selection) return { kind: 'file', path: editor.path };
-    const { startLine, endLine, text, diagnostics } = editor.selection;
-    return { kind: 'selection', path: editor.path, startLine, endLine, languageId: editor.languageId, text, ...(diagnostics.length ? { diagnostics } : {}) };
-  }
-
-  private gatherContext(options: { includeActive?: boolean; extra?: readonly ContextAttachment[]; diagnostics?: boolean }): ContextAttachment[] {
-    const active = options.includeActive !== false ? this.snapshotAttachment(this.workbench.activeEditor()) : undefined;
-    const all = [...this.pinned.map(({ id: _id, ...rest }) => rest as ContextAttachment), ...(options.extra ?? []), ...(active ? [active] : [])];
-    return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
-  }
-
-  private contextState(): ContextState {
-    const view = (a: ContextAttachment) => ({
-      kind: a.kind,
-      path: displayPath(a.path, this.workspacePath),
-      ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
-    });
-    const active = this.snapshotAttachment(this.workbench.activeEditor());
-    return {
-      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
-      includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
-      pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
     };
   }
 
@@ -1223,6 +1140,11 @@ export function wholeFile(diff: AcpDiff, current: string | undefined): string | 
   const at = current.indexOf(diff.newText);
   if (at < 0 || current.indexOf(diff.newText, at + 1) >= 0) return undefined;
   return current.slice(0, at) + diff.oldText + current.slice(at + diff.newText.length);
+}
+
+/** 模式的 id 或名称表明它不再逐项询问（bypassPermissions、yolo、full access、dontAsk…）。 */
+export function isUnrestrictedMode(id: string, name?: string): boolean {
+  return /bypass|yolo|danger|full[\s_-]?(access|auto)|dont[\s_-]?ask|skip[\s_-]?permission|unrestricted|auto[\s_-]?approve/iu.test(`${id} ${name ?? ''}`);
 }
 
 /** ACP 的「需要认证」错误（RequestError.authRequired，-32000）。 */

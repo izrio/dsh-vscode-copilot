@@ -10,18 +10,22 @@ import { basename } from 'node:path';
 import * as vscode from 'vscode';
 import type { AppearanceState, BackendsState, RuntimeStatus } from '@harness-deck/shared';
 import { createAcpBackend } from './backend/acp.ts';
-import { createDshBackend, processEnvWithProxy, type BackendHost } from './backend/dsh.ts';
+import { createDshBackend } from './backend/dsh.ts';
+import { processEnvWithProxy, type BackendHost } from './backend/host.ts';
 import { locateDsh, locateExecutable } from './runtime/locate.ts';
 import { DSH_PROFILE, builtinProfiles, parseProfiles, profileView } from './backend/profiles.ts';
 import type { BackendProfile, RunningBackend } from './backend/types.ts';
 import { ChatViewProvider } from './webview/ChatViewProvider.ts';
 import { VscodeWorkbench } from './workbench/VscodeWorkbench.ts';
-import { resolveLocale, setLocale, t } from './i18n.ts';
+import { getLocale, resolveLocale, setLocale, t } from './i18n.ts';
 import { redactSecrets } from './util/redact.ts';
 import { command, migrateSettings, SECTION, settings } from './settings.ts';
 
-const FOLDER_KEY = 'dsh.folder';
-const BACKEND_KEY = 'dsh.backend';
+const FOLDER_KEY = 'harnessDeck.folder';
+const BACKEND_KEY = 'harnessDeck.backend';
+/** 改名前保存的键：读取时兼容，写入只写新键。 */
+const LEGACY_FOLDER_KEY = 'dsh.folder';
+const LEGACY_BACKEND_KEY = 'dsh.backend';
 /** 内置 ACP 代理的安装和登录提示（Host 侧文案）。 */
 const BUILTIN_HINTS = {
   'oh-my-pi': 'acp.ompHint',
@@ -50,7 +54,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 多根工作区：用上次选择的文件夹，默认第一个；会话按文件夹分开
   const folders = (): readonly vscode.WorkspaceFolder[] => (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file');
-  const savedFolder = context.workspaceState.get<string>(FOLDER_KEY);
+  const savedFolder = context.workspaceState.get<string>(FOLDER_KEY) ?? context.workspaceState.get<string>(LEGACY_FOLDER_KEY);
   let workspacePath = folders().find((f) => f.uri.fsPath === savedFolder)?.uri.fsPath ?? folders()[0]?.uri.fsPath ?? homedir();
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -69,7 +73,8 @@ export function activate(context: vscode.ExtensionContext): void {
     parseProfiles(settings().get<unknown>('backends', []), log, builtinProfiles((id) => t(BUILTIN_HINTS[id])));
   /** 每个底层的命令在本机找不找得到（选择卡片显示「已安装」或安装命令）。 */
   const availability = new Map<string, boolean>();
-  const needsChoice = (): boolean => !context.globalState.get<boolean>(CHOSEN_KEY) && context.workspaceState.get<string>(BACKEND_KEY) === undefined;
+  const savedBackend = (): string | undefined => context.workspaceState.get<string>(BACKEND_KEY) ?? context.workspaceState.get<string>(LEGACY_BACKEND_KEY);
+  const needsChoice = (): boolean => !context.globalState.get<boolean>(CHOSEN_KEY) && savedBackend() === undefined;
   const backendsState = (): BackendsState => ({
     items: profiles().map((p) => profileView(p, availability.get(p.id))),
     active: active?.profile.id ?? DSH_PROFILE.id,
@@ -107,7 +112,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const host: BackendHost = {
     context,
     log,
-    runtimeLog: (line, stream) => (stream === 'stderr' ? runtimeOutput.warn(line) : runtimeOutput.info(line)),
+    // 底层的输出同样先脱敏：ACP 代理的 stderr 和排查日志（backendTrace）里可能带着令牌或 API Key
+    runtimeLog: (line, stream) => (stream === 'stderr' ? runtimeOutput.warn(redactSecrets(line)) : runtimeOutput.info(redactSecrets(line))),
     workspacePath: () => workspacePath,
     stateKey: (name) => (folders().length > 1 ? `${name}:${workspacePath}` : name),
     onStatus: () => updateStatusBar(),
@@ -115,6 +121,7 @@ export function activate(context: vscode.ExtensionContext): void {
       workbench,
       includeActiveEditor: () => settings('context').get<boolean>('includeActiveEditor', true),
       post: (message) => provider?.post(message),
+      isVisible: () => provider?.visible ?? false,
       log,
       folderLabel: () => (folders().length > 1 ? folders().find((f) => f.uri.fsPath === workspacePath)?.name : undefined),
       selectFolder: () => void vscode.commands.executeCommand(command('selectFolder')),
@@ -152,7 +159,17 @@ export function activate(context: vscode.ExtensionContext): void {
     return createAcpBackend(profile, host);
   };
 
-  /** 启动选中的底层（找不到时用 dsh）。视图已经打开时立即启动，并让 Webview 重新取快照。 */
+  /**
+   * 面板可见时启动当前底层。start 可以重复调用；已经失败过的不在这里自动重试（横幅里有「重试」）。
+   * 面板每次重新显示（Webview 重新加载、发来 ready）都会走到这里：面板隐藏期间切换的底层在这时启动。
+   */
+  const startIfNeeded = (): void => {
+    if (!active) return;
+    const kind = active.currentStatus().kind;
+    if (kind === 'idle' || kind === 'notInstalled' || kind === 'untrusted') active.start();
+  };
+
+  /** 换成选中的底层（找不到时用 dsh）。视图已经打开时立即启动，并让 Webview 重新取快照。 */
   const activateBackend = (id: string): void => {
     const profile = profiles().find((p) => p.id === id) ?? DSH_PROFILE;
     try {
@@ -169,21 +186,29 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  const switchBackend = async (id: string): Promise<void> => {
-    if (active?.profile.id === id) return;
-    const previous = active;
-    active = undefined;
-    await context.workspaceState.update(BACKEND_KEY, id);
-    await previous?.stop().catch((error: unknown) => log(`停止底层失败：${String(error)}`));
-    activateBackend(id);
-    log(`已切换到底层 ${(active as RunningBackend | undefined)?.profile.name ?? id}`);
+  /**
+   * 切换底层。切换是串行的：上一次切换（停掉旧进程、启动新的）没做完时，后来的排在后面，
+   * 否则两次切换交错，先启动的那个底层就没人去停了。
+   */
+  let switching: Promise<void> = Promise.resolve();
+  const switchBackend = (id: string): Promise<void> => {
+    const run = async (): Promise<void> => {
+      if (active?.profile.id === id) return;
+      const previous = active;
+      active = undefined;
+      await context.workspaceState.update(BACKEND_KEY, id);
+      await previous?.stop().catch((error: unknown) => log(`停止底层失败：${String(error)}`));
+      activateBackend(id);
+      log(`已切换到底层 ${(active as RunningBackend | undefined)?.profile.name ?? id}`);
+    };
+    switching = switching.then(run, run);
+    return switching;
   };
 
-  activateBackend(context.workspaceState.get<string>(BACKEND_KEY) ?? DSH_PROFILE.id);
-  const current = (): RunningBackend => active!;
+  activateBackend(savedBackend() ?? DSH_PROFILE.id);
+  /** 当前底层；切换途中（旧的已停、新的还没建好）为 undefined，这时的命令不做任何事。 */
+  const current = (): RunningBackend | undefined => active;
   context.subscriptions.push(workbench.register(() => active?.controller.workspaceChanged()));
-
-  const startIfTrusted = (): void => current().start();
 
   provider = new ChatViewProvider(context.extensionUri, {
     onMessage: (message) => {
@@ -200,11 +225,15 @@ export function activate(context: vscode.ExtensionContext): void {
         })();
         return;
       }
-      // 面板每次打开都重新检查一遍（用户可能刚装好）
-      if (message.type === 'ready') void checkAvailability();
+      // 面板每次打开都重新检查一遍（用户可能刚装好），并确保当前底层已经启动
+      if (message.type === 'ready') {
+        void checkAvailability();
+        startIfNeeded();
+      }
       void active?.controller.handle(message);
     },
-    onViewVisible: startIfTrusted,
+    onViewVisible: startIfNeeded,
+    locale: getLocale,
     log: log,
   });
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, provider));
@@ -215,9 +244,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(command('openChat'), focusView),
     vscode.commands.registerCommand(command('newSession'), async () => {
       await focusView();
-      await current().controller.handle({ type: 'newSession', payload: {} });
+      await current()?.controller.handle({ type: 'newSession', payload: {} });
     }),
-    vscode.commands.registerCommand(command('interrupt'), () => current().controller.handle({ type: 'interrupt', payload: {} })),
+    vscode.commands.registerCommand(command('interrupt'), () => current()?.controller.handle({ type: 'interrupt', payload: {} })),
     vscode.commands.registerCommand(command('selectBackend'), async () => {
       const picked = await vscode.window.showQuickPick(
         profiles().map((p) => ({ label: p.name, description: p.kind === 'dsh' ? 'dsh' : `ACP · ${p.command}`, picked: p.id === active?.profile.id, id: p.id })),
@@ -232,7 +261,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.commands.registerCommand(command('selectModel'), async () => {
-      const chat = current().controller;
+      const chat = current()?.controller;
+      if (!chat) return;
       const models = chat.modelState();
       if (models.options.length === 0) {
         void vscode.window.showInformationMessage(t('ext.noModels'));
@@ -260,26 +290,26 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand(command('explainSelection'), async () => {
       // 先同步取下选区（askAboutSelection 在第一个 await 之前读取当前编辑器），再切换焦点
-      const sending = current().controller.askAboutSelection('explain');
+      const sending = current()?.controller.askAboutSelection('explain');
       await focusView();
       await sending;
     }),
     vscode.commands.registerCommand(command('fixSelection'), async () => {
-      const sending = current().controller.askAboutSelection('fix');
+      const sending = current()?.controller.askAboutSelection('fix');
       await focusView();
       await sending;
     }),
     vscode.commands.registerCommand(command('testSelection'), async () => {
-      const sending = current().controller.askAboutSelection('test');
+      const sending = current()?.controller.askAboutSelection('test');
       await focusView();
       await sending;
     }),
     vscode.commands.registerCommand(command('addToChat'), async () => {
-      current().controller.pinActiveEditor();
+      current()?.controller.pinActiveEditor();
       await focusView();
     }),
-    vscode.commands.registerCommand(command('configureApiKey'), () => current().controller.configureApiKey()),
-    vscode.commands.registerCommand(command('renameSession'), () => current().controller.renameSession()),
+    vscode.commands.registerCommand(command('configureApiKey'), () => current()?.controller.configureApiKey()),
+    vscode.commands.registerCommand(command('renameSession'), () => current()?.controller.renameSession()),
     vscode.commands.registerCommand(command('selectFolder'), async () => {
       const list = folders();
       if (list.length < 2) {
@@ -293,31 +323,33 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!picked || picked.folder.uri.fsPath === workspacePath) return;
       workspacePath = picked.folder.uri.fsPath;
       await context.workspaceState.update(FOLDER_KEY, workspacePath);
-      current().controller.setWorkspace(workspacePath);
-      current().controller.backendsChanged();
+      current()?.controller.setWorkspace(workspacePath);
+      current()?.controller.backendsChanged();
     }),
-    vscode.commands.registerCommand(command('restartRuntime'), () => current().restart()),
-    vscode.commands.registerCommand(command('openWebUI'), () => current().controller.handle({ type: 'openWebUI', payload: {} })),
+    vscode.commands.registerCommand(command('restartRuntime'), () => current()?.restart()),
+    vscode.commands.registerCommand(command('openWebUI'), () => current()?.controller.handle({ type: 'openWebUI', payload: {} })),
     vscode.commands.registerCommand(command('showLogs'), () => output.show()),
-    vscode.workspace.onDidGrantWorkspaceTrust(startIfTrusted),
+    vscode.workspace.onDidGrantWorkspaceTrust(() => {
+      if (provider?.visible) startIfNeeded();
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      const chat = current().controller;
+      const chat = current()?.controller;
       if (event.affectsConfiguration(`${SECTION}.dsh`)) output.info('dsh 运行时设置已修改，执行「Harness Deck：重启底层」后生效');
       if (event.affectsConfiguration(`${SECTION}.backends`)) {
         // 当前底层被删掉时回到 dsh；否则只刷新列表（命令和参数的修改在重启底层后生效）
         if (!profiles().some((p) => p.id === active?.profile.id)) void switchBackend(DSH_PROFILE.id);
-        else chat.backendsChanged();
+        else chat?.backendsChanged();
         void checkAvailability();
       }
       if (event.affectsConfiguration(`${SECTION}.dsh.path`)) void checkAvailability();
-      if (event.affectsConfiguration(`${SECTION}.context`)) chat.workspaceChanged();
+      if (event.affectsConfiguration(`${SECTION}.context`)) chat?.workspaceChanged();
       if (event.affectsConfiguration(`${SECTION}.ui.fontSize`) || event.affectsConfiguration(`${SECTION}.ui.fontFamily`) || event.affectsConfiguration(`${SECTION}.ui.codeFontFamily`) || event.affectsConfiguration(`${SECTION}.ui.palette`)) {
-        chat.appearanceChanged();
+        chat?.appearanceChanged();
       }
-      if (event.affectsConfiguration(`${SECTION}.ui.showTurnChanges`)) chat.workspaceChanged();
+      if (event.affectsConfiguration(`${SECTION}.ui.showTurnChanges`)) chat?.workspaceChanged();
       if (event.affectsConfiguration(`${SECTION}.ui.language`)) {
         applyLocale();
-        chat.localeChanged();
+        chat?.localeChanged();
         updateStatusBar();
       }
     }),

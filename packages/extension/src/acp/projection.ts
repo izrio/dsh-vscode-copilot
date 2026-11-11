@@ -9,10 +9,11 @@
  * - plan → 待办，usage_update → 上下文用量，available_commands_update → 斜杠命令，
  *   config_option_update / current_mode_update → 模型和模式，session_info_update → 标题。
  */
-import type { Item, LineStats } from '@harness-deck/shared';
+import { joinLabel, splitLabel, type Item, type LineStats } from '@harness-deck/shared';
 import { splitContext } from '../vm/context.ts';
 import { countLines, lineStats, sumStats } from '../vm/diffs.ts';
-import { activityLabel, displayPath, toolVariant } from '../vm/projector.ts';
+import { activityLabel, toolVariant } from '../vm/projector.ts';
+import { displayPath } from '../vm/paths.ts';
 import { canonicalTool } from '../vm/toolNames.ts';
 import { t } from '../i18n.ts';
 
@@ -355,7 +356,7 @@ export class AcpSessionProjection {
   }
 
   private addExplore(call: AcpToolCall): void {
-    const entry = { id: call.toolCallId, label: this.label(call), status: statusOf(call.status) };
+    const entry = this.exploreEntry(call);
     const last = this.items.length - 1;
     if (this.items[last]?.kind === 'explore') {
       const group = this.items[last] as Explore;
@@ -388,13 +389,13 @@ export class AcpSessionProjection {
         this.items.pop();
         this.addExplore(merged);
       } else {
-        this.items[at.index] = summarize({ kind: 'explore', id: `x:${merged.toolCallId}`, summary: '', status: 'running', entries: [{ id: merged.toolCallId, label: this.label(merged), status: statusOf(merged.status) }] });
+        this.items[at.index] = summarize({ kind: 'explore', id: `x:${merged.toolCallId}`, summary: '', status: 'running', entries: [this.exploreEntry(merged)] });
         this.toolIndex.set(merged.toolCallId, { index: at.index, entry: 0 });
       }
       return;
     }
     if (item?.kind === 'explore' && at.entry !== undefined) {
-      const entries = item.entries.map((e, i) => (i === at.entry ? { ...e, label: this.label(merged), status: statusOf(merged.status) } : e));
+      const entries = item.entries.map((e, i) => (i === at.entry ? this.exploreEntry(merged) : e));
       this.items[at.index] = summarize({ ...item, entries });
     } else if (item?.kind === 'activity') {
       this.items[at.index] = this.activity(merged);
@@ -409,16 +410,23 @@ export class AcpSessionProjection {
     return variant === 'subagent' ? 'generic' : variant;
   }
 
+  /** 浏览行里的一步；读文件的那一步带上路径，点它打开文件。 */
+  private exploreEntry(call: AcpToolCall): Explore['entries'][number] {
+    const args = (call.rawInput ?? {}) as { path?: unknown; file_path?: unknown };
+    const path = call.kind === 'read' ? (call.locations?.[0]?.path ?? (typeof args.file_path === 'string' ? args.file_path : typeof args.path === 'string' ? args.path : undefined)) : undefined;
+    return { id: call.toolCallId, label: this.label(call), status: statusOf(call.status), ...(path ? { path: displayPath(path, this.workspacePath) } : {}) };
+  }
+
   private label(call: AcpToolCall): string {
     const name = call.name ?? call.kind ?? 'tool';
     const args = call.rawInput && typeof call.rawInput === 'object' ? (call.rawInput as Record<string, unknown>) : {};
     const fromArgs = activityLabel(name, args, this.workspacePath);
     if (fromArgs !== name) return fromArgs;
     const path = call.locations?.[0]?.path;
-    if (path) return `${name}  ${displayPath(path, this.workspacePath)}`;
+    if (path) return joinLabel(name, displayPath(path, this.workspacePath));
     // 标题里常带着工具名（「read: README.md」），去掉重复的前缀
     const title = (call.title ?? '').replace(new RegExp(`^${escapeRegExp(name)}:?\\s*`, 'u'), '');
-    return title ? `${name}  ${title}` : name;
+    return joinLabel(name, title);
   }
 
   private activity(call: AcpToolCall): Activity {
@@ -429,7 +437,7 @@ export class AcpSessionProjection {
     if (variant === 'command') {
       const args = (call.rawInput ?? {}) as { command?: unknown };
       const command = typeof args.command === 'string' ? args.command.split('\n', 1)[0] : (call.title ?? '').replace(/^\$\s*/u, '');
-      return { ...base, variant, label: `${base.tool}  ${command}`, ...(output ? { output } : {}) };
+      return { ...base, variant, label: joinLabel(base.tool, command), ...(output ? { output } : {}) };
     }
     if (variant === 'edit') {
       const diffs = (call.content ?? []).filter((c): c is Extract<AcpToolContent, { type: 'diff' }> => c.type === 'diff');
@@ -560,7 +568,7 @@ function summarize(group: Explore): Explore {
   let reads = 0;
   let searches = 0;
   for (const entry of group.entries) {
-    const tool = entry.label.split('  ', 1)[0] ?? '';
+    const tool = splitLabel(entry.label).name;
     if (/read|cat|view/iu.test(tool)) reads++;
     else searches++;
   }

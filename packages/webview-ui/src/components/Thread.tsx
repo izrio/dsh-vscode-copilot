@@ -11,6 +11,27 @@ import { RunStatus } from './RunStatus.tsx';
 import { ArrowDownIcon, ArrowUpIcon, SpinnerIcon } from './icons.tsx';
 import { useT } from '../i18n.ts';
 
+/**
+ * 给读屏的播报：只在状态变化时说一句（开始回复、回复完了、在等你处理），不逐字念流式输出的内容。
+ */
+function Announcer({ running, waiting }: { running: boolean; waiting: boolean }) {
+  const t = useT();
+  const previous = useRef({ running, waiting });
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { running, waiting };
+    if (waiting && !before.waiting) setMessage(t('a11y.needsYou'));
+    else if (running && !before.running) setMessage(t('a11y.replyStarted'));
+    else if (!running && before.running) setMessage(t('a11y.replyDone'));
+  }, [running, waiting]);
+  return (
+    <div className="sr-only" role="status" aria-live="polite" data-testid="announcer">
+      {message}
+    </div>
+  );
+}
+
 const STICK_THRESHOLD = 48;
 /** 离底部超过这个距离才显示「滚动到底部」按钮（刚往上滚一点时不打扰）。 */
 const BUTTON_THRESHOLD = 240;
@@ -72,7 +93,8 @@ export function Thread() {
 
   return (
     <div className="thread-wrap">
-    <div className="thread" ref={scroller} role="log" aria-live="polite" aria-busy={session.running}>
+    {/* 不做成 live region：流式输出时每来一段文字读屏都会播报。状态变化由下面的 Announcer 单独播报 */}
+    <div className="thread" ref={scroller} role="region" aria-label={t('thread.label')} aria-busy={session.running} tabIndex={-1}>
       {session.sync === 'disconnected' ? (
         <div className="thread__sync" role="status">
           <SpinnerIcon />
@@ -95,6 +117,7 @@ export function Thread() {
       ))}
       <RunStatus />
     </div>
+      <Announcer running={session.running} waiting={interactions.length > 0} />
       {farFromBottom ? (
         <button type="button" className={`to-bottom ${unseen ? 'to-bottom--unseen' : ''}`} title={t('thread.toBottom')} aria-label={t('thread.toBottom')} data-testid="to-bottom" onClick={toBottom}>
           <ArrowDownIcon />

@@ -7,27 +7,12 @@ import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@harness-deck/shared';
 import { DshConnection } from '../dsh/DshConnection.ts';
 import { RuntimeManager, type RuntimeConfig } from '../runtime/RuntimeManager.ts';
-import { ChatController, type ChatControllerOptions } from '../vm/ChatController.ts';
+import { ChatController } from '../vm/ChatController.ts';
 import { webUIUrl } from '../util/webUrl.ts';
 import { t } from '../i18n.ts';
 import { settings } from '../settings.ts';
+import { processEnvWithProxy, type BackendHost } from './host.ts';
 import type { BackendProfile, RunningBackend } from './types.ts';
-
-/** 各种底层共用的、由 extension.ts 提供的能力。 */
-export interface BackendHost {
-  readonly context: vscode.ExtensionContext;
-  readonly log: (line: string) => void;
-  readonly runtimeLog: (line: string, stream: 'stdout' | 'stderr') => void;
-  readonly workspacePath: () => string;
-  /** 每种底层各自的 workspaceState 键（会话、标签不在底层之间混用）。 */
-  readonly stateKey: (name: string) => string;
-  /** 控制器的公共选项：Webview 推送、编辑器能力、外观、底层列表等。 */
-  readonly controllerOptions: () => Omit<
-    ChatControllerOptions,
-    'workspacePath' | 'loadActiveSessionId' | 'saveActiveSessionId' | 'restartRuntime' | 'openWebUI' | 'loadOpenTabs' | 'saveOpenTabs'
-  >;
-  readonly onStatus: (status: RuntimeStatus) => void;
-}
 
 export function createDshBackend(profile: Extract<BackendProfile, { kind: 'dsh' }>, host: BackendHost): RunningBackend {
   const manager = new RuntimeManager({
@@ -120,15 +105,4 @@ function readRuntimeConfig(workspacePath: string): RuntimeConfig {
     cwd: workspacePath,
     env: processEnvWithProxy(),
   };
-}
-
-/** 进程环境变量，加上 VS Code 的代理设置（模型请求由底层自己发出）。 */
-export function processEnvWithProxy(extra: Readonly<Record<string, string>> = {}): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env, ...extra };
-  const proxy = vscode.workspace.getConfiguration('http').get<string>('proxy');
-  if (proxy) {
-    env.HTTPS_PROXY ??= proxy;
-    env.HTTP_PROXY ??= proxy;
-  }
-  return env;
 }

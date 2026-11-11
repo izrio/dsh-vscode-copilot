@@ -7,8 +7,10 @@ export interface PersistedState {
   readonly drafts?: Readonly<Record<string, string>>;
   /** 用户拖动设定的输入框高度（px）；没有时随内容自动增高。 */
   readonly inputHeight?: number | undefined;
-  /** 会话改动栏是否展开。 */
+  /** 会话改动栏是否展开（旧版本保存的；现在用 dockOpen）。 */
   readonly changesOpen?: boolean;
+  /** 输入框上方状态栏里展开的那一项。 */
+  readonly dockOpen?: 'todos' | 'changes' | undefined;
   /** 被隐藏时的会话改动签名；改动变化后重新显示。 */
   readonly changesDismissed?: string;
 }

@@ -96,7 +96,8 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restartRuntime'), payload: empty }),
   z.object({ type: z.literal('showLogs'), payload: empty }),
   z.object({ type: z.literal('openWebUI'), payload: empty }),
-  z.object({ type: z.literal('respondApproval'), payload: z.object({ id: z.string().min(1), decision: z.enum(['allow', 'reject']) }) }),
+  /** allowAlways：底层提供「始终允许」时才有（ACP 代理的 allow_always 选项）。 */
+  z.object({ type: z.literal('respondApproval'), payload: z.object({ id: z.string().min(1), decision: z.enum(['allow', 'allowAlways', 'reject']) }) }),
   z.object({ type: z.literal('previewApproval'), payload: z.object({ id: z.string().min(1) }) }),
   z.object({
     type: z.literal('answerQuestion'),
@@ -115,7 +116,7 @@ export const webviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('selectBackend'), payload: z.object({ id: z.string().min(1).max(100) }) }),
   /** 第一次使用时的底层选择卡片：「稍后再说」，保持当前底层，不再询问。 */
   z.object({ type: z.literal('dismissBackendChoice'), payload: empty }),
-  /** 面板里的字体设置：写入 VS Code 设置 dsh.ui.*；null 表示恢复默认（跟随 VS Code）。 */
+  /** 面板里的字体设置：写入 VS Code 设置 harnessDeck.ui.*；null 表示恢复默认（跟随 VS Code）。 */
   z.object({
     type: z.literal('setAppearance'),
     payload: z.object({
@@ -185,6 +186,8 @@ export type HostToWebview =
   | { readonly type: 'commands'; readonly payload: readonly CommandView[] }
   | { readonly type: 'fileCandidates'; readonly payload: { readonly requestId: number; readonly items: readonly FileCandidate[] } }
   | { readonly type: 'toast'; readonly payload: { readonly level: 'info' | 'error'; readonly text: string } }
+  /** 消息没能发出去（没连上、建不了会话…）：输入框发送时已经清空，把文字放回去。 */
+  | { readonly type: 'restoreDraft'; readonly payload: { readonly text: string } }
   | { readonly type: 'focusComposer'; readonly payload: Record<string, never> };
 
 /**

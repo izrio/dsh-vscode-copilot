@@ -36,11 +36,11 @@ export function InteractionCard({ interaction }: { interaction: PendingInteracti
 }
 
 function ApprovalCard({ item }: { item: Of<'approval'> }) {
-  const [sent, setSent] = useState<'allow' | 'reject' | undefined>();
+  const [sent, setSent] = useState<'allow' | 'allowAlways' | 'reject' | undefined>();
   const t = useT();
   const blocked = item.dirtyFiles.length > 0;
   const isDsh = useView((s) => (s.backends.items.find((b) => b.id === s.backends.active)?.kind ?? 'dsh') === 'dsh');
-  const respond = (decision: 'allow' | 'reject') => {
+  const respond = (decision: 'allow' | 'allowAlways' | 'reject') => {
     setSent(decision);
     postToHost({ type: 'respondApproval', payload: { id: item.id, decision } });
   };
@@ -74,6 +74,12 @@ function ApprovalCard({ item }: { item: Of<'approval'> }) {
           {sent === 'allow' ? <SpinnerIcon /> : <CheckIcon />}
           {t('approval.allow')}
         </button>
+        {item.allowAlways ? (
+          <button type="button" className="button button--secondary" disabled={sent !== undefined || blocked} title={t('approval.allowAlwaysTitle')} onClick={() => respond('allowAlways')}>
+            {sent === 'allowAlways' ? <SpinnerIcon /> : null}
+            {item.allowAlways}
+          </button>
+        ) : null}
         <button type="button" className="button button--secondary" disabled={sent !== undefined} onClick={() => respond('reject')}>
           {sent === 'reject' ? <SpinnerIcon /> : <CloseIcon />}
           {t('approval.reject')}

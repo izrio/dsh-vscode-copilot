@@ -1,11 +1,13 @@
 /*
  * 只使用 VS Code 主题变量，自动适配亮色、暗色和高对比度主题。
  * 布局原则见 docs/DESIGN.md 3.1：对话是主角，其他元素有内容才出现。
- * 字号和字体可以用设置 dsh.ui.* 指定（--dsh-* 变量由 App 设置）；不设置时字号比 VS Code 工作台大 1px。
+ * 字号和字体可以用设置 harnessDeck.ui.* 指定（--hd-* 变量由 App 设置）；不设置时字号比 VS Code 工作台大 1px。
  */
 :root {
   color-scheme: light dark;
   --gap: 12px;
+  /* 正文的最大行宽 */
+  --content-width: 820px;
   --radius: 6px;
   --radius-lg: 10px;
   --muted: var(--vscode-descriptionForeground);
@@ -19,7 +21,15 @@
   --accent: var(--vscode-textLink-foreground, #3794ff);
   --accent-foreground: #ffffff;
   --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--vscode-foreground));
-  --mono: var(--dsh-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
+  /*
+   * 文字链接（回复里的链接、可点的路径、「全部保存」这类文字按钮）用主题的链接色：它是为放在背景上读而选的。
+   * 强调色优先取按钮背景色，当文字用对比度不够（Dark Modern 下约 3.9:1）。
+   */
+  --link: var(--vscode-textLink-foreground, var(--accent));
+  /* 警告、错误的文字色。浅色主题下主题给的黄和红太浅（约 3:1），见下面 body.vscode-light 的覆盖。 */
+  --warning-text: var(--vscode-editorWarning-foreground, var(--muted));
+  --error-text: var(--vscode-errorForeground, #f14c4c);
+  --mono: var(--hd-code-font-family, var(--vscode-editor-font-family, ui-monospace, monospace));
   /* 用前景色混合出气泡底色，深浅主题下都有足够对比 */
   --bubble: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
   /*
@@ -42,6 +52,12 @@
 :root:not([data-palette='theme']) body.vscode-light {
   --text: color-mix(in srgb, var(--vscode-foreground) 90%, var(--bg));
   --text-strong: var(--vscode-foreground);
+}
+
+/* 浅色主题：警告黄和错误红往前景色混一些，文字对比度到 4.5:1 以上 */
+body.vscode-light {
+  --warning-text: color-mix(in srgb, var(--vscode-editorWarning-foreground, #bf8803) 58%, var(--vscode-foreground));
+  --error-text: color-mix(in srgb, var(--vscode-errorForeground, #f85149) 58%, var(--vscode-foreground));
 }
 
 /* 高对比度主题保持原色 */
@@ -67,8 +83,8 @@ body {
   padding: 0;
   color: var(--text);
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
-  font-family: var(--dsh-font-family, var(--vscode-font-family));
-  font-size: var(--dsh-font-size, calc(var(--vscode-font-size, 13px) + 1px));
+  font-family: var(--hd-font-family, var(--vscode-font-family));
+  font-size: var(--hd-font-size, calc(var(--vscode-font-size, 13px) + 1px));
   line-height: 1.6;
   overflow: hidden;
 }
@@ -105,14 +121,15 @@ button {
   display: none;
 }
 
+/* 标签不压缩：放不下时整行横向滚动（当前标签会滚到可见范围），标题不会被挤成一个字 */
 .tab {
   position: relative;
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   min-width: 72px;
-  max-width: 180px;
+  max-width: 160px;
   padding: 4px 4px 5px 10px;
   border-radius: var(--radius) var(--radius) 0 0;
   color: var(--muted);
@@ -155,8 +172,9 @@ button {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
+  margin: -3px 0;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -247,8 +265,8 @@ button {
 }
 
 .icon-button--small {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .dot {
@@ -484,12 +502,26 @@ button {
 }
 
 .banner--warn .banner__title svg {
-  color: var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+  color: var(--warning-text);
 }
 
 .banner__detail {
   margin: 4px 0 0;
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.banner__summary {
+  margin: 0;
+}
+
+.banner__full {
+  max-height: 160px;
+  margin: 0 0 4px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  white-space: pre-wrap;
 }
 
 .banner__actions {
@@ -530,7 +562,7 @@ button {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--link);
   cursor: pointer;
 }
 
@@ -548,9 +580,11 @@ button {
 
 .empty {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* safe：放不下时从顶部开始排，不会把上半截裁到滚动范围之外 */
+  justify-content: safe center;
   padding: 24px 20px;
   text-align: center;
 }
@@ -634,7 +668,8 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 14px 12px;
+  /* 面板拖宽、或放到编辑器区域时，正文保持在适合阅读的行宽以内并居中 */
+  padding: 6px max(14px, calc((100% - var(--content-width)) / 2)) 12px;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -676,8 +711,9 @@ button {
 }
 
 .user--sending .user__bubble,
+/* 排队中的消息淡一些，但文字仍要读得清（对比度 4.5:1 以上） */
 .user--queued .user__bubble {
-  opacity: 0.65;
+  opacity: 0.82;
 }
 
 .user--failed .user__bubble {
@@ -711,8 +747,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 5px;
@@ -735,7 +771,7 @@ button {
 }
 
 .user__meta--error {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 .assistant {
@@ -892,7 +928,7 @@ button {
 
 .activity--error .activity__icon,
 .activity--error .activity__name {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 .activity__name {
@@ -928,7 +964,30 @@ button {
 }
 
 .activity__file--link {
-  color: var(--accent);
+  color: var(--link);
+}
+
+/* 文件名在前、目录在后：放不下时省略的是目录 */
+.file-path {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.file-path__name {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-path__dir {
+  flex: 1 100 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.92em;
+  text-overflow: ellipsis;
 }
 
 .activity__row:hover .activity__file--link {
@@ -989,9 +1048,23 @@ button {
   font-size: 0.95em;
 }
 
+.explore__target--link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.explore__target--link:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
 .explore__entry--error .explore__tool,
 .explore__error {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 /* 一轮结束的改动汇总 */
@@ -1059,7 +1132,7 @@ button {
 }
 
 .changes__file:hover .changes__name {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
 }
 
@@ -1389,11 +1462,11 @@ button {
 }
 
 .notice--warning {
-  color: var(--vscode-editorWarning-foreground, var(--muted));
+  color: var(--warning-text);
 }
 
 .notice--error {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 /* ---------- Markdown ---------- */
@@ -1442,7 +1515,7 @@ button {
 }
 
 .markdown a {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: none;
 }
 
@@ -1477,6 +1550,18 @@ button {
   /* 跨行时每一段都有完整的描边和圆角 */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+
+/* 回复里提到的文件路径：可以点开 */
+button.inline-code--link {
+  font-size: 0.88em;
+  line-height: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+button.inline-code--link:hover {
+  text-decoration: underline;
 }
 
 .table-wrap {
@@ -1567,6 +1652,9 @@ button {
 
 .composer-wrap {
   position: relative;
+  width: 100%;
+  max-width: calc(var(--content-width) + 8px);
+  margin: 0 auto;
 }
 
 .context-chips {
@@ -1630,6 +1718,12 @@ button.chip:hover {
 
 .chip__remove {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 图标只有 13px：点击区域撑到 24px，用负边距抵消，标签本身不变高 */
+  width: 24px;
+  height: 24px;
+  margin: -5px -6px -5px -4px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1735,7 +1829,7 @@ button.chip:hover {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--link);
   font-family: var(--mono);
   font-size: 0.95em;
   cursor: pointer;
@@ -1756,6 +1850,20 @@ button.chip:hover {
 
 .user:hover .user__actions,
 .user__actions:focus-within {
+  opacity: 1;
+}
+
+/* 回复下面的操作：和用户消息的一样，悬停或键盘聚焦时出现 */
+.assistant__actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.assistant:hover .assistant__actions,
+.assistant__actions:focus-within {
   opacity: 1;
 }
 
@@ -1816,56 +1924,9 @@ body.resizing {
 
 /* ---------- 会话改动栏：输入框正上方，收起时一行 ---------- */
 
-.session-changes {
-  /* 独立的卡片，和输入框之间留出间距（与上方的待办卡片一致） */
-  margin: 0 10px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  font-size: 0.92em;
-}
-
-.session-changes__header {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 4px 2px 2px;
-}
-
-.session-changes__toggle {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.session-changes__toggle:hover {
-  background: var(--hover);
-}
-
-.session-changes__toggle svg {
-  flex: none;
-  color: var(--muted);
-}
-
-.session-changes__title {
-  font-weight: 600;
-}
-
 .session-changes__list {
-  max-height: min(40vh, 260px);
   margin: 0;
-  padding: 0 0 4px;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
+  padding: 4px 0;
   list-style: none;
 }
 
@@ -1886,15 +1947,114 @@ body.resizing {
 }
 
 .session-changes__file:hover .changes__name {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
 }
 
-/* ---------- 状态条：目标、待办 ---------- */
+/* ---------- 输入框上方的状态栏：待办、改动、未保存合在一行，目标单独一行 ---------- */
 
-.status-strip {
+.dock {
   margin: 0 10px 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
   font-size: 0.88em;
+}
+
+.dock__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 2px;
+  padding: 2px;
+}
+
+.dock__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 8px 2px 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock__seg:hover,
+.dock__seg[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.dock__seg svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.dock__seg .todo-card__icon {
+  color: var(--accent);
+}
+
+/* 待办那一段占满剩下的宽度，显示正在做的那一项 */
+.dock__seg--todos {
+  flex: 1 1 9em;
+}
+
+.dock__seg-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock__seg-label {
+  white-space: nowrap;
+}
+
+.dock__spacer {
+  flex: 1;
+}
+
+.dock__group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+}
+
+.dock__group--dirty {
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 12%, transparent);
+}
+
+.dock__panel {
+  max-height: min(40vh, 260px);
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.dock .status-strip__goal {
+  border-bottom: 1px solid var(--border);
+}
+
+/* 只给读屏的文字 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .status-strip__goal {
@@ -1934,45 +2094,12 @@ body.resizing {
 }
 
 .status-strip__goal--blocked .status-strip__meta {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 /* 待办：一张卡片，标题行 + 进度条，展开后是带状态标记的列表 */
-.todo-card {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.todo-card__header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  padding: 5px 10px 4px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  text-align: left;
-  cursor: pointer;
-}
-
-.todo-card__header:hover {
-  background: var(--hover);
-}
-
-.todo-card__header svg {
-  flex: none;
-}
-
 .todo-card__header .todo-card__icon {
   color: var(--accent);
-}
-
-.todo-card__spacer {
-  flex: 1;
 }
 
 .todo-card__count {
@@ -1994,8 +2121,7 @@ body.resizing {
 
 .todo-progress {
   height: 2px;
-  margin: 0 10px 4px;
-  border-radius: 1px;
+  margin: 0;
   background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
   overflow: hidden;
 }
@@ -2008,15 +2134,9 @@ body.resizing {
   transition: width 0.3s ease;
 }
 
-.todo-card--open .todo-progress {
-  margin-bottom: 0;
-}
-
 .todo-list {
-  max-height: min(40vh, 260px);
   margin: 0;
   padding: 6px 10px 8px;
-  overflow-y: auto;
   list-style: none;
 }
 
@@ -2154,35 +2274,11 @@ body.resizing {
 }
 
 /* 未保存文件提示，贴在输入框上方 */
-.dirty-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin: 0 10px 6px;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 40%, var(--border));
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--surface));
-  color: var(--text);
-  font-size: 0.86em;
-  line-height: 1.45;
-}
-
 .dirty-strip__icon {
   flex: none;
   width: 14px;
   height: 14px;
   color: var(--vscode-charts-yellow, #cca700);
-}
-
-.dirty-strip__text {
-  flex: 1;
-  min-width: 12em;
-}
-
-.dirty-strip .link-button {
-  white-space: nowrap;
 }
 
 .composer {
@@ -2226,7 +2322,29 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   padding: 2px 6px 6px;
+}
+
+/* 模型名可以被压缩（省略号），其余的按钮保持自己的宽度，窄面板里不会叠在一起 */
+.composer__toolbar > * {
+  flex: none;
+}
+
+.composer__toolbar > .model-picker {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer__toolbar > .composer__spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.composer__input::placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer__spacer {
@@ -2259,7 +2377,7 @@ body.resizing {
 
 .toolbar-button--danger,
 .toolbar-button--danger:hover:not(:disabled) {
-  color: var(--vscode-editorWarning-foreground, var(--vscode-errorForeground));
+  color: var(--warning-text);
 }
 
 .toolbar-button:disabled {
@@ -2302,6 +2420,17 @@ body.resizing {
   cursor: default;
 }
 
+/* 停止和发送同时出现时，停止是次要的那个：描边样式 */
+.send-button--secondary {
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
+  background: transparent;
+  color: var(--text);
+}
+
+.send-button--secondary:hover:not(:disabled) {
+  background: var(--hover);
+}
+
 /* ---------- 通知 ---------- */
 
 .toasts {
@@ -2315,12 +2444,33 @@ body.resizing {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 4px 4px 4px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   text-align: left;
-  cursor: pointer;
+}
+
+.toast > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 5px;
+}
+
+.toast--error > svg {
+  color: var(--error-text);
+}
+
+.toast__text {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: none;
 }
 
 .toast--error {
@@ -3462,7 +3612,7 @@ kbd {
 }
 
 .subagent--failed .subagent__status {
-  color: var(--vscode-errorForeground);
+  color: var(--error-text);
 }
 
 .subagent__time {

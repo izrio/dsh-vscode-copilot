@@ -1,6 +1,6 @@
 /**
  * 查找 dsh 可执行文件。顺序见 docs/DESIGN.md 6.1：
- * 1. 设置项 `dsh.runtime.path`
+ * 1. 设置项 `harnessDeck.dsh.path`
  * 2. PATH 中的 `dsh`（DeepSeek Desktop 安装的命令，或 npm 全局安装）
  */
 import { constants } from 'node:fs';

@@ -38,9 +38,9 @@ export function App() {
   useEffect(() => {
     const style = document.documentElement.style;
     const apply = (name: string, value: string | undefined) => (value ? style.setProperty(name, value) : style.removeProperty(name));
-    apply('--dsh-font-size', appearance.fontSize ? `${appearance.fontSize}px` : undefined);
-    apply('--dsh-font-family', appearance.fontFamily);
-    apply('--dsh-code-font-family', appearance.codeFontFamily);
+    apply('--hd-font-size', appearance.fontSize ? `${appearance.fontSize}px` : undefined);
+    apply('--hd-font-family', appearance.fontFamily);
+    apply('--hd-code-font-family', appearance.codeFontFamily);
     // 配色：默认柔和，「跟随主题」时直接用主题前景色（见 styles.css 的文字层级变量）
     document.documentElement.dataset.palette = appearance.palette ?? 'soft';
   }, [appearance]);

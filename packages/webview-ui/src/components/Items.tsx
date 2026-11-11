@@ -1,6 +1,8 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useDeferredValue, useState, type ReactNode } from 'react';
 import type { ChangedFileView, DiffRef, Item, LineStats } from '@harness-deck/shared';
+// 只引入不依赖 zod 的模块（原因见 shared/limits.ts）
+import { splitLabel } from '@harness-deck/shared/labels';
 import { splitMentions } from '../mentions.ts';
 import { diffKey, openDiff as trackDiff, requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
@@ -251,11 +253,35 @@ function UserText({ text }: { text: string }) {
 }
 
 function AssistantMessage({ item }: { item: Of<'assistant'> }) {
+  // 流式输出时每 30ms 来一次全文：Markdown 整篇重新解析很贵，让 React 在忙不过来时跳过中间的版本
+  const markdown = useDeferredValue(item.markdown);
   return (
     <div className={`assistant ${item.streaming && item.markdown ? 'assistant--streaming' : ''}`}>
       {item.reasoning ? <Reasoning text={item.reasoning} active={item.streaming && !item.markdown} /> : null}
-      {item.markdown ? <Markdown text={item.markdown} /> : null}
+      {markdown ? <Markdown text={markdown} /> : null}
       {item.streaming && item.markdown ? <span className="cursor" aria-hidden /> : null}
+      {!item.streaming && item.markdown ? <AssistantActions text={item.markdown} /> : null}
+    </div>
+  );
+}
+
+/** 回复下面的操作：复制原文（Markdown）。平时淡显，悬停或键盘聚焦时变亮。 */
+function AssistantActions({ text }: { text: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="assistant__actions">
+      <IconAction
+        label={copied ? t('assistant.copied') : t('assistant.copy')}
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1_200);
+          })
+        }
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </IconAction>
     </div>
   );
 }
@@ -291,10 +317,11 @@ function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon
 function ActivityRow({ item }: { item: Of<'activity'> }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [name, ...rest] = item.label.split('  ');
-  const detail = rest.join('  ');
+  const { name, detail } = splitLabel(item.label);
   const expandable = Boolean(item.output);
   const command = item.variant === 'command';
+  // 状态不能只靠颜色：失败的命令写明「运行失败」
+  const commandVerb = item.status === 'running' ? t('command.running') : item.status === 'error' ? t('command.failed') : t('command.done');
   return (
     <div className={`activity activity--${item.status} ${command ? 'activity--command' : ''}`}>
       <button
@@ -307,7 +334,7 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
       >
         <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <GenericToolIcon tool={item.tool} />} />
         {command ? (
-          <span className="activity__name">{item.status === 'running' ? t('command.running') : t('command.done')}</span>
+          <span className="activity__name">{commandVerb}</span>
         ) : (
           <span className="activity__name">{name}</span>
         )}
@@ -347,11 +374,23 @@ function EditRow({ item }: { item: Of<'activity'> }) {
       >
         <StatusIcon status={opening ? 'running' : item.status} icon={<FileEditIcon />} />
         <span className="activity__name">{verb}</span>
-        <span className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`}>{item.label}</span>
+        <FilePath path={item.label} className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`} />
         {item.stats ? <Stats stats={item.stats} /> : null}
       </button>
       {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
     </div>
+  );
+}
+
+/** 文件路径：文件名在前、目录淡显在后。太长时截掉的是目录，文件名始终看得到。 */
+function FilePath({ path, className }: { path: string; className: string }) {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (slash < 0) return <span className={className}>{path}</span>;
+  return (
+    <span className={`${className} file-path`}>
+      <span className="file-path__name">{path.slice(slash + 1)}</span>
+      <span className="file-path__dir">{path.slice(0, slash)}</span>
+    </span>
   );
 }
 
@@ -383,11 +422,18 @@ function ExploreRow({ item }: { item: Of<'explore'> }) {
       {open ? (
         <ul className="explore__list">
           {item.entries.map((entry) => {
-            const [name, ...rest] = entry.label.split('  ');
+            const { name, detail } = splitLabel(entry.label);
+            const path = entry.path;
             return (
               <li key={entry.id} className={`explore__entry explore__entry--${entry.status}`}>
                 <span className="explore__tool">{name}</span>
-                <span className="explore__target">{rest.join('  ')}</span>
+                {path ? (
+                  <button type="button" className="explore__target explore__target--link" title={t('file.open', path)} onClick={() => postToHost({ type: 'openFile', payload: { path } })}>
+                    {detail}
+                  </button>
+                ) : (
+                  <span className="explore__target">{detail}</span>
+                )}
                 {entry.status === 'error' ? <ErrorIcon className="explore__error" /> : null}
               </li>
             );

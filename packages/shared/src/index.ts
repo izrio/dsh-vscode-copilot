@@ -1,5 +1,6 @@
 export type { RuntimeStatus } from './runtime.ts';
 export { IMAGE_MEDIA_TYPES, MAX_IMAGE_BASE64, MAX_IMAGES } from './limits.ts';
+export { joinLabel, splitLabel } from './labels.ts';
 export type {
   AppearanceState,
   AttachmentView,

@@ -249,7 +249,8 @@ describe('ChatController', () => {
   it('未连接时发送给出提示，不抛错', async () => {
     const { controller, posted } = setup();
     await controller.handle({ type: 'sendMessage', payload: { text: 'x' } });
-    expect(posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: 'x' } });
   });
 
   it('模型目录转成选项，默认选中目录给出的默认模型', async () => {
@@ -740,7 +741,9 @@ describe('ChatController', () => {
       await flush();
       await empty.controller.handle({ type: 'sendMessage', payload: { text: '/explain' } });
       expect(empty.fake.prompts).toHaveLength(0);
-      expect(empty.posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      // 先提示原因，再把输入框里已经清空的文字放回去
+      expect(empty.posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      expect(empty.posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: '/explain' } });
     });
 
     it('dsh 命令交给 dsh 执行（新对话先创建会话）；/export 不出现在列表里；不认识的命令按普通消息发送', async () => {
@@ -751,7 +754,7 @@ describe('ChatController', () => {
       await flush();
       await flush();
       const names = controller.snapshot().commands.map((c) => `${c.source}:${c.name}`);
-      expect(names).toEqual(['plugin:explain', 'plugin:fix', 'plugin:test', 'plugin:new', 'dsh:compact', 'dsh:plan']);
+      expect(names).toEqual(['plugin:explain', 'plugin:fix', 'plugin:test', 'plugin:new', 'agent:compact', 'agent:plan']);
       await controller.handle({ type: 'sendMessage', payload: { text: '/plan 先出方案' } });
       expect(fake.commands).toEqual([{ sessionId: 's1', line: '/plan 先出方案' }]);
       await controller.handle({ type: 'sendMessage', payload: { text: '/unknown 你好' } });

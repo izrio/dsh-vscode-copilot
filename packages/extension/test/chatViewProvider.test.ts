@@ -23,7 +23,7 @@ function fakeView() {
       return { dispose() {} };
     },
   };
-  const view = { webview, visible: true, onDidDispose: () => ({ dispose() {} }) };
+  const view = { webview, visible: true, onDidDispose: () => ({ dispose() {} }), onDidChangeVisibility: () => ({ dispose() {} }) };
   return { view, posted, send: (raw: unknown) => onMessage?.(raw) };
 }
 

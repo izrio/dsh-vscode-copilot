@@ -33,7 +33,7 @@ export interface SessionChangesView {
 }
 
 /**
- * 界面外观（设置 `dsh.ui.fontSize`、`dsh.ui.fontFamily`、`dsh.ui.codeFontFamily`）。
+ * 界面外观（设置 `harnessDeck.ui.fontSize`、`harnessDeck.ui.fontFamily`、`harnessDeck.ui.codeFontFamily`）。
  * 不设置时跟随 VS Code：字体与工作台相同，字号比工作台大 1px。
  */
 export interface AppearanceState {
@@ -75,7 +75,7 @@ export interface ImageView {
 export interface ContextState {
   /** 当前编辑器：有选区时是选区，否则是文件。`key` 变化时 Webview 恢复默认的附带状态。 */
   readonly active?: AttachmentView & { readonly key: string };
-  /** 默认是否附带当前编辑器（设置 `dsh.context.includeActiveEditor`）。 */
+  /** 默认是否附带当前编辑器（设置 `harnessDeck.context.includeActiveEditor`）。 */
   readonly includeActiveByDefault: boolean;
   /** 用「添加到对话」固定下来的选区，发送后清空。 */
   readonly pinned: readonly (AttachmentView & { readonly id: string })[];
@@ -87,8 +87,8 @@ export interface CommandView {
   readonly description: string;
   /** 参数提示，例如 `<text>`。 */
   readonly hint?: string;
-  /** plugin：插件自带的模板；dsh：底层的斜杠命令；skill：底层的 skill（也用 `/name` 调用）。 */
-  readonly source: 'plugin' | 'dsh' | 'skill';
+  /** plugin：插件自带的模板；agent：底层（dsh 或 ACP 代理）的斜杠命令；skill：底层的 skill（也用 `/name` 调用）。 */
+  readonly source: 'plugin' | 'agent' | 'skill';
 }
 
 /** `@` 补全的候选。 */
@@ -130,7 +130,7 @@ export type Item =
       readonly tool: string;
       /** 渲染样式：命令、文件修改、子代理、其他。 */
       readonly variant: 'command' | 'edit' | 'subagent' | 'generic';
-      /** 一行摘要，例如 `bash  pnpm test`、`write  src/a.ts`。 */
+      /** 一行摘要：工具名和参数，用 `joinLabel` 拼、`splitLabel` 拆（见 labels.ts），例如 `bash` + `pnpm test`。文件修改时是文件路径。 */
       readonly label: string;
       readonly status: 'running' | 'ok' | 'error';
       /** 展开后显示的结果文本（已截断）。 */
@@ -150,7 +150,14 @@ export type Item =
       readonly id: string;
       readonly summary: string;
       readonly status: 'running' | 'ok' | 'error';
-      readonly entries: readonly { readonly id: string; readonly label: string; readonly status: 'running' | 'ok' | 'error' }[];
+      readonly entries: readonly {
+        readonly id: string;
+        /** 工具名和目标，格式同活动行的 `label`。 */
+        readonly label: string;
+        readonly status: 'running' | 'ok' | 'error';
+        /** 读取的是一个文件时它的路径（工作区相对或绝对）：点击打开。 */
+        readonly path?: string;
+      }[];
     }
   | {
       /** 一轮结束时的改动汇总。 */
@@ -222,6 +229,8 @@ export type PendingInteraction =
       readonly previewable: boolean;
       /** 要修改的文件在 VS Code 里有未保存内容：先保存或放弃，避免冲突。 */
       readonly dirtyFiles: readonly string[];
+      /** 底层提供「始终允许」这一类操作时的按钮文字（ACP 代理的 allow_always 选项）；没有时只有允许本次 / 拒绝。 */
+      readonly allowAlways?: string;
     }
   | {
       readonly kind: 'question';
@@ -353,5 +362,5 @@ export interface WorkspaceState {
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected';
 
-/** 界面语言：跟随 VS Code 的显示语言（中文用 zh，其他用 en），可以用设置 `dsh.ui.language` 指定。 */
+/** 界面语言：跟随 VS Code 的显示语言（中文用 zh，其他用 en），可以用设置 `harnessDeck.ui.language` 指定。 */
 export type Locale = 'zh' | 'en';

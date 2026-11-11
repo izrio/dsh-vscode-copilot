@@ -5,17 +5,19 @@
 import * as vscode from 'vscode';
 import type { RuntimeStatus } from '@harness-deck/shared';
 import { AcpController, type AcpInitialize, type AuthMethod, type PreferredModel, type StoredSession } from '../acp/AcpController.ts';
-import { AcpConnection } from '../acp/connection.ts';
+import { AcpConnection, AcpTimeoutError } from '../acp/connection.ts';
 import { locateExecutable } from '../runtime/locate.ts';
 import { t } from '../i18n.ts';
 import { settings } from '../settings.ts';
-import { processEnvWithProxy, type BackendHost } from './dsh.ts';
+import { processEnvWithProxy, type BackendHost } from './host.ts';
 import type { BackendProfile, RunningBackend } from './types.ts';
 
 /** 协议版本：ACP v1。 */
 const PROTOCOL_VERSION = 1;
 /** 排查日志里每条消息最多保留的字符数。 */
 const TRACE_LIMIT = 4_000;
+/** 握手最多等多久：设置里的命令不是 ACP 代理（不回复 initialize）时，不能一直停在「启动中」。 */
+const INITIALIZE_TIMEOUT_MS = 30_000;
 
 export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' }>, host: BackendHost): RunningBackend {
   const state = host.context.workspaceState;
@@ -99,7 +101,7 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
         // 文件和终端由代理自己处理（不通过编辑器）
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
         clientInfo: { name: 'harness-deck', title: 'Harness Deck', version: host.context.extension.packageJSON.version as string },
-      });
+      }, INITIALIZE_TIMEOUT_MS);
       if (current !== generation) return;
       const agent = init.agentInfo;
       host.log(`${profile.name} 就绪：${agent?.title ?? agent?.name ?? ''} ${agent?.version ?? ''}（ACP v${init.protocolVersion ?? '?'}）`);
@@ -107,7 +109,7 @@ export function createAcpBackend(profile: Extract<BackendProfile, { kind: 'acp' 
       controller.setLink(conn, init);
     } catch (error) {
       if (current !== generation) return;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = error instanceof AcpTimeoutError ? t('acp.initTimeout', profile.command, INITIALIZE_TIMEOUT_MS / 1000) : error instanceof Error ? error.message : String(error);
       host.log(`启动 ${profile.name} 失败：${message}`);
       connection = undefined;
       await conn.dispose();

@@ -49,6 +49,8 @@ export class RuntimeManager {
   private current: { endpoint: RuntimeEndpoint; child: ChildProcess } | undefined;
   private starting: Promise<RuntimeEndpoint | undefined> | undefined;
   private stopping = false;
+  /** 正在进行的启动：stop 时中止，不等它跑完（版本检查最多 15 秒，等待就绪最多 60 秒）。 */
+  private startAbort: AbortController | undefined;
   private consecutiveFailures = 0;
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
   private stableTimer: ReturnType<typeof setTimeout> | undefined;
@@ -98,6 +100,8 @@ export class RuntimeManager {
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
     this.clearStableTimer();
+    // 还在启动：立即结束那个进程，不等它就绪。关闭窗口时 VS Code 只留几秒，等下去 dsh 会变成孤儿进程
+    this.startAbort?.abort();
     await this.starting?.catch(() => undefined);
     const current = this.current;
     this.current = undefined;
@@ -116,10 +120,21 @@ export class RuntimeManager {
 
   private async doStart(): Promise<RuntimeEndpoint | undefined> {
     const config = this.options.getConfig();
+    const abort = new AbortController();
+    this.startAbort = abort;
+    try {
+      return await this.launch(config, abort.signal);
+    } finally {
+      if (this.startAbort === abort) this.startAbort = undefined;
+    }
+  }
+
+  private async launch(config: RuntimeConfig, signal: AbortSignal): Promise<RuntimeEndpoint | undefined> {
     this.setStatus({ kind: 'locating' });
     const located = await locateDsh({ configuredPath: config.configuredPath, env: config.env, platform: process.platform });
+    if (signal.aborted) return undefined;
     if (located.kind === 'notFound') {
-      this.options.log(located.configuredPathInvalid ? '设置项 dsh.runtime.path 指向的文件不存在或不可执行' : 'PATH 中找不到 dsh');
+      this.options.log(located.configuredPathInvalid ? '设置项 harnessDeck.dsh.path 指向的文件不存在或不可执行' : 'PATH 中找不到 dsh');
       this.setStatus({ kind: 'notInstalled' });
       return undefined;
     }
@@ -127,8 +142,9 @@ export class RuntimeManager {
 
     let version: string;
     try {
-      version = await probeVersion(located.command, config.env);
+      version = await probeVersion(located.command, config.env, undefined, signal);
     } catch (error) {
+      if (signal.aborted) return undefined;
       return this.failed(error);
     }
     const support = checkVersionSupport(version);
@@ -149,8 +165,10 @@ export class RuntimeManager {
         env: config.env,
         readyTimeoutMs: config.readyTimeoutMs,
         onOutput: this.options.runtimeLog,
+        signal,
       });
     } catch (error) {
+      if (signal.aborted) return undefined;
       return this.failed(error);
     }
     if (this.stopping) {

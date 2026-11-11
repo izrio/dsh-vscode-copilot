@@ -7,8 +7,8 @@
  * - 工具调用按类型渲染：命令一行、文件修改带增删行数、连续的只读操作合并成一行「浏览」；
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
-import type { ChangedFileView, ImageView, Item, LineStats, SessionChangesView } from '@harness-deck/shared';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { joinLabel, splitLabel, type ChangedFileView, type ImageView, type Item, type LineStats, type SessionChangesView } from '@harness-deck/shared';
+import { isAbsolute, resolve } from 'node:path';
 import type { ChangesSummary } from '../dsh/DshClient.ts';
 import type { PendingPrompt } from '../dsh/SessionService.ts';
 import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
@@ -17,6 +17,9 @@ import { splitContext } from './context.ts';
 import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
 import { t } from '../i18n.ts';
 import { canonicalTool } from './toolNames.ts';
+import { displayPath } from './paths.ts';
+
+export { displayPath } from './paths.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
 export type ChangesLookup = (seq: number) => ChangesSummary | 'unavailable' | undefined;
@@ -260,7 +263,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         items[at.index] = {
           ...previous,
           status: data.kind === 'error' ? 'error' : 'ok',
-          label: result ? `${previous.label}  ${firstLine(result)}` : previous.label,
+          label: result ? joinLabel(previous.label, firstLine(result)) : previous.label,
           ...(result.includes('\n') ? { output: truncate(result) } : {}),
         };
         break;
@@ -294,7 +297,9 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const variant = toolVariant(tool);
         const label = activityLabel(tool, args, input.workspacePath);
         if (variant === 'explore') {
-          const entry = { id: callId, label, status: 'running' as const };
+          // 读文件的那一步带上路径：浏览行展开后点它打开文件
+          const readsFile = file && ['read', 'read_image'].includes(canonicalTool(tool));
+          const entry = { id: callId, label, status: 'running' as const, ...(readsFile ? { path: displayPath(path ?? file, input.workspacePath) } : {}) };
           const index = openExplore();
           if (index !== undefined) {
             const group = items[index] as Explore;
@@ -385,7 +390,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
                   ? t('plan.dismissed')
                   : undefined;
           items[at.index] = outcome
-            ? { ...previous, status: 'ok', label: `${previous.label}  ${outcome}` }
+            ? { ...previous, status: 'ok', label: joinLabel(previous.label, outcome) }
             : { ...previous, status, ...(result ? { output: truncate(result) } : {}) };
           break;
         }
@@ -620,7 +625,7 @@ function summarizeExplore(group: Explore): Explore {
   let searches = 0;
   let lists = 0;
   for (const entry of group.entries) {
-    const tool = canonicalTool(entry.label.split('  ', 1)[0] ?? '');
+    const tool = canonicalTool(splitLabel(entry.label).name);
     if (tool === 'read' || tool === 'read_image') reads++;
     else if (tool === 'ls' || tool === 'list') lists++;
     else searches++;
@@ -777,25 +782,25 @@ export function activityLabel(tool: string, rawArguments: unknown, workspacePath
   if (kind === 'exit_plan_mode') {
     const plan = typeof args.plan === 'string' ? args.plan : '';
     const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
-    return `${t('plan.label')}  ${heading ?? t('plan.untitled')}`;
+    return joinLabel(t('plan.label'), heading ?? t('plan.untitled'));
   }
   if (kind === 'ask_user_question') {
     const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
-    return typeof first === 'string' ? `${t('question.label')}  ${firstLine(first)}` : t('question.label');
+    return typeof first === 'string' ? joinLabel(t('question.label'), firstLine(first)) : t('question.label');
   }
   const command = pick('command', 'cmd', 'script');
-  if (command) return `${tool}  ${firstLine(command)}`;
+  if (command) return joinLabel(tool, firstLine(command));
   const file = pick(...FILE_KEYS);
-  if (file) return `${tool}  ${displayPath(file, workspacePath)}`;
+  if (file) return joinLabel(tool, displayPath(file, workspacePath));
   // 一次读多个文件的工具（read_files）：第一个文件 + 其余数量
   const files = stringList(args, 'paths', 'files', 'file_paths');
-  if (files.length) return `${tool}  ${displayPath(files[0]!, workspacePath)}${files.length > 1 ? ` +${files.length - 1}` : ''}`;
+  if (files.length) return joinLabel(tool, `${displayPath(files[0]!, workspacePath)}${files.length > 1 ? ` +${files.length - 1}` : ''}`);
   const target = pick('pattern', 'query', 'url');
-  if (target) return `${tool}  ${firstLine(target)}`;
+  if (target) return joinLabel(tool, firstLine(target));
   const path = pick('path');
-  if (path) return `${tool}  ${displayPath(path, workspacePath)}`;
+  if (path) return joinLabel(tool, displayPath(path, workspacePath));
   const other = pick('description', 'prompt', 'name');
-  if (other) return `${tool}  ${firstLine(other)}`;
+  if (other) return joinLabel(tool, firstLine(other));
   return tool;
 }
 
@@ -804,11 +809,6 @@ function firstLine(text: string): string {
   return line.length < text.length ? `${line} …` : line;
 }
 
-export function displayPath(path: string, workspacePath?: string): string {
-  if (!workspacePath || !isAbsolute(path)) return path;
-  const rel = relative(workspacePath, path);
-  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : path;
-}
 
 function turnEndNotice(seq: number, reason: unknown): Item | undefined {
   const r = reason as { kind?: string; error?: { message?: string; code?: string } } | undefined;

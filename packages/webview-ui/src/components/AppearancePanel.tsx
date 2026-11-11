@@ -1,5 +1,5 @@
 /**
- * 字体与字号：直接在面板里调整，写入 VS Code 设置 dsh.ui.fontSize / fontFamily / codeFontFamily。
+ * 字体与字号：直接在面板里调整，写入 VS Code 设置 harnessDeck.ui.fontSize / fontFamily / codeFontFamily。
  * 改动先在本地生效（不等设置写完），留空或「恢复默认」时跟随 VS Code。
  */
 import { useState } from 'react';

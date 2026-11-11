@@ -20,11 +20,10 @@ import { loadState, postToHost, saveState } from '../vscode.ts';
 import { Completion, type CompletionItem } from './Completion.tsx';
 import { ContextChips } from './ContextChips.tsx';
 import { ContextRing } from './ContextRing.tsx';
-import { AgentIcon, ArrowUpIcon, CloseIcon, PlanIcon, SaveIcon, StopIcon } from './icons.tsx';
+import { AgentIcon, ArrowUpIcon, CloseIcon, PlanIcon, StopIcon } from './icons.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { PermissionPicker } from './PermissionPicker.tsx';
-import { SessionChanges } from './SessionChanges.tsx';
-import { StatusStrip } from './StatusStrip.tsx';
+import { StatusDock } from './StatusDock.tsx';
 import { useT } from '../i18n.ts';
 
 /** 自动增高的上限；拖动设定的高度可以更高。 */
@@ -92,7 +91,6 @@ export function Composer() {
   const connected = useView((s) => s.connection === 'connected');
   const focusRequests = useView((s) => s.focusRequests);
   const prefill = useView((s) => s.prefill);
-  const dirtyFiles = useView((s) => s.workspace.dirtyFiles);
   const context = useView((s) => s.context);
   const commands = useView((s) => s.commands);
   const candidates = useView((s) => s.fileCandidates);
@@ -186,14 +184,16 @@ export function Composer() {
     ref.current?.focus();
   }, [focusRequests, session.id]);
 
-  // "编辑后重发"：把历史消息放回输入框，光标放到末尾
+  // 「编辑后重发」、示例任务：换掉输入框里的内容；消息没发出去时放回原文，这期间新写的内容接在后面。光标放到末尾
   useEffect(() => {
     if (prefill.n === 0) return;
-    setText(prefill.text);
-    setCaret(prefill.text.length);
+    const current = ref.current?.value ?? '';
+    const next = prefill.mode === 'restore' && current.trim() ? `${prefill.text}\n${current}` : prefill.text;
+    setText(next);
+    setCaret(next.length);
     requestAnimationFrame(() => {
       ref.current?.focus();
-      ref.current?.setSelectionRange(prefill.text.length, prefill.text.length);
+      ref.current?.setSelectionRange(next.length, next.length);
     });
   }, [prefill]);
 
@@ -348,26 +348,23 @@ export function Composer() {
     if (event.key === 'Enter' && !event.shiftKey && !composing) {
       event.preventDefault();
       send();
+      return;
+    }
+    // Esc 停止生成（补全列表打开时 Esc 先关列表，输入法组合输入时不拦截）
+    if (event.key === 'Escape' && !composing && session.running && !readOnly) {
+      event.preventDefault();
+      postToHost({ type: 'interrupt', payload: {} });
     }
   };
 
   const syncCaret = () => setCaret(ref.current?.selectionStart ?? 0);
 
-  // 运行中输入框仍可发送：dsh 会把消息排进队列，当前回复结束后处理
-  const showStop = session.running && text.trim().length === 0 && images.length === 0;
+  // 运行中输入框仍可发送（消息排进队列，当前回复结束后处理），所以写了内容时发送和停止两个按钮都在
+  const showStop = session.running && !readOnly;
+  const showSend = !showStop || text.trim().length > 0 || images.length > 0;
   return (
     <div className="composer-wrap">
-      <StatusStrip />
-      {dirtyFiles > 0 ? (
-        <div className="dirty-strip" data-testid="dirty-strip">
-          <SaveIcon className="dirty-strip__icon" />
-          <span className="dirty-strip__text">{t('dirty.strip', dirtyFiles)}</span>
-          <button type="button" className="link-button" onClick={() => postToHost({ type: 'saveAll', payload: {} })}>
-            <SaveIcon />
-            {t('dirty.saveAll')}
-          </button>
-        </div>
-      ) : null}
+      <StatusDock />
       {session.subagentOf ? (
         <div className="subagent-strip" data-testid="subagent-strip">
           <AgentIcon />
@@ -377,7 +374,6 @@ export function Composer() {
           </button>
         </div>
       ) : null}
-      <SessionChanges />
       {menuOpen && trigger ? (
         <Completion
           items={items}
@@ -474,14 +470,21 @@ export function Composer() {
           {session.contextUsage !== undefined ? <ContextRing usage={session.contextUsage} {...(session.contextTokens ? { tokens: session.contextTokens } : {})} /> : null}
           <span className="composer__spacer" />
           {showStop ? (
-            <button type="button" className="send-button send-button--stop" onClick={() => postToHost({ type: 'interrupt', payload: {} })} aria-label={t('composer.stop')} title={t('composer.stop')}>
+            <button
+              type="button"
+              className={`send-button send-button--stop ${showSend ? 'send-button--secondary' : ''}`}
+              onClick={() => postToHost({ type: 'interrupt', payload: {} })}
+              aria-label={t('composer.stop')}
+              title={t('composer.stopHint')}
+            >
               <StopIcon />
             </button>
-          ) : (
+          ) : null}
+          {showSend ? (
             <button type="button" className="send-button" disabled={!canSend} onClick={send} aria-label={t('composer.send')} title={t('composer.sendTitle')}>
               <ArrowUpIcon />
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -53,8 +53,11 @@ export interface ViewState {
   /** 最近一次 `@` 补全的结果。 */
   readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
   readonly toasts: readonly Toast[];
-  /** 把一段文字放进输入框（"编辑后重发"）；`n` 每次递增，输入框据此更新。 */
-  readonly prefill: { readonly text: string; readonly n: number };
+  /**
+   * 把一段文字放进输入框；`n` 每次递增，输入框据此更新。
+   * replace：「编辑后重发」和示例任务，换掉输入框里的内容；restore：消息没发出去，放回原文，输入框里已经新写的内容保留在后面。
+   */
+  readonly prefill: { readonly text: string; readonly n: number; readonly mode: 'replace' | 'restore' };
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
   readonly appearance: AppearanceState;
@@ -83,7 +86,7 @@ const initialState: ViewState = {
   commands: [],
   fileCandidates: { requestId: -1, items: [] },
   toasts: [],
-  prefill: { text: '', n: 0 },
+  prefill: { text: '', n: 0, mode: 'replace' },
   focusRequests: 0,
   appearance: {},
   images: {},
@@ -94,6 +97,8 @@ const listeners = new Set<() => void>();
 let toastId = 0;
 
 function set(next: Partial<ViewState>): void {
+  // 读屏按 <html lang> 选发音：界面语言变了要跟着改
+  if (next.locale && next.locale !== state.locale && typeof document !== 'undefined') document.documentElement.lang = next.locale === 'zh' ? 'zh-CN' : 'en';
   state = { ...state, ...next };
   for (const listener of listeners) listener();
 }
@@ -157,8 +162,8 @@ export function diffKey(ref: DiffRef): string {
   return JSON.stringify(ref);
 }
 
-export function requestPrefill(text: string): void {
-  set({ prefill: { text, n: state.prefill.n + 1 } });
+export function requestPrefill(text: string, mode: 'replace' | 'restore' = 'replace'): void {
+  set({ prefill: { text, n: state.prefill.n + 1, mode } });
 }
 
 export function dismissToast(id: number): void {
@@ -258,11 +263,15 @@ export function applyHostMessage(message: HostToWebview): void {
     case 'toast': {
       const toast = { id: ++toastId, ...message.payload };
       set({ toasts: [...state.toasts, toast].slice(-3) });
-      setTimeout(() => dismissToast(toast.id), message.payload.level === 'error' ? 8_000 : 4_000);
+      // 普通提示自动消失；错误留着，直到用户关掉（最多同时 3 条，新的把旧的顶掉）
+      if (message.payload.level !== 'error') setTimeout(() => dismissToast(toast.id), 4_000);
       return;
     }
     case 'focusComposer':
       set({ focusRequests: state.focusRequests + 1 });
+      return;
+    case 'restoreDraft':
+      requestPrefill(message.payload.text, 'restore');
       return;
   }
 }

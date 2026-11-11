@@ -15,7 +15,7 @@
  * 当前文件只给路径（模型需要时自己读，和 `@` 引用一致）；选区带内容，因为用户要问的就是这段代码。
  * 显示时把这个块从正文里去掉，解析成附件标签（`splitContext`）。格式改动要保持能解析旧消息。
  */
-import { displayPath } from './projector.ts';
+import { displayPath } from './paths.ts';
 import type { AttachmentView } from '@harness-deck/shared';
 import { t } from '../i18n.ts';
 

@@ -7,7 +7,7 @@
  * 协议见 https://agentclientprotocol.com 。这里只做传输，不理解具体方法。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { needsShell, stopRuntime } from '../runtime/launch.ts';
+import { spawnSpec, stopRuntime, trackChild } from '../runtime/launch.ts';
 
 /** JSON-RPC 错误：代理返回的 error 对象。 */
 export class AcpError extends Error {
@@ -51,6 +51,15 @@ interface Pending {
   readonly method: string;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
+  readonly timer?: ReturnType<typeof setTimeout>;
+}
+
+/** 代理在限定时间内没有回复。 */
+export class AcpTimeoutError extends Error {
+  constructor(method: string, timeoutMs: number) {
+    super(`${method}: no response within ${Math.round(timeoutMs / 1000)}s`);
+    this.name = 'AcpTimeoutError';
+  }
 }
 
 const STDERR_TAIL = 20;
@@ -68,16 +77,23 @@ export class AcpConnection {
   /** 启动进程；命令不存在等启动错误时拒绝。 */
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.options.command, [...this.options.args], {
+      const spec = spawnSpec(this.options.command, this.options.args, process.platform, this.options.env);
+      const child = spawn(spec.file, spec.args, {
         cwd: this.options.cwd,
         env: { ...this.options.env, NO_COLOR: '1' } as NodeJS.ProcessEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         // POSIX 下放进独立进程组，结束时连同代理的子进程一起结束
         detached: process.platform !== 'win32',
-        shell: needsShell(this.options.command, process.platform),
         windowsHide: true,
+        ...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
       this.child = child;
+      trackChild(child);
+      // 代理关掉了输入（或已经退出）之后再写会触发 EPIPE：没有监听的话是未捕获异常，等待中的请求也永远不结束
+      child.stdin?.on('error', (error) => {
+        this.options.log?.(`ACP：写入代理失败：${error.message}`);
+        this.closeAll(new AcpClosedError(`无法写入代理进程：${error.message}`));
+      });
       child.once('spawn', () => resolve());
       child.once('error', (error) => {
         reject(error);
@@ -109,12 +125,21 @@ export class AcpConnection {
     return this.child !== undefined && this.child.exitCode === null && this.child.signalCode === null && !this.disposed;
   }
 
-  /** 发请求，等代理回复。 */
-  request<T = unknown>(method: string, params: unknown): Promise<T> {
+  /**
+   * 发请求，等代理回复。
+   * @param timeoutMs - 超过这个时间没有回复就拒绝（握手用：命令不是 ACP 代理时永远不会回复）。不传时一直等，一轮对话可能很久。
+   */
+  request<T = unknown>(method: string, params: unknown, timeoutMs?: number): Promise<T> {
     if (!this.running) return Promise.reject(new AcpClosedError());
     const id = ++this.nextId;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject });
+      const timer =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              if (this.pending.delete(id)) reject(new AcpTimeoutError(method, timeoutMs));
+            }, timeoutMs);
+      this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject, ...(timer ? { timer } : {}) });
       this.write({ jsonrpc: '2.0', id, method, params });
     });
   }
@@ -174,6 +199,7 @@ export class AcpConnection {
     const pending = this.pending.get(id);
     if (!pending) return;
     this.pending.delete(id);
+    if (pending.timer) clearTimeout(pending.timer);
     if (message.error) pending.reject(new AcpError(pending.method, message.error.code ?? -32603, message.error.message ?? 'error', message.error.data));
     else pending.resolve(message.result ?? null);
   }
@@ -189,7 +215,10 @@ export class AcpConnection {
   }
 
   private closeAll(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error);
+    for (const pending of this.pending.values()) {
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(error);
+    }
     this.pending.clear();
   }
 }
