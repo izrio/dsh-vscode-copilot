@@ -195,6 +195,7 @@ packages/
 | v0.3 | 改名 Harness Deck，多底层：dsh + ACP（oh-my-pi、CodeBuddy），第一次打开时选底层，新首页和标志 |
 | v0.3.1 | Claude 底层；ACP 代理发消息时要求登录的处理；内部包改名 `@harness-deck/*`，README 重写 |
 | v0.3.2 | ACP 底层的多开标签和会话改动栏，新对话沿用模型，dsh 改叫 DeepSeek，护眼配色，滚动到底部，skill 补全，界面打磨 |
+| v0.4.0 | 全面审查后的修复：底层启动与切换、ACP 审批保护与 dsh 对齐、发送失败不丢输入；输入框上方合并成一行状态栏；对比度、点击区域、读屏；两种底层共用标签和上下文模块，ESLint 和多平台单测 |
 
 里程碑细节见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)，每个版本的改动见 [CHANGELOG](./packages/extension/CHANGELOG.md)。
 
