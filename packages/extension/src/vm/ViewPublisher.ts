@@ -12,12 +12,14 @@ import type {
   PermissionState,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WorkspaceState,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 
 export interface ControllerView {
   readonly sessionKey: string;
   readonly sessions: SessionListItem[];
+  readonly tabs: TabsState;
   readonly session: SessionHeader;
   readonly items: Item[];
   readonly models: ModelState;
@@ -33,7 +35,7 @@ export class ViewPublisher {
   private sentItems = new Map<string, string>();
   private sentObjects = new Map<string, Item>();
   private sentOrder: readonly string[] = [];
-  private sentJson = { sessions: '', session: '', models: '', interactions: '', permissions: '', workspace: '', context: '', commands: '' };
+  private sentJson = { sessions: '', tabs: '', session: '', models: '', interactions: '', permissions: '', workspace: '', context: '', commands: '' };
 
   constructor(
     private readonly post: (message: HostToWebview) => void,
@@ -48,6 +50,7 @@ export class ViewPublisher {
     this.sentOrder = view.items.map((item) => item.id);
     this.sentJson = {
       sessions: JSON.stringify(view.sessions),
+      tabs: JSON.stringify(view.tabs),
       session: JSON.stringify(view.session),
       context: JSON.stringify(view.context),
       commands: JSON.stringify(view.commands),
@@ -64,6 +67,11 @@ export class ViewPublisher {
     if (sessionsJson !== this.sentJson.sessions) {
       this.sentJson.sessions = sessionsJson;
       this.post({ type: 'sessions', payload: view.sessions });
+    }
+    const tabsJson = JSON.stringify(view.tabs);
+    if (tabsJson !== this.sentJson.tabs) {
+      this.sentJson.tabs = tabsJson;
+      this.post({ type: 'tabs', payload: view.tabs });
     }
     const modelsJson = JSON.stringify(view.models);
     if (modelsJson !== this.sentJson.models) {

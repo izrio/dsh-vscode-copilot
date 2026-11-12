@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { HostToWebview, ItemsPatch } from '@dsh-copilot/shared';
+import type { HostToWebview, ItemsPatch } from '@harness-deck/shared';
 import type { DshClient, SessionSummaryWire } from '../src/dsh/DshClient.ts';
 import { AsyncQueue } from '../src/dsh/remote/asyncQueue.ts';
 import type { WaterfallHandler, WaterfallOutcome } from '../src/dsh/remote/events.ts';
 import type { FollowFrame } from '../src/dsh/remote/follow.ts';
 import { ChangesUnavailableError } from '../src/dsh/DshClient.ts';
-import { ChatController } from '../src/vm/ChatController.ts';
+import { ChatController } from '../src/dsh/view/ChatController.ts';
 import { noWorkbench, type DiffRequest, type Workbench } from '../src/vm/workbench.ts';
 
 /** 只实现 SessionService / SessionStream 用到的方法；follow 由测试控制。 */
 function fakeClient() {
   const summaries: SessionSummaryWire[] = [];
   const follows = new Map<string, AsyncQueue<FollowFrame>>();
-  const prompts: { sessionId: string; text: string; requestId: string }[] = [];
+  const prompts: { sessionId: string; text: string; requestId: string; images?: unknown[] }[] = [];
   const commands: { sessionId: string; line: string }[] = [];
   const calls: { method: string; args: unknown[] }[] = [];
   const waterfalls = new Map<string, WaterfallHandler>();
@@ -69,6 +69,8 @@ function fakeClient() {
       default: { provider: 'deepseek-official', model: 'deepseek-flash' },
       groups: [{ id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash' }] }],
     }),
+    // 假的 control 流：一直不产出，直到被中止
+    // eslint-disable-next-line require-yield
     async *control(signal?: AbortSignal) {
       await new Promise((resolve) => signal?.addEventListener('abort', resolve, { once: true }));
     },
@@ -77,8 +79,8 @@ function fakeClient() {
       summaries.push({ sessionId: id, updatedAt: Date.now(), running: false, blank: false, cwd: '/w' });
       return id;
     },
-    prompt: async (sessionId: string, text: string, requestId: string) => {
-      prompts.push({ sessionId, text, requestId });
+    prompt: async (sessionId: string, text: string, requestId: string, images: unknown[] = []) => {
+      prompts.push({ sessionId, text, requestId, ...(images.length ? { images } : {}) });
       return requestId;
     },
     cancel: async () => undefined,
@@ -150,6 +152,20 @@ describe('ChatController', () => {
     expect(fake.prompts).toHaveLength(1);
     const echo = patches().at(-1)?.upsert.find((item) => item.kind === 'user');
     expect(echo).toMatchObject({ kind: 'user', text: '你好', pending: 'sending' });
+  });
+
+  it('新对话里连发两条消息：共用同一个会话，不建两个', async () => {
+    const { controller, fake, saved } = setup();
+    controller.setClient(fake.client);
+    await flush();
+    // 第二条在第一条还在创建会话时发出（连按两次发送、发送后马上右键「解释」）
+    await Promise.all([
+      controller.handle({ type: 'sendMessage', payload: { text: '第一条' } }),
+      controller.handle({ type: 'sendMessage', payload: { text: '第二条' } }),
+    ]);
+    await flush();
+    expect(saved()).toBe('s1');
+    expect(fake.prompts.map((p) => p.sessionId)).toEqual(['s1', 's1']);
   });
 
   it('持久消息到达后本地回显撤掉，只剩一条用户消息', async () => {
@@ -249,7 +265,8 @@ describe('ChatController', () => {
   it('未连接时发送给出提示，不抛错', async () => {
     const { controller, posted } = setup();
     await controller.handle({ type: 'sendMessage', payload: { text: 'x' } });
-    expect(posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'error' } });
+    expect(posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: 'x' } });
   });
 
   it('模型目录转成选项，默认选中目录给出的默认模型', async () => {
@@ -466,6 +483,217 @@ describe('ChatController', () => {
     });
   });
 
+  describe('图片', () => {
+    const image = { localId: 'l1', mediaType: 'image/png' as const, data: 'iVBORw0KGgo=', name: 'shot.png' };
+
+    it('图片随消息发给 dsh；可以只发图片；发送中的回显带图片', async () => {
+      const { controller, fake } = setup();
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '', images: [image], includeActive: false } });
+      await flush();
+      expect(fake.prompts[0]).toMatchObject({ text: '', images: [image] });
+      const echo = controller.snapshot().items.find((item) => item.kind === 'user');
+      expect(echo).toMatchObject({ images: [{ localId: 'l1', mediaType: 'image/png', name: 'shot.png' }] });
+      expect(JSON.stringify(echo)).not.toContain(image.data);
+    });
+
+    it('历史消息里的图片按需读取，结果以 data URL 回传', async () => {
+      const { controller, fake, posted } = setup();
+      Object.assign(fake.client, { attachment: async () => ({ mediaType: 'image/png', data: 'AAAA' }) });
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '看图' } });
+      await flush();
+      await controller.handle({ type: 'loadImage', payload: { attachmentId: 'sha256:abc' } });
+      expect(posted).toContainEqual({ type: 'imageData', payload: { attachmentId: 'sha256:abc', dataUrl: 'data:image/png;base64,AAAA' } });
+    });
+  });
+
+  describe('多开会话（标签）', () => {
+    async function withTwoSessions() {
+      const savedTabs: (readonly string[])[] = [];
+      const ctx = setup();
+      // setup 不接收这两个选项：直接挂到 options 上
+      Object.assign((ctx.controller as unknown as { options: object }).options, { saveOpenTabs: (ids: readonly string[]) => savedTabs.push(ids) });
+      ctx.controller.setClient(ctx.fake.client);
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '第一个' } });
+      await flush();
+      await ctx.controller.handle({ type: 'newSession', payload: {} });
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '第二个' } });
+      await flush();
+      return { ...ctx, savedTabs };
+    }
+
+    it('加号打开新标签，不覆盖当前会话；两个会话各占一个标签', async () => {
+      const { controller, savedTabs } = await withTwoSessions();
+      const tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId)).toEqual(['s1', 's2']);
+      expect(tabs.active).toBe(tabs.items[1]!.key);
+      expect(savedTabs.at(-1)).toEqual(['s1', 's2']);
+    });
+
+    it('切回后台标签：复用一直在跟随的流，不重新打开', async () => {
+      const { controller, fake } = await withTwoSessions();
+      const client = fake.client as unknown as { follow: (...args: unknown[]) => unknown };
+      const follow = client.follow.bind(client);
+      let reopened = 0;
+      client.follow = (...args: unknown[]) => (reopened++, follow(...args));
+      const first = controller.snapshot().tabs.items[0]!;
+      await controller.handle({ type: 'activateTab', payload: { key: first.key } });
+      await flush();
+      expect(controller.snapshot().session.id).toBe('s1');
+      expect(controller.snapshot().items.some((item) => item.kind === 'user' && item.text === '第一个')).toBe(true);
+      expect(reopened).toBe(0);
+    });
+
+    it('从会话列表打开已在标签里的会话时切过去；关闭当前标签后切到相邻标签', async () => {
+      const { controller } = await withTwoSessions();
+      await controller.handle({ type: 'switchSession', payload: { sessionId: 's1' } });
+      await flush();
+      let tabs = controller.snapshot().tabs;
+      expect(tabs.items).toHaveLength(2);
+      expect(tabs.active).toBe(tabs.items[0]!.key);
+      await controller.handle({ type: 'closeTab', payload: { key: tabs.items[0]!.key } });
+      await flush();
+      tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId)).toEqual(['s2']);
+      expect(controller.snapshot().session.id).toBe('s2');
+      // 关掉最后一个标签：换成新对话
+      await controller.handle({ type: 'closeTab', payload: { key: tabs.items[0]!.key } });
+      await flush();
+      expect(controller.snapshot().tabs.items).toEqual([expect.objectContaining({ title: expect.any(String), running: false })]);
+      expect(controller.snapshot().session.id).toBeUndefined();
+    });
+
+    it('新对话标签只有一个：再按加号时切回它', async () => {
+      const { controller } = await withTwoSessions();
+      await controller.handle({ type: 'newSession', payload: {} });
+      await controller.handle({ type: 'newSession', payload: {} });
+      await flush();
+      const tabs = controller.snapshot().tabs;
+      expect(tabs.items.map((tab) => tab.sessionId ?? 'new')).toEqual(['s1', 's2', 'new']);
+    });
+  });
+
+  describe('会话改动栏与 Diff 加速', () => {
+    /** 改动汇总卡片里第一个文件的 seq。 */
+    const turnSeqOf = (controller: ChatController): number => {
+      const card = controller.snapshot().items.find((item) => item.kind === 'changes');
+      const ref = card?.kind === 'changes' ? card.files[0]?.ref : undefined;
+      if (ref?.kind !== 'turn') throw new Error('没有本轮汇总');
+      return ref.seq;
+    };
+
+    /** 一次 edit（a → b c）加上 dsh 的本轮汇总（+2 −1，与片段一致）。 */
+    async function withEditTurn(files: Record<string, string>, summary?: (seq: number) => unknown) {
+      const diffs: DiffRequest[] = [];
+      const workbench: Workbench = { ...noWorkbench, openDiff: async (request) => void diffs.push(request), readFile: async (path) => files[path] };
+      const ctx = setup(workbench);
+      let diffCalls = 0;
+      Object.assign(ctx.fake.client, {
+        changesDiff: async () => {
+          diffCalls++;
+          return { kind: 'text', path: 'a.ts', before: true, after: true, hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, lines: ['-a', '+b', '+c'] }] };
+        },
+        ...(summary ? { changesSummary: async (_id: string, seq: number) => summary(seq) } : {}),
+      });
+      ctx.controller.setClient(ctx.fake.client);
+      await flush();
+      await ctx.controller.handle({ type: 'sendMessage', payload: { text: '改一下' } });
+      await flush();
+      const { fake } = ctx;
+      fake.emit('s1', 'turn/start', { turn: 1 });
+      fake.emit('s1', 'tool/call', { callId: 'c1', name: 'edit', arguments: JSON.stringify({ file_path: 'a.ts', old_string: 'a', new_string: 'b\nc' }) });
+      fake.emit('s1', 'tool/result', { message: { toolCallId: 'c1', content: [], isError: false }, meta: { path: '/w/a.ts', diffs: [{ oldText: 'a\n', newText: 'b\nc\n' }] } });
+      fake.emit('s1', 'workspace/changes', { turn: 1 });
+      fake.emit('s1', 'turn/end', { reason: { kind: 'completed' } });
+      await flush();
+      await flush();
+      return { ...ctx, diffs, diffCalls: () => diffCalls };
+    }
+
+    it('本轮汇总里的文件：工具片段能解释汇总时在本地还原，不请求 dsh', async () => {
+      const { controller, diffs, diffCalls, posted } = await withEditTurn({ '/w/a.ts': 'b\nc\n' });
+      const card = controller.snapshot().items.find((item) => item.kind === 'changes');
+      const ref = card?.kind === 'changes' ? card.files[0]!.ref : undefined;
+      await controller.handle({ type: 'openDiff', payload: { ref: ref!, token: 7 } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', created: false, scope: 'turn' });
+      expect(diffCalls()).toBe(0);
+      expect(posted).toContainEqual({ type: 'diffOpened', payload: { token: 7 } });
+    });
+
+    it('片段与汇总对不上（还有命令造成的改动）时读取 dsh 的 hunk，结果缓存', async () => {
+      const { controller, diffs, diffCalls } = await withEditTurn({ '/w/a.ts': 'b\nc\n' }, () => ({
+        turn: 1,
+        files: [{ path: 'a.ts', display: 'a.ts', added: 5, deleted: 1 }],
+        total: 1,
+      }));
+      const ref = { kind: 'turn' as const, seq: turnSeqOf(controller), index: 0 };
+      await controller.handle({ type: 'openDiff', payload: { ref } });
+      await controller.handle({ type: 'openDiff', payload: { ref } });
+      expect(diffs.at(-1)).toMatchObject({ kind: 'contents', before: 'a\n', scope: 'turn' });
+      expect(diffCalls()).toBe(1);
+    });
+
+    it('设置关掉每轮改动卡片时对话流里不显示，会话改动栏照常显示', async () => {
+      const { controller } = await withEditTurn({ '/w/a.ts': 'b\nc\n' });
+      expect(controller.snapshot().items.some((item) => item.kind === 'changes')).toBe(true);
+      Object.assign((controller as unknown as { options: object }).options, { showTurnChanges: () => false });
+      const snapshot = controller.snapshot();
+      expect(snapshot.items.some((item) => item.kind === 'changes')).toBe(false);
+      expect(snapshot.session.changes?.files).toHaveLength(1);
+    });
+
+    it('会话改动栏：列出改过的文件，点击打开本会话修改前 ↔ 当前', async () => {
+      const { controller, diffs, fake } = await withEditTurn({ '/w/a.ts': 'b\nd\n' });
+      // 第二轮又改了一次（dsh 汇总不可用时按工具汇总）
+      Object.assign(fake.client, { changesSummary: () => Promise.reject(new ChangesUnavailableError()) });
+      fake.emit('s1', 'turn/start', { turn: 2 });
+      fake.emit('s1', 'tool/call', { callId: 'c2', name: 'edit', arguments: JSON.stringify({ file_path: 'a.ts', old_string: 'c', new_string: 'd' }) });
+      fake.emit('s1', 'tool/result', { message: { toolCallId: 'c2', content: [], isError: false }, meta: { path: '/w/a.ts', diffs: [{ oldText: 'c\n', newText: 'd\n' }] } });
+      await flush();
+      const changes = controller.snapshot().session.changes;
+      expect(changes).toEqual({
+        files: [{ path: 'a.ts', ref: { kind: 'session', path: '/w/a.ts' }, additions: 3, deletions: 2 }],
+        additions: 3,
+        deletions: 2,
+      });
+      await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'session', path: '/w/a.ts' } } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', created: false, scope: 'session' });
+
+      // 打开第一轮的 Diff：右侧是第一轮结束时的内容，不是当前文件
+      await controller.handle({ type: 'openDiff', payload: { ref: { kind: 'turn', seq: turnSeqOf(controller), index: 0 } } });
+      expect(diffs.at(-1)).toEqual({ kind: 'contents', path: '/w/a.ts', before: 'a\n', after: 'b\nc\n', created: false, scope: 'turn' });
+    });
+
+    it('打开长会话时改动汇总限流读取，新的轮次先读', async () => {
+      const { controller, fake } = setup();
+      const started: number[] = [];
+      const resolvers: (() => void)[] = [];
+      Object.assign(fake.client, {
+        changesSummary: (_id: string, seq: number) =>
+          new Promise((resolve) => {
+            started.push(seq);
+            resolvers.push(() => resolve({ turn: seq, files: [], total: 0 }));
+          }),
+      });
+      controller.setClient(fake.client);
+      await flush();
+      await controller.handle({ type: 'sendMessage', payload: { text: '你好' } });
+      await flush();
+      for (let turn = 1; turn <= 5; turn++) fake.emit('s1', 'workspace/changes', { turn });
+      await flush();
+      expect(started).toHaveLength(2);
+      expect(started[0]!).toBeGreaterThan(started[1]!);
+      resolvers.shift()!();
+      await flush();
+      expect(started).toHaveLength(3);
+    });
+  });
+
   describe('M3：上下文、斜杠命令、@ 引用', () => {
     const editor = {
       path: '/w/src/a.ts',
@@ -529,7 +757,9 @@ describe('ChatController', () => {
       await flush();
       await empty.controller.handle({ type: 'sendMessage', payload: { text: '/explain' } });
       expect(empty.fake.prompts).toHaveLength(0);
-      expect(empty.posted.at(-1)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      // 先提示原因，再把输入框里已经清空的文字放回去
+      expect(empty.posted.at(-2)).toMatchObject({ type: 'toast', payload: { level: 'info' } });
+      expect(empty.posted.at(-1)).toEqual({ type: 'restoreDraft', payload: { text: '/explain' } });
     });
 
     it('dsh 命令交给 dsh 执行（新对话先创建会话）；/export 不出现在列表里；不认识的命令按普通消息发送', async () => {
@@ -540,7 +770,7 @@ describe('ChatController', () => {
       await flush();
       await flush();
       const names = controller.snapshot().commands.map((c) => `${c.source}:${c.name}`);
-      expect(names).toEqual(['plugin:explain', 'plugin:fix', 'plugin:test', 'plugin:new', 'dsh:compact', 'dsh:plan']);
+      expect(names).toEqual(['plugin:explain', 'plugin:fix', 'plugin:test', 'plugin:new', 'agent:compact', 'agent:plan']);
       await controller.handle({ type: 'sendMessage', payload: { text: '/plan 先出方案' } });
       expect(fake.commands).toEqual([{ sessionId: 's1', line: '/plan 先出方案' }]);
       await controller.handle({ type: 'sendMessage', payload: { text: '/unknown 你好' } });

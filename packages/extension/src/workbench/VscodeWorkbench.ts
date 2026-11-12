@@ -7,7 +7,7 @@
  */
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
-import type { FileCandidate } from '@dsh-copilot/shared';
+import type { FileCandidate } from '@harness-deck/shared';
 import { SELECTION_LIMIT } from '../vm/context.ts';
 import { proposedContent, reverseHunks, reverseToolDiffs, unifiedFromHunks, unifiedFromToolDiffs } from '../vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../vm/workbench.ts';
@@ -158,6 +158,11 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
         if (before !== undefined) return this.diff(this.virtual(request.path, 'before', before), file, t('diff.turnTitle', name));
         return this.showUnified(request.path, unifiedFromHunks(name, request.hunks));
       }
+      case 'contents': {
+        const right = request.after === undefined ? file : this.virtual(request.path, 'after', request.after);
+        const title = request.created ? t('diff.created', name) : t(request.scope === 'session' ? 'diff.sessionTitle' : request.after === undefined ? 'diff.turnTitle' : 'diff.turnOnlyTitle', name);
+        return this.diff(this.virtual(request.path, request.created ? 'empty' : 'before', request.before), right, title);
+      }
       case 'proposed': {
         const current = await this.read(file);
         const proposed = proposedContent(request.tool, request.args, current);
@@ -194,6 +199,10 @@ export class VscodeWorkbench implements Workbench, vscode.TextDocumentContentPro
       this.contents.delete(oldest);
     }
     return uri;
+  }
+
+  readFile(path: string): Promise<string | undefined> {
+    return this.read(vscode.Uri.file(path));
   }
 
   private async read(uri: vscode.Uri): Promise<string | undefined> {

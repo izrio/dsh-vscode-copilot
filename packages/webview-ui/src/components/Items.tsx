@@ -1,11 +1,16 @@
 /** 对话流里的各类条目。遵循 docs/DESIGN.md 3.1：没有角色标签，工具调用压成一行，没有内容就不渲染。 */
-import { memo, useState, type ReactNode } from 'react';
-import type { DiffRef, Item, LineStats } from '@dsh-copilot/shared';
+import { memo, useDeferredValue, useState, type ReactNode } from 'react';
+import type { ChangedFileView, DiffRef, Item, LineStats } from '@harness-deck/shared';
+// 只引入不依赖 zod 的模块（原因见 shared/limits.ts）
+import { splitLabel } from '@harness-deck/shared/labels';
 import { splitMentions } from '../mentions.ts';
-import { requestPrefill, useView } from '../store.ts';
+import { diffKey, openDiff as trackDiff, requestPrefill, useView } from '../store.ts';
 import { postToHost } from '../vscode.ts';
 import { attachmentLabel, openAttachment } from './ContextChips.tsx';
 import { Markdown } from './Markdown.tsx';
+import { TurnDone } from './RunStatus.tsx';
+import { ImageThumb } from './Images.tsx';
+import { SubagentRow } from './SubagentRow.tsx';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -43,6 +48,7 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
     case 'assistant':
       return <AssistantMessage item={item} />;
     case 'activity':
+      if (item.variant === 'subagent' && item.subagent) return <SubagentRow item={item} />;
       return item.variant === 'edit' ? <EditRow item={item} /> : <ActivityRow item={item} />;
     case 'explore':
       return <ExploreRow item={item} />;
@@ -50,6 +56,8 @@ export const ItemView = memo(function ItemView({ item }: { item: Item }) {
       return <ChangesCard item={item} />;
     case 'notice':
       return <Notice item={item} />;
+    case 'turnDone':
+      return <TurnDone item={item} />;
   }
 });
 
@@ -62,6 +70,13 @@ function UserBubble({ item }: { item: Of<'user'> }) {
       {item.text ? (
         <div className="user__bubble">
           <UserText text={item.text} />
+        </div>
+      ) : null}
+      {item.images?.length ? (
+        <div className="user__images">
+          {item.images.map((image, index) => (
+            <ImageThumb key={image.attachmentId ?? image.localId ?? index} image={image} />
+          ))}
         </div>
       ) : null}
       {item.attachments?.length ? (
@@ -99,15 +114,23 @@ function UserBubble({ item }: { item: Of<'user'> }) {
   );
 }
 
+/** 消息下面的操作：灰色小图标，悬停变亮；文字放在提示和无障碍名称里。 */
+function IconAction({ label, title, onClick, children }: { label: string; title?: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="msg-action" aria-label={label} title={title ?? label} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
 /** 已发送的消息：悬停时显示复制、编辑后重发。 */
 function UserActions({ text }: { text: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <div className="user__actions">
-      <button
-        type="button"
-        className="link-button"
+      <IconAction
+        label={copied ? t('user.copied') : t('user.copy')}
         onClick={() =>
           void navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
@@ -116,17 +139,15 @@ function UserActions({ text }: { text: string }) {
         }
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? t('user.copied') : t('user.copy')}
-      </button>
-      <button type="button" className="link-button" title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
+      </IconAction>
+      <IconAction label={t('user.editResend')} title={t('user.editResendTitle')} onClick={() => requestPrefill(text)}>
         <PencilIcon />
-        {t('user.editResend')}
-      </button>
+      </IconAction>
     </div>
   );
 }
 
-/** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。 */
+/** 排队中的消息：在 dsh 队列里时可以编辑、插队（在当前回复的下一步送达）、删除。状态一行文字，操作是一排图标。 */
 function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) {
   const t = useT();
   const running = useView((s) => s.session.running);
@@ -136,40 +157,38 @@ function QueuedMeta({ item, onEdit }: { item: Of<'user'>; onEdit: () => void }) 
   if (!running) {
     // 停止生成后 dsh 保留队列，但要等下一条消息才一起送达
     return (
-      <div className="user__meta" data-testid="queued-meta">
-        <span>{t('queue.stopped')}</span>
-        <button type="button" className="link-button" onClick={() => act('send')}>
-          <SendIcon />
-          {t('queue.sendNow')}
-        </button>
-        <button type="button" className="link-button" onClick={onEdit}>
-          <PencilIcon />
-          {t('common.edit')}
-        </button>
-        <button type="button" className="link-button" onClick={() => act('remove')}>
-          <TrashIcon />
-          {t('common.delete')}
-        </button>
+      <div className="user__meta user__meta--queued" data-testid="queued-meta">
+        <span className="user__status">{t('queue.stopped')}</span>
+        <span className="user__tools">
+          <IconAction label={t('queue.sendNow')} onClick={() => act('send')}>
+            <SendIcon />
+          </IconAction>
+          <IconAction label={t('common.edit')} onClick={onEdit}>
+            <PencilIcon />
+          </IconAction>
+          <IconAction label={t('common.delete')} onClick={() => act('remove')}>
+            <TrashIcon />
+          </IconAction>
+        </span>
       </div>
     );
   }
   return (
-    <div className="user__meta" data-testid="queued-meta">
-      <span>{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
-      <button type="button" className="link-button" onClick={onEdit}>
-        <PencilIcon />
-        {t('common.edit')}
-      </button>
-      {queue.target === 'next-turn' ? (
-        <button type="button" className="link-button" onClick={() => act('steer')} title={t('queue.steerTitle')}>
-          <FastForwardIcon />
-          {t('queue.steer')}
-        </button>
-      ) : null}
-      <button type="button" className="link-button" onClick={() => act('remove')}>
-        <TrashIcon />
-        {t('common.delete')}
-      </button>
+    <div className="user__meta user__meta--queued" data-testid="queued-meta">
+      <span className="user__status">{queue.target === 'next-step' ? t('queue.steered') : t('queue.waiting')}</span>
+      <span className="user__tools">
+        <IconAction label={t('common.edit')} onClick={onEdit}>
+          <PencilIcon />
+        </IconAction>
+        {queue.target === 'next-turn' ? (
+          <IconAction label={t('queue.steer')} title={t('queue.steerTitle')} onClick={() => act('steer')}>
+            <FastForwardIcon />
+          </IconAction>
+        ) : null}
+        <IconAction label={t('common.delete')} onClick={() => act('remove')}>
+          <TrashIcon />
+        </IconAction>
+      </span>
     </div>
   );
 }
@@ -234,11 +253,35 @@ function UserText({ text }: { text: string }) {
 }
 
 function AssistantMessage({ item }: { item: Of<'assistant'> }) {
+  // 流式输出时每 30ms 来一次全文：Markdown 整篇重新解析很贵，让 React 在忙不过来时跳过中间的版本
+  const markdown = useDeferredValue(item.markdown);
   return (
-    <div className="assistant">
+    <div className={`assistant ${item.streaming && item.markdown ? 'assistant--streaming' : ''}`}>
       {item.reasoning ? <Reasoning text={item.reasoning} active={item.streaming && !item.markdown} /> : null}
-      {item.markdown ? <Markdown text={item.markdown} /> : null}
+      {markdown ? <Markdown text={markdown} /> : null}
       {item.streaming && item.markdown ? <span className="cursor" aria-hidden /> : null}
+      {!item.streaming && item.markdown ? <AssistantActions text={item.markdown} /> : null}
+    </div>
+  );
+}
+
+/** 回复下面的操作：复制原文（Markdown）。平时淡显，悬停或键盘聚焦时变亮。 */
+function AssistantActions({ text }: { text: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="assistant__actions">
+      <IconAction
+        label={copied ? t('assistant.copied') : t('assistant.copy')}
+        onClick={() =>
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1_200);
+          })
+        }
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </IconAction>
     </div>
   );
 }
@@ -258,7 +301,13 @@ function Reasoning({ text, active }: { text: string; active: boolean }) {
   );
 }
 
-const openDiff = (ref: DiffRef) => postToHost({ type: 'openDiff', payload: { ref } });
+/** 打开 Diff；Host 打开前对应的行显示加载中，重复点击不会重复请求。 */
+export const openDiff = (ref: DiffRef) => trackDiff(ref, (token) => postToHost({ type: 'openDiff', payload: { ref, token } }));
+
+/** 这个 Diff 正在打开。 */
+export function useDiffOpening(ref: DiffRef | undefined): boolean {
+  return useView((s) => ref !== undefined && s.openingDiff?.key === diffKey(ref));
+}
 
 function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon: ReactNode }) {
   return <span className="activity__icon">{status === 'running' ? <SpinnerIcon /> : status === 'error' ? <ErrorIcon /> : icon}</span>;
@@ -268,10 +317,11 @@ function StatusIcon({ status, icon }: { status: 'running' | 'ok' | 'error'; icon
 function ActivityRow({ item }: { item: Of<'activity'> }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [name, ...rest] = item.label.split('  ');
-  const detail = rest.join('  ');
+  const { name, detail } = splitLabel(item.label);
   const expandable = Boolean(item.output);
   const command = item.variant === 'command';
+  // 状态不能只靠颜色：失败的命令写明「运行失败」
+  const commandVerb = item.status === 'running' ? t('command.running') : item.status === 'error' ? t('command.failed') : t('command.done');
   return (
     <div className={`activity activity--${item.status} ${command ? 'activity--command' : ''}`}>
       <button
@@ -284,7 +334,7 @@ function ActivityRow({ item }: { item: Of<'activity'> }) {
       >
         <StatusIcon status={item.status} icon={command ? <TerminalIcon /> : <GenericToolIcon tool={item.tool} />} />
         {command ? (
-          <span className="activity__name">{item.status === 'running' ? t('command.running') : t('command.done')}</span>
+          <span className="activity__name">{commandVerb}</span>
         ) : (
           <span className="activity__name">{name}</span>
         )}
@@ -310,6 +360,7 @@ function EditRow({ item }: { item: Of<'activity'> }) {
   const [open, setOpen] = useState(false);
   const verb = item.status === 'running' ? t('edit.running') : item.status === 'error' ? t('edit.failed') : item.created ? t('edit.created') : t('edit.done');
   const diff = item.diff;
+  const opening = useDiffOpening(diff);
   const onClick = () => (diff ? openDiff(diff) : item.output ? setOpen(!open) : undefined);
   return (
     <div className={`activity activity--${item.status} activity--edit`}>
@@ -321,13 +372,25 @@ function EditRow({ item }: { item: Of<'activity'> }) {
         onClick={onClick}
         title={diff ? t('edit.view', item.label) : item.label}
       >
-        <StatusIcon status={item.status} icon={<FileEditIcon />} />
+        <StatusIcon status={opening ? 'running' : item.status} icon={<FileEditIcon />} />
         <span className="activity__name">{verb}</span>
-        <span className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`}>{item.label}</span>
+        <FilePath path={item.label} className={`activity__detail activity__file ${diff ? 'activity__file--link' : ''}`} />
         {item.stats ? <Stats stats={item.stats} /> : null}
       </button>
       {open && item.output ? <pre className="activity__output">{item.output}</pre> : null}
     </div>
+  );
+}
+
+/** 文件路径：文件名在前、目录淡显在后。太长时截掉的是目录，文件名始终看得到。 */
+function FilePath({ path, className }: { path: string; className: string }) {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (slash < 0) return <span className={className}>{path}</span>;
+  return (
+    <span className={`${className} file-path`}>
+      <span className="file-path__name">{path.slice(slash + 1)}</span>
+      <span className="file-path__dir">{path.slice(0, slash)}</span>
+    </span>
   );
 }
 
@@ -359,11 +422,18 @@ function ExploreRow({ item }: { item: Of<'explore'> }) {
       {open ? (
         <ul className="explore__list">
           {item.entries.map((entry) => {
-            const [name, ...rest] = entry.label.split('  ');
+            const { name, detail } = splitLabel(entry.label);
+            const path = entry.path;
             return (
               <li key={entry.id} className={`explore__entry explore__entry--${entry.status}`}>
                 <span className="explore__tool">{name}</span>
-                <span className="explore__target">{rest.join('  ')}</span>
+                {path ? (
+                  <button type="button" className="explore__target explore__target--link" title={t('file.open', path)} onClick={() => postToHost({ type: 'openFile', payload: { path } })}>
+                    {detail}
+                  </button>
+                ) : (
+                  <span className="explore__target">{detail}</span>
+                )}
                 {entry.status === 'error' ? <ErrorIcon className="explore__error" /> : null}
               </li>
             );
@@ -391,13 +461,7 @@ function ChangesCard({ item }: { item: Of<'changes'> }) {
       <ul className="changes__list">
         {item.files.map((file) => (
           <li key={`${file.path}:${JSON.stringify(file.ref)}`}>
-            <button type="button" className="changes__file" onClick={() => openDiff(file.ref)} title={t('edit.view', file.path)}>
-              <span className="changes__path">{file.path}</span>
-              {file.created ? <span className="changes__flag">{t('changes.created')}</span> : null}
-              {file.flags?.includes('binary') ? <span className="changes__flag">{t('changes.binary')}</span> : null}
-              {file.flags?.includes('oversized') ? <span className="changes__flag">{t('changes.oversized')}</span> : null}
-              <Stats stats={file} />
-            </button>
+            <ChangedFileButton file={file} className="changes__file" />
           </li>
         ))}
       </ul>
@@ -406,6 +470,31 @@ function ChangesCard({ item }: { item: Of<'changes'> }) {
     </section>
   );
 }
+
+/** 改动的文件：文件名在前、目录淡显，点击打开 Diff，打开期间显示加载中。 */
+export function ChangedFileButton({ file, className }: { file: ChangedFileView; className: string }) {
+  const t = useT();
+  const opening = useDiffOpening(file.ref);
+  const slash = file.path.lastIndexOf('/');
+  const name = slash >= 0 ? file.path.slice(slash + 1) : file.path;
+  const dir = slash >= 0 ? file.path.slice(0, slash) : '';
+  return (
+    <button type="button" className={className} onClick={() => openDiff(file.ref)} title={t('edit.view', file.path)} aria-busy={opening}>
+      <span className="changes__icon">{opening ? <SpinnerIcon /> : <FileIcon />}</span>
+      <span className="changes__path">
+        <span className="changes__name">{name}</span>
+        {dir ? <span className="changes__dir">{dir}</span> : null}
+      </span>
+      {file.created ? <span className="changes__flag">{t('changes.created')}</span> : null}
+      {file.flags?.includes('binary') ? <span className="changes__flag">{t('changes.binary')}</span> : null}
+      {file.flags?.includes('oversized') ? <span className="changes__flag">{t('changes.oversized')}</span> : null}
+      <Stats stats={file} />
+    </button>
+  );
+}
+
+/** 增删行数（导出给会话改动栏）。 */
+export { Stats };
 
 function Notice({ item }: { item: Of<'notice'> }) {
   return (

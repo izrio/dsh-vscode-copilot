@@ -3,8 +3,11 @@
  * Host 是唯一的状态来源，这里只做缓存和按 id 的增量合并。
  */
 import { useSyncExternalStore } from 'react';
+import { postToHost } from './vscode.ts';
 import type {
+  AppearanceState,
   CommandView,
+  DiffRef,
   ConnectionState,
   ContextState,
   FileCandidate,
@@ -17,8 +20,10 @@ import type {
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  BackendsState,
+  TabsState,
   WorkspaceState,
-} from '@dsh-copilot/shared';
+} from '@harness-deck/shared';
 
 export interface Toast {
   readonly id: number;
@@ -31,6 +36,9 @@ export interface ViewState {
   readonly runtime: RuntimeStatus;
   readonly connection: ConnectionState;
   readonly sessions: readonly SessionListItem[];
+  readonly tabs: TabsState;
+  /** 可选的底层和当前底层。 */
+  readonly backends: BackendsState;
   readonly session: SessionHeader;
   readonly sessionKey: string;
   readonly items: readonly Item[];
@@ -45,10 +53,18 @@ export interface ViewState {
   /** 最近一次 `@` 补全的结果。 */
   readonly fileCandidates: { readonly requestId: number; readonly items: readonly FileCandidate[] };
   readonly toasts: readonly Toast[];
-  /** 把一段文字放进输入框（"编辑后重发"）；`n` 每次递增，输入框据此更新。 */
-  readonly prefill: { readonly text: string; readonly n: number };
+  /**
+   * 把一段文字放进输入框；`n` 每次递增，输入框据此更新。
+   * replace：「编辑后重发」和示例任务，换掉输入框里的内容；restore：消息没发出去，放回原文，输入框里已经新写的内容保留在后面。
+   */
+  readonly prefill: { readonly text: string; readonly n: number; readonly mode: 'replace' | 'restore' };
   /** Host 要求聚焦输入框的次数，组件据此触发聚焦。 */
   readonly focusRequests: number;
+  readonly appearance: AppearanceState;
+  /** 图片内容缓存：`local:<localId>` 或 attachmentId → data URL；'loading' 读取中，'error' 读不到。 */
+  readonly images: Readonly<Record<string, string>>;
+  /** 正在打开的 Diff：`key` 是 DiffRef 的 JSON，对应的行显示加载中。 */
+  readonly openingDiff?: { readonly token: number; readonly key: string };
 }
 
 const initialState: ViewState = {
@@ -56,6 +72,8 @@ const initialState: ViewState = {
   runtime: { kind: 'idle' },
   connection: 'idle',
   sessions: [],
+  tabs: { items: [], active: '' },
+  backends: { items: [], active: 'dsh' },
   session: { title: '', running: false, hasOlder: false, loadingOlder: false, sync: 'idle' },
   sessionKey: '',
   items: [],
@@ -68,8 +86,10 @@ const initialState: ViewState = {
   commands: [],
   fileCandidates: { requestId: -1, items: [] },
   toasts: [],
-  prefill: { text: '', n: 0 },
+  prefill: { text: '', n: 0, mode: 'replace' },
   focusRequests: 0,
+  appearance: {},
+  images: {},
 };
 
 let state: ViewState = initialState;
@@ -77,6 +97,8 @@ const listeners = new Set<() => void>();
 let toastId = 0;
 
 function set(next: Partial<ViewState>): void {
+  // 读屏按 <html lang> 选发音：界面语言变了要跟着改
+  if (next.locale && next.locale !== state.locale && typeof document !== 'undefined') document.documentElement.lang = next.locale === 'zh' ? 'zh-CN' : 'en';
   state = { ...state, ...next };
   for (const listener of listeners) listener();
 }
@@ -95,8 +117,53 @@ export function useView<T>(selector: (state: ViewState) => T): T {
   );
 }
 
-export function requestPrefill(text: string): void {
-  set({ prefill: { text, n: state.prefill.n + 1 } });
+/** 字体设置先在本地生效，Host 写完设置后会再推送一次。 */
+export function setAppearanceLocal(appearance: ViewState['appearance']): void {
+  set({ appearance });
+}
+
+/** 图片在缓存里的键。 */
+export function imageKey(image: { readonly attachmentId?: string; readonly localId?: string }): string | undefined {
+  return image.attachmentId ?? (image.localId ? `local:${image.localId}` : undefined);
+}
+
+/** 记下本地图片（粘贴或拖进来的），发送中的回显用它显示。 */
+export function registerLocalImage(localId: string, dataUrl: string): void {
+  set({ images: { ...state.images, [`local:${localId}`]: dataUrl } });
+}
+
+/** 向 Host 读取 dsh 保存的图片；已经在读或读过时不重复请求。 */
+export function requestImage(attachmentId: string): void {
+  if (state.images[attachmentId] !== undefined) return;
+  set({ images: { ...state.images, [attachmentId]: 'loading' } });
+  postToHost({ type: 'loadImage', payload: { attachmentId } });
+}
+
+/** Webview 自己发出的提示（例如粘贴的图片不能用）。 */
+export function showToast(level: 'info' | 'error', text: string): void {
+  applyHostMessage({ type: 'toast', payload: { level, text } });
+}
+
+let diffToken = 0;
+/** 超过这个时间 Host 还没回复，就不再显示加载中（Host 那边仍会打开）。 */
+const DIFF_SPINNER_LIMIT_MS = 20_000;
+
+/** 打开 Diff：对应的行显示加载中，直到 Host 打开（或放弃）。 */
+export function openDiff(ref: DiffRef, post: (token: number) => void): void {
+  const token = ++diffToken;
+  set({ openingDiff: { token, key: diffKey(ref) } });
+  post(token);
+  setTimeout(() => {
+    if (state.openingDiff?.token === token) set({ openingDiff: undefined });
+  }, DIFF_SPINNER_LIMIT_MS);
+}
+
+export function diffKey(ref: DiffRef): string {
+  return JSON.stringify(ref);
+}
+
+export function requestPrefill(text: string, mode: 'replace' | 'restore' = 'replace'): void {
+  set({ prefill: { text, n: state.prefill.n + 1, mode } });
 }
 
 export function dismissToast(id: number): void {
@@ -113,6 +180,8 @@ export function applyHostMessage(message: HostToWebview): void {
         runtime: p.runtime,
         connection: p.connection,
         sessions: p.sessions,
+        tabs: p.tabs ?? { items: [], active: '' },
+        backends: p.backends ?? { items: [], active: 'dsh' },
         session: p.session,
         sessionKey: p.session.id ?? '',
         items: p.items,
@@ -123,6 +192,7 @@ export function applyHostMessage(message: HostToWebview): void {
         context: p.context,
         locale: p.locale,
         commands: p.commands,
+        appearance: p.appearance ?? {},
       });
       return;
     }
@@ -134,6 +204,12 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'sessions':
       set({ sessions: message.payload });
+      return;
+    case 'tabs':
+      set({ tabs: message.payload });
+      return;
+    case 'backends':
+      set({ backends: message.payload });
       return;
     case 'session':
       set({ session: message.payload });
@@ -155,6 +231,15 @@ export function applyHostMessage(message: HostToWebview): void {
       return;
     case 'locale':
       set({ locale: message.payload });
+      return;
+    case 'appearance':
+      set({ appearance: message.payload });
+      return;
+    case 'imageData':
+      set({ images: { ...state.images, [message.payload.attachmentId]: message.payload.dataUrl ?? 'error' } });
+      return;
+    case 'diffOpened':
+      if (state.openingDiff?.token === message.payload.token) set({ openingDiff: undefined });
       return;
     case 'commands':
       set({ commands: message.payload });
@@ -178,11 +263,15 @@ export function applyHostMessage(message: HostToWebview): void {
     case 'toast': {
       const toast = { id: ++toastId, ...message.payload };
       set({ toasts: [...state.toasts, toast].slice(-3) });
-      setTimeout(() => dismissToast(toast.id), message.payload.level === 'error' ? 8_000 : 4_000);
+      // 普通提示自动消失；错误留着，直到用户关掉（最多同时 3 条，新的把旧的顶掉）
+      if (message.payload.level !== 'error') setTimeout(() => dismissToast(toast.id), 4_000);
       return;
     }
     case 'focusComposer':
       set({ focusRequests: state.focusRequests + 1 });
+      return;
+    case 'restoreDraft':
+      requestPrefill(message.payload.text, 'restore');
       return;
   }
 }

@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { followFrameSchema, type FollowFrame } from '../src/dsh/remote/follow.ts';
 import { SessionJournal } from '../src/dsh/session/journal.ts';
-import { activityLabel, displayPath, project, projectEvents } from '../src/vm/projector.ts';
-import { plainTitle } from '../src/vm/ChatController.ts';
+import { project, projectEvents } from '../src/dsh/view/projector.ts';
+import { displayPath } from '../src/vm/paths.ts';
+import { activityLabel } from '../src/vm/toolRows.ts';
+import { plainTitle } from '../src/dsh/view/ChatController.ts';
 
 /** 用 M0 录制的真实帧回放出 journal，再投影成界面条目。 */
 function journalOf(name: string): SessionJournal {
@@ -42,6 +44,8 @@ const summary = (items: ReturnType<typeof project>['items']) =>
         return `changes:${item.source}:${item.files.map((f) => `${f.path}+${f.additions}-${f.deletions}`).join(',')}`;
       case 'notice':
         return `notice:${item.level}:${item.text}`;
+      case 'turnDone':
+        return `done:${item.completed ? 'ok' : 'stopped'}`;
     }
   });
 
@@ -133,6 +137,128 @@ describe('project：按工具类型渲染（M2）', () => {
       source: 'tools',
       files: [{ path: 'README.md', additions: 1, deletions: 1, ref: { kind: 'tool' } }],
     });
+  });
+
+  it('文件改动历史：有汇总的轮次带 seq/index 和本轮的工具调用，没有汇总的轮次按工具合并；会话改动栏累计行数', () => {
+    const events = [
+      event(1, 'turn/start', {}),
+      call(2, 'c1', 'write', { file_path: '/w/new.txt', content: 'a\nb\n' }),
+      result(3, 'c1', { meta: { operation: 'create', path: '/w/new.txt', diffs: [] } }),
+      call(4, 'c2', 'edit', { file_path: '/w/a.ts', old_string: 'x', new_string: 'y' }),
+      result(5, 'c2', { meta: { path: '/w/a.ts', diffs: [{ oldText: 'x\n', newText: 'y\n' }] } }),
+      event(6, 'workspace/changes', { turn: 1 }),
+      event(7, 'turn/end', {}),
+      event(8, 'turn/start', {}),
+      call(9, 'c3', 'edit', { file_path: '/w/a.ts', old_string: 'y', new_string: 'z\nw' }),
+      result(10, 'c3', { meta: { path: '/w/a.ts', diffs: [{ oldText: 'y\n', newText: 'z\nw\n' }] } }),
+    ];
+    const summary = { turn: 1, files: [{ path: 'new.txt', added: 2, deleted: 0 }, { path: 'a.ts', added: 1, deleted: 1 }, { path: 'build.log', added: 3, deleted: 0 }], total: 3 };
+    const projection = project({ events, pending: [], workspacePath: '/w', changes: (seq) => (seq === 6 ? summary : undefined) });
+    expect(projection.fileHistory.get('/w/a.ts')).toEqual([
+      { turnSeq: 6, index: 1, calls: ['c2'], stats: { additions: 1, deletions: 1 }, fromSummary: true, created: false },
+      { calls: ['c3'], stats: { additions: 2, deletions: 1 }, fromSummary: false, created: false },
+    ]);
+    expect(projection.fileHistory.get('/w/build.log')).toEqual([{ turnSeq: 6, index: 2, calls: [], stats: { additions: 3, deletions: 0 }, fromSummary: true, created: false }]);
+    expect(projection.fileHistory.get('/w/new.txt')?.[0]).toMatchObject({ calls: ['c1'], created: true });
+    expect(projection.sessionChanges).toEqual({
+      files: [
+        { path: 'new.txt', ref: { kind: 'session', path: '/w/new.txt' }, additions: 2, deletions: 0, created: true },
+        { path: 'a.ts', ref: { kind: 'session', path: '/w/a.ts' }, additions: 3, deletions: 2 },
+        { path: 'build.log', ref: { kind: 'session', path: '/w/build.log' }, additions: 3, deletions: 0 },
+      ],
+      additions: 8,
+      deletions: 2,
+    });
+  });
+
+  it('一轮超过 1 秒时结束后显示用时；进行中的一轮带开始时间', () => {
+    const at = (seq: number, time: number, type: string, data: unknown) => ({ type, seq, time, data });
+    const events = [
+      at(1, 1_000, 'turn/start', {}),
+      at(2, 84_000, 'turn/end', { reason: { kind: 'completed' } }),
+      at(3, 90_000, 'turn/start', {}),
+      at(4, 90_500, 'turn/end', { reason: { kind: 'completed' } }),
+      at(5, 95_000, 'turn/start', {}),
+    ];
+    const projection = projectEvents({ events });
+    expect(projection.items).toEqual([{ kind: 'turnDone', id: 'd:2', durationMs: 83_000, completed: true }]);
+    expect(projection.turnStartedAt).toBe(95_000);
+    expect(projectEvents({ events: events.slice(0, 4) }).turnStartedAt).toBeUndefined();
+  });
+
+  it('带前缀的工具（ops_grep、ops_read_files、ops_bash）和内置工具一样渲染', () => {
+    const events = [
+      call(1, 'c1', 'ops_grep', { pattern: 'outline' }),
+      result(2, 'c1'),
+      call(3, 'c2', 'ops_read_files', { paths: ['/w/a.ts', '/w/b.ts', '/w/c.ts'] }),
+      result(4, 'c2'),
+      call(5, 'c3', 'ops_grep', { pattern: 'tabs' }),
+      result(6, 'c3'),
+      call(7, 'c4', 'ops_bash', { command: 'git log --oneline -5' }),
+      result(8, 'c4'),
+    ];
+    const items = project({ events, pending: [], workspacePath: '/w' }).items;
+    expect(items).toMatchObject([
+      { kind: 'explore', summary: '读取 1 个文件，搜索 2 次', entries: [{ label: 'ops_grep  outline' }, { label: 'ops_read_files  a.ts +2' }, { label: 'ops_grep  tabs' }] },
+      { kind: 'activity', variant: 'command', label: 'ops_bash  git log --oneline -5' },
+    ]);
+  });
+
+  it('用户消息里的图片显示成缩略图（dsh 存成附件后的格式）', () => {
+    const events = [
+      event(1, 'user/message', {
+        content: [
+          { type: 'text', text: '看看这张图' },
+          { type: 'image', attachment: { attachmentId: 'sha256:c4', mediaType: 'image/png', width: 1, height: 1, bytes: 70, name: 'shot.png' } },
+        ],
+        source: { kind: 'user', rpcId: 'r1' },
+      }),
+      event(2, 'user/message', { content: [{ type: 'image', attachment: { attachmentId: 'sha256:d5', mediaType: 'image/jpeg' } }], source: { kind: 'user' } }),
+    ];
+    expect(project({ events, pending: [] }).items).toEqual([
+      { kind: 'user', id: 'u:1', text: '看看这张图', images: [{ attachmentId: 'sha256:c4', mediaType: 'image/png', name: 'shot.png', width: 1, height: 1 }] },
+      { kind: 'user', id: 'u:2', text: '', images: [{ attachmentId: 'sha256:d5', mediaType: 'image/jpeg' }] },
+    ]);
+  });
+
+  it('子代理：一行显示描述和状态，结束通知补上最终回答，通知本身不显示成用户消息', () => {
+    const at = (seq: number, time: number, type: string, data: unknown) => ({ type, seq, time, data });
+    const child = '84903303-223c-47ff-8f73-b6bc2070075c';
+    const events = [
+      at(1, 1_000, 'turn/start', { turn: 1 }),
+      at(2, 1_100, 'tool/call', { callId: 'c1', name: 'subagent', arguments: JSON.stringify({ description: '探针子代理', prompt: 'CHILD_TASK 报一下你的模型' }) }),
+      at(3, 1_200, 'subagent/catalog', { version: 0, childId: child, childCreatedAt: 1_150, mode: 'continuable', label: '探针子代理' }),
+      at(4, 1_300, 'tool/result', { message: { toolCallId: 'c1', content: [{ type: 'text', text: `started subagent ${child}` }], isError: false } }),
+      at(5, 1_400, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ];
+    const running = projectEvents({ events }).items.find((item) => item.kind === 'activity');
+    expect(running).toMatchObject({ variant: 'subagent', label: '探针子代理', subagent: { childId: child, state: 'running', startedAt: 1_150, prompt: 'CHILD_TASK 报一下你的模型' } });
+    expect(running && 'output' in running).toBe(false);
+
+    const settled = at(6, 16_150, 'user/message', {
+      content: [
+        { type: 'text', text: `Background subagent ${child} finished and will do no further work unless you send it more.` },
+        { type: 'text', text: 'Its closing message:' },
+        { type: 'text', text: '我是子代理，模型是 mock。' },
+      ],
+      source: { kind: 'subagent-settled', form: 'notice', summary: `Background subagent ${child} finished and will do no further work unless you send it more.`, senderSessionId: child },
+      role: 'user',
+    });
+    const items = projectEvents({ events: [...events, settled] }).items;
+    expect(items.filter((item) => item.kind === 'user')).toEqual([]);
+    expect(items.find((item) => item.kind === 'activity')).toMatchObject({
+      status: 'ok',
+      subagent: { state: 'done', result: '我是子代理，模型是 mock。', startedAt: 1_150, endedAt: 16_150 },
+    });
+  });
+
+  it('只加载到结束通知（子代理的调用在更早的历史里）时单独显示一行', () => {
+    const items = projectEvents({
+      events: [
+        { type: 'user/message', seq: 9, time: 9, data: { content: [{ type: 'text', text: 'Background subagent x stopped.' }], source: { kind: 'subagent-settled', summary: 'Background subagent x stopped.', senderSessionId: 'x' } } },
+      ],
+    }).items;
+    expect(items).toMatchObject([{ kind: 'activity', variant: 'subagent', subagent: { childId: 'x', state: 'failed' } }]);
   });
 
   it('write 新建文件：标记新建，新增行数取内容行数', () => {

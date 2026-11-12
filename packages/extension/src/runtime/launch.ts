@@ -5,7 +5,7 @@
  * Host 就绪后在 stdout 打印带启动令牌的 URL（`http://127.0.0.1:<port>/?token=…`），
  * dsh 文档说明这一行就是就绪信号（packages/bundle/web-app/README）。
  */
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { redactSecrets } from '../util/redact.ts';
 import { t } from '../i18n.ts';
 
@@ -17,6 +17,8 @@ export interface LaunchOptions {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly readyTimeoutMs?: number;
+  /** 中止启动（用户重启、切换底层、关闭窗口）：立即结束还没就绪的进程。 */
+  readonly signal?: AbortSignal;
   /** 每一行 dsh 输出（已脱敏），用于写日志。 */
   readonly onOutput?: (line: string, stream: 'stdout' | 'stderr') => void;
 }
@@ -66,8 +68,88 @@ export function buildLaunchArgs(profile: string, launcherArgs: readonly string[]
   return ['--profile', profile, ...launcherArgs, '--no-open', '--host', '127.0.0.1', '--port', '0'];
 }
 
-function needsShell(command: string, platform: NodeJS.Platform): boolean {
+export function needsShell(command: string, platform: NodeJS.Platform): boolean {
   return platform === 'win32' && /\.(cmd|bat)$/iu.test(command);
+}
+
+/** cmd.exe 里有特殊含义的字符。 */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/gu;
+
+/** 给 cmd.exe 的一个参数加引号并转义（做法与 cross-spawn 相同）：先按 C 运行时的规则处理反斜杠和引号，再用 ^ 转义 cmd 的特殊字符。 */
+export function quoteForCmd(arg: string): string {
+  const quoted = `"${arg.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\+)$/u, '$1$1')}"`;
+  return quoted.replace(CMD_META, '^$1');
+}
+
+export interface SpawnSpec {
+  readonly file: string;
+  readonly args: string[];
+  /** Windows 下已经自己拼好了 cmd.exe 的命令行，Node 不要再加引号。 */
+  readonly windowsVerbatimArguments?: boolean;
+}
+
+/**
+ * 怎么启动一个命令。Windows 上的 `.cmd` / `.bat`（npm 全局安装的命令都是）只能通过 cmd.exe 运行：
+ * 这里自己拼命令行并逐个转义，不用 Node 的 `shell: true`——那样不加引号，路径带空格（例如用户名带空格的 npm 目录）时启动失败，
+ * 参数里的 `&`、`|` 还会被 cmd 当成命令分隔符。其他情况直接启动，不经过 shell。
+ */
+export function spawnSpec(command: string, args: readonly string[], platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>> = {}): SpawnSpec {
+  if (!needsShell(command, platform)) return { file: command, args: [...args] };
+  const line = [command.replace(CMD_META, '^$1'), ...args.map(quoteForCmd)].join(' ');
+  return { file: env.ComSpec ?? env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], windowsVerbatimArguments: true };
+}
+
+/** dsh 的 profile 名以字母或数字开头，只含字母、数字和 `. _ -`；其他值（包括想夹带参数的）退回默认的 web。 */
+export function safeProfile(profile: string): string {
+  return /^[A-Za-z0-9][\w.-]*$/u.test(profile) ? profile : 'web';
+}
+
+/**
+ * 插件启动、还没退出的子进程。扩展宿主退出（包括来不及等 deactivate 做完）时把它们一起结束：
+ * 子进程在独立进程组里，不会随宿主收到信号，不处理就成了孤儿进程。
+ */
+const liveChildren = new Set<ChildProcess>();
+let exitHookInstalled = false;
+
+export function trackChild(child: ChildProcess): void {
+  liveChildren.add(child);
+  child.once('exit', () => liveChildren.delete(child));
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', () => {
+    for (const live of liveChildren) {
+      if (live.pid === undefined || live.exitCode !== null || live.signalCode !== null) continue;
+      killOnHostExit(live.pid, process.platform);
+    }
+  });
+}
+
+/**
+ * 扩展宿主退出时结束一个子进程树。`exit` 回调里只能做同步操作。
+ * Windows 上 dsh 是 `dsh.cmd`，经 cmd.exe 启动：`child.kill()` 只结束 cmd.exe，真正的 dsh 会留下来继续占着会话写锁
+ * （新窗口发消息得到 `session/writer-held`），所以要用 `taskkill /t /f` 同步结束整个进程树。
+ */
+export function killOnHostExit(
+  pid: number,
+  platform: NodeJS.Platform,
+  run: (file: string, args: string[]) => void = (file, args) => {
+    execFileSync(file, args, { windowsHide: true, stdio: 'ignore', timeout: 5_000 });
+  },
+): void {
+  if (platform !== 'win32') {
+    signalGroup(pid, 'SIGTERM');
+    return;
+  }
+  try {
+    run('taskkill', ['/pid', String(pid), '/t', '/f']);
+  } catch {
+    // 进程已经退出，或 taskkill 不可用
+    try {
+      process.kill(pid);
+    } catch {
+      // 进程已经退出
+    }
+  }
 }
 
 /**
@@ -78,12 +160,20 @@ export function probeVersion(
   command: string,
   env: Readonly<Record<string, string | undefined>>,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<string> {
+  const spec = spawnSpec(command, ['--version'], process.platform, env);
   return new Promise((resolve, reject) => {
     execFile(
-      command,
-      ['--version'],
-      { env: env as NodeJS.ProcessEnv, timeout: timeoutMs, shell: needsShell(command, process.platform), windowsHide: true },
+      spec.file,
+      spec.args,
+      {
+        env: env as NodeJS.ProcessEnv,
+        timeout: timeoutMs,
+        windowsHide: true,
+        ...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+        ...(signal ? { signal } : {}),
+      },
       (error, stdout, stderr) => {
         if (error) {
           reject(new LaunchError(t('runtime.versionFailed', error.message), redactSecrets(String(stderr))));
@@ -117,7 +207,7 @@ class LineSplitter {
  * @throws LaunchError 进程提前退出、超时或无法启动时。
  */
 export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> {
-  const args = buildLaunchArgs(options.profile, options.launcherArgs);
+  const spec = spawnSpec(options.command, buildLaunchArgs(safeProfile(options.profile), options.launcherArgs), process.platform, options.env);
   const timeoutMs = options.readyTimeoutMs ?? 60_000;
   const tail: string[] = [];
   const remember = (line: string): string => {
@@ -129,23 +219,31 @@ export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> 
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    const child = spawn(options.command, args, {
+    if (options.signal?.aborted) {
+      reject(new LaunchError(t('runtime.aborted'), ''));
+      return;
+    }
+    const child = spawn(spec.file, spec.args, {
       cwd: options.cwd,
       env: { ...options.env, NO_COLOR: '1' } as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       // POSIX 下放进独立进程组，退出时能连同 dsh 的子进程一起结束
       detached: process.platform !== 'win32',
-      shell: needsShell(options.command, process.platform),
       windowsHide: true,
+      ...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
+    trackChild(child);
 
+    const onAbort = (): void => fail(t('runtime.aborted'));
     const fail = (message: string): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', onAbort);
       void stopRuntime(child);
       reject(new LaunchError(message, tail.join('\n')));
     };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
 
     const timer = setTimeout(() => fail(t('runtime.timeout', Math.round(timeoutMs / 1000))), timeoutMs);
 
@@ -157,6 +255,7 @@ export function launchRuntime(options: LaunchOptions): Promise<LaunchedRuntime> 
       if (found) {
         settled = true;
         clearTimeout(timer);
+        options.signal?.removeEventListener('abort', onAbort);
         resolve({ child, origin: found.origin, token: found.token });
       }
     });

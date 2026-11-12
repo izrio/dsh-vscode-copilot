@@ -1,6 +1,6 @@
 /**
  * 代码高亮：按需加载 shiki（纯 JS 正则引擎，不需要 WASM），只在出现代码块时才加载。
- * 同时生成浅色和深色两套配色，由 CSS 根据 VS Code 主题选择（见 styles.css 的 .shiki 规则）。
+ * 同时生成浅色和深色两套配色，由 CSS 根据 VS Code 主题选择（见 styles/05-markdown.css 的 .shiki 规则）。
  *
  * 输出 token 而不是 HTML 字符串：Webview 的 CSP 不允许内联 style 属性（没有 'unsafe-inline'），
  * 用 innerHTML 插入的 `style="--shiki-dark:…"` 会被浏览器拦掉；React 通过 CSSOM 设置样式则不受影响。

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { HostToWebview } from '@dsh-copilot/shared';
+import type { HostToWebview } from '@harness-deck/shared';
 
 vi.mock('vscode', () => import('./fakes/vscode.ts'));
 
@@ -23,7 +23,7 @@ function fakeView() {
       return { dispose() {} };
     },
   };
-  const view = { webview, visible: true, onDidDispose: () => ({ dispose() {} }) };
+  const view = { webview, visible: true, onDidDispose: () => ({ dispose() {} }), onDidChangeVisibility: () => ({ dispose() {} }) };
   return { view, posted, send: (raw: unknown) => onMessage?.(raw) };
 }
 

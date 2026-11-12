@@ -1,60 +1,103 @@
-# DSH Copilot for VS Code
+<p align="center"><img src="packages/extension/media/logo.svg" width="96" alt="Harness Deck"></p>
 
-[DeepSeek Harness（dsh）](https://github.com/deepseek-ai/deepseek-harness) 的 VS Code 前端，交互参考 Codex：侧边栏对话、逐字流式回复、紧凑的工具活动行、审批与提问、用 VS Code Diff 查看每次改动。
+<h1 align="center">Harness Deck</h1>
 
-Agent 能力（读写文件、执行命令、沙箱与审批、会话、模型）全部由 dsh 提供。插件只负责启动和连接 dsh，把 dsh 的会话数据转换成界面，并补上 VS Code 集成。
+<p align="center">
+  编程代理的 VS Code 对话面板：一个界面，换着用不同的底层。<br>
+  DeepSeek · Claude · oh-my-pi · CodeBuddy · 任何支持 ACP 的代理
+</p>
 
-> 当前版本：**v0.1.0**（M0–M5 完成）。安装包在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases) 下载（`dsh-copilot-<版本>.vsix`，VS Code 扩展视图「⋯ → 从 VSIX 安装…」）。使用说明见 [packages/extension/README.md](./packages/extension/README.md)，更新记录见 [CHANGELOG](./packages/extension/CHANGELOG.md)。功能：基础对话（流式回复、停止、新建与切换会话、模型选择、dsh 崩溃后自动恢复）；按工具类型显示的活动行、审批与提问卡片、权限切换、用 VS Code Diff 查看每次改动、本轮改动汇总、未保存保护；编辑器上下文（当前文件和选区自动附带）、`@` 引用文件、`/` 斜杠命令、编辑器右键「DSH → 解释 / 修复 / 写测试 / 添加到对话」；排队消息（编辑、删除、插队）、计划审阅、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区；中英文界面。
-
-![点击修改记录，在 VS Code 的 Diff 编辑器里查看改动](docs/images/m2-vscode-diff.png)
-
-<table>
-  <tr>
-    <td><img src="docs/images/m4-plan-review.png" alt="计划审阅" width="240"></td>
-    <td><img src="docs/images/m4-queue.png" alt="排队消息" width="240"></td>
-    <td><img src="docs/images/m4-todos.png" alt="待办状态条" width="240"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/m3-context.png" alt="选区标签与 @ 引用" width="240"></td>
-    <td><img src="docs/images/m3-commands.png" alt="斜杠命令" width="240"></td>
-    <td><img src="docs/images/m3-vscode-menu.png" alt="编辑器右键菜单" width="240"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/m2-edits.png" alt="文件修改与本轮改动" width="240"></td>
-    <td><img src="docs/images/m2-approval.png" alt="审批卡片" width="240"></td>
-    <td><img src="docs/images/m2-question.png" alt="提问卡片" width="240"></td>
-  </tr>
-</table>
+<p align="center">
+  <a href="https://github.com/izrio/dsh-vscode-copilot/releases/latest"><b>下载安装包</b></a> ·
+  <a href="./packages/extension/README.md">使用说明</a> ·
+  <a href="./packages/extension/CHANGELOG.md">更新记录</a> ·
+  <a href="#english">English</a>
+</p>
 
 <table>
   <tr>
-    <td><img src="docs/images/m1-sidebar-dark.png" alt="深色主题" width="320"></td>
-    <td><img src="docs/images/m1-sidebar-light.png" alt="浅色主题" width="320"></td>
+    <td><img src="docs/images/v03-welcome.png" alt="第一次打开：选择底层" width="240"></td>
+    <td><img src="docs/images/v03-home.png" alt="首页" width="240"></td>
+    <td><img src="docs/images/v03-tools.png" alt="工具行：浏览、修改、命令" width="240"></td>
+  </tr>
+  <tr>
+    <td align="center">第一次打开时选底层，显示是否已安装</td>
+    <td align="center">首页：当前底层、工作区、示例任务</td>
+    <td align="center">紧凑的工具行，点开看命令输出</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/v03-approval.png" alt="审批卡片" width="240"></td>
+    <td><img src="docs/images/v03-todos.png" alt="待办状态条" width="240"></td>
+    <td><img src="docs/images/v03-backends-menu.png" alt="切换底层" width="240"></td>
+  </tr>
+  <tr>
+    <td align="center">需要确认的操作先问你</td>
+    <td align="center">待办和运行状态贴在输入框上方</td>
+    <td align="center">随时切换底层，会话分开保存</td>
   </tr>
 </table>
 
 截图使用本地假模型，内容仅为演示。
 
-## 文档
+## 特性
 
-| 文档 | 内容 |
-| --- | --- |
-| [docs/DESIGN.md](./docs/DESIGN.md) | 整体方案：对接方式、界面设计原则、架构、模块、运行时管理、安全、工程结构、测试、里程碑 |
-| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研结果、参考项目分析、启动与认证、线上格式、Remote 方法、会话事件、版本策略、M0–M4 验证结果 |
+- **底层可以换**：同一个面板背后可以是 DeepSeek（dsh）、Claude、oh-my-pi、CodeBuddy，或任何支持 [ACP（Agent Client Protocol）](https://agentclientprotocol.com)的代理；每个底层的会话分开保存。
+- **侧边栏对话**：逐字流式回复和推理，紧凑的工具活动行（读文件和搜索合并成「浏览」、命令带输出、修改带增删行数），运行状态和用时，停止生成，回复中继续发的消息自动排队。
+- **审批与模式**：需要确认的操作弹出审批卡片；在输入框里切换权限 / 模式（含计划模式），模型和思考等级级联选择。
+- **VS Code 集成**：在 Diff 编辑器里查看每次改动；当前编辑器和选区作为上下文；`@` 引用文件、`/` 命令；编辑器右键「解释 / 修复 / 写测试」；粘贴图片。
+- **多开标签和改动栏**：每个会话一个标签，后台会话继续回复；输入框上方的改动栏列出本会话改过的文件，点开看累计 Diff。所有底层都支持。
+- **DeepSeek（dsh）独有**：每轮改动汇总（含命令造成的改动）、子代理卡片、提问卡片、消息插队、`/goal`、在浏览器中打开 dsh 网页。
+- **细节**：中英文界面，跟随 VS Code 主题，默认护眼配色（正文颜色柔和），对话字号和字体可调；翻看历史时一键滚动到底部。
+
+## 支持的底层
+
+| 底层 | 接入方式 | 安装 | 登录 / 模型 |
+| --- | --- | --- | --- |
+| <img src="packages/webview-ui/src/assets/backends/deepseek.svg" width="16"> **DeepSeek**（dsh，[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)） | 内置：HTTP + WebSocket | [DeepSeek Desktop](https://www.deepseek.com/en/download/) 菜单「管理 dsh 命令…」，或 `npm install -g @deepseek-ai/dsh` | 第一次使用时引导配置 DeepSeek API Key |
+| <img src="packages/webview-ui/src/assets/backends/oh-my-pi.png" width="16"> **oh-my-pi** | ACP：`omp acp` | `bun install -g @oh-my-pi/pi-coding-agent` | omp 自己的模型提供方配置 |
+| <img src="packages/webview-ui/src/assets/backends/codebuddy.png" width="16"> **CodeBuddy** | ACP：`codebuddy --acp` | `npm install -g @tencent-ai/codebuddy-code` | 浏览器登录，或 `CODEBUDDY_API_KEY` |
+| <img src="packages/webview-ui/src/assets/backends/claude.svg" width="16"> **Claude** | ACP：`claude-agent-acp` | `npm install -g @agentclientprotocol/claude-agent-acp` | `claude` → `/login`，或 `ANTHROPIC_API_KEY` |
+| 其他 ACP 代理 | 设置 `harnessDeck.backends` | 按代理的说明 | 按代理的说明 |
+
+各底层的功能差别、设置项和常见问题见[使用说明](./packages/extension/README.md)。
+
+## 安装
+
+1. 在 [Releases](https://github.com/izrio/dsh-vscode-copilot/releases/latest) 下载 `harness-deck-<版本>.vsix`，在 VS Code 扩展视图「⋯ → 从 VSIX 安装…」，或执行：
+
+   ```bash
+   code --install-extension harness-deck-<版本>.vsix
+   ```
+
+2. 至少装好一个底层（见上表）。
+3. 打开右侧辅助侧边栏里的 Harness Deck（或命令「Harness Deck: 打开对话」）。第一次打开时会让你选底层，之后在首页点底层标签或「…」→「底层」切换。
+
+从 DSH Copilot 升级：原来的 `dsh.*` 设置会自动搬到 `harnessDeck.*` 下；Harness Deck 是新的扩展 id，装好后可以卸载 DSH Copilot。
 
 ## 工作方式
 
 ```
-VS Code 插件（Codex 风格 UI）
-    │  HTTP /api + WebSocket /api/remote.mux
-    ▼
-dsh Host 子进程（dsh --profile web --no-open --host 127.0.0.1 --port 0）
-    │  Agent 循环 · 工具 · 沙箱 · 审批 · 会话持久化
-    ▼
-模型 API（DeepSeek 等）
+VS Code 插件（Harness Deck）
+├── 界面：侧边栏 Webview（React），只认识与底层无关的视图模型
+└── 底层控制器（同一个接口，把底层的数据投影成视图模型）
+    ├── dsh：启动 dsh Host 子进程 ── HTTP /api + WebSocket ──▶ dsh
+    └── ACP：启动代理子进程 ── stdio JSON-RPC（ACP v1）──▶ oh-my-pi / CodeBuddy / Claude / …
+                                                              │
+                              Agent 循环、工具、审批、会话持久化都在底层里
+                                                              ▼
+                                                模型 API（由底层自己发出）
 ```
 
-使用前需要能在终端运行 `dsh`（支持 `0.2.1-rc.5` 及以上，已测试到 `0.2.2-alpha.3`）：推荐安装 [DeepSeek Desktop](https://www.deepseek.com/en/download/) 并在它的菜单「管理 dsh 命令…」中安装 `dsh` 命令（自带运行时），也可以 `npm install -g @deepseek-ai/dsh`（需要 Node ≥ 24.9）。第一次使用时插件会引导配置 DeepSeek API Key（保存到 dsh 的凭据存储）。
+插件本身不发模型请求，也不保存 Key：它负责启动和连接底层、把会话显示成界面，并补上 VS Code 的集成（Diff、选区、右键菜单、未保存保护）。
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [packages/extension/README.md](./packages/extension/README.md) | 使用说明：各底层的准备、功能差别、设置、常见问题 |
+| [docs/DESIGN.md](./docs/DESIGN.md) | 整体方案：架构、模块、界面设计原则、运行时管理、安全、测试、里程碑；第 15 节是多底层与各 ACP 代理的适配 |
+| [docs/DSH-INTEGRATION.md](./docs/DSH-INTEGRATION.md) | dsh 调研：启动与认证、线上格式、Remote 方法、会话事件、版本策略 |
+| [CHANGELOG](./packages/extension/CHANGELOG.md) | 更新记录 |
 
 ## 开发
 
@@ -62,6 +105,10 @@ dsh Host 子进程（dsh --profile web --no-open --host 127.0.0.1 --port 0）
 
 ```bash
 pnpm install
+```
+
+```bash
+pnpm lint
 ```
 
 ```bash
@@ -80,61 +127,91 @@ pnpm build
 pnpm package
 ```
 
-`pnpm package` 产出 `packages/extension/dsh-copilot-<版本>.vsix`。调试时先执行 `pnpm dev`（监听并重新构建），再用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。
+`pnpm package` 产出 `packages/extension/harness-deck-<版本>.vsix`。调试时先执行 `pnpm dev`（监听并重新构建），再用 VS Code 打开 `packages/extension` 按 F5 启动扩展开发宿主。
 
-### 用真实 dsh 测试
+### 测试
 
-下面的测试都使用临时 `DSH_HOME` 和本地假模型，不需要 API Key，也不会读取你的会话。本机 Node 低于 24.9 时，用 `--node-bin <Node 24 的 bin 目录>` 指定 dsh 使用的 Node。
+下面的测试都用本地假模型，不需要 API Key 或账号，也不会读取你的会话。界面测试需要先 `pnpm build`，本机装有 playwright 和 Chromium；截图保存在仓库根目录的 `.e2e-screenshots/`（已忽略）。
 
-冒烟测试（协议客户端，无界面；加 `--record` 重新录制 fixture）：
+dsh 冒烟测试（协议客户端，无界面；加 `--record` 重新录制 fixture。本机 Node 低于 24.9 时用 `--node-bin <Node 24 的 bin 目录>`）：
 
 ```bash
 pnpm smoke -- --dsh "$(command -v dsh)"
 ```
 
-界面端到端测试（真实 dsh + 插件的 Host 侧逻辑 + Chromium 中的界面，需要先 `pnpm build`，本机装有 playwright 和 Chromium）：
+dsh 界面端到端测试（真实 dsh + 插件的 Host 侧逻辑 + Chromium 中的界面）：
 
 ```bash
-pnpm --filter dsh-copilot e2e -- --dsh "$(command -v dsh)"
+pnpm --filter harness-deck e2e -- --dsh "$(command -v dsh)"
+```
+
+ACP 底层的界面端到端测试（真实的 oh-my-pi、CodeBuddy 或 Claude 适配器）：
+
+```bash
+pnpm --filter harness-deck acp-e2e -- --omp "$(command -v omp)"
+```
+
+```bash
+pnpm --filter harness-deck acp-e2e -- --codebuddy "$(command -v codebuddy)"
+```
+
+```bash
+pnpm --filter harness-deck acp-e2e -- --claude "$(command -v claude-agent-acp)"
 ```
 
 在真实 VS Code 中验证（需要先 `pnpm package`，并安装 code-server）：
 
 ```bash
-pnpm --filter dsh-copilot vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
+pnpm --filter harness-deck vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)"
 ```
 
-截图默认保存在仓库根目录的 `.e2e-screenshots/`（已忽略）。
+CI 每次提交跑 lint、类型检查、单元测试和打包（单元测试另在 macOS、Windows 上各跑一遍）；`acp-compat` 每天对 oh-my-pi、CodeBuddy、Claude 适配器的固定版本和最新版本各跑一次界面端到端测试。
 
 ### 目录结构
 
 ```
 packages/
-├── shared/        Host 与 Webview 共用的视图模型和消息类型
+├── shared/        Host 与 Webview 共用的视图模型和消息类型（@harness-deck/shared）
 ├── extension/     VS Code 插件（Extension Host）
-│   ├── src/runtime/      定位、版本检查、启动和监控 dsh
-│   ├── src/dsh/          dsh 协议客户端、会话事件日志、连接与会话服务（唯一了解 dsh 协议的目录）
-│   ├── src/vm/           事件 → 界面条目的投影、对话控制器、Diff 还原（不依赖 vscode）
+│   ├── src/backend/      底层：配置（内置 + 设置）、dsh 与 ACP 两种底层的启动和生命周期
+│   ├── src/acp/          ACP 连接（stdio JSON-RPC）、会话投影、ACP 控制器
+│   ├── src/dsh/          dsh 协议客户端、会话事件日志、连接与会话服务；view/ 是 dsh 事件 → 界面条目的投影和控制器
+│   ├── src/runtime/      定位、版本检查、启动和监控子进程
+│   ├── src/vm/           两种底层共用：标签、编辑器上下文、推送、Diff 还原、工具行摘要（不依赖 vscode）
 │   ├── src/webview/      侧边栏视图宿主
 │   ├── src/workbench/    打开 Diff、未保存文件、确认框的 vscode 实现
+│   ├── media/            标志、插件图标、侧边栏图标
 │   ├── scripts/          构建、冒烟测试、界面端到端、真实 VS Code 验证
-│   └── test/             单元测试、假模型、录制的 fixture
-└── webview-ui/    侧边栏界面（React + Vite）
+│   └── test/             单元测试、假模型、录制的 fixture（含各 ACP 代理的真实帧）
+└── webview-ui/    侧边栏界面（React + Vite，@harness-deck/webview-ui）
 ```
+
+## 开发历程
+
+| 版本 | 内容 |
+| --- | --- |
+| M0–M5（v0.1） | dsh 对接：协议客户端与运行时管理，对话界面，工具行、审批与提问、Diff，VS Code 上下文与右键菜单，排队与计划审阅，中英文界面，多版本兼容 CI |
+| v0.2 | 会话改动栏、多开标签、输入框拖动、主题强调色、浏览器打开 dsh、待办与提问卡片美化、运行状态和用时、粘贴图片、字体设置、子代理 |
+| v0.3 | 改名 Harness Deck，多底层：dsh + ACP（oh-my-pi、CodeBuddy），第一次打开时选底层，新首页和标志 |
+| v0.3.1 | Claude 底层；ACP 代理发消息时要求登录的处理；内部包改名 `@harness-deck/*`，README 重写 |
+| v0.3.2 | ACP 底层的多开标签和会话改动栏，新对话沿用模型，dsh 改叫 DeepSeek，护眼配色，滚动到底部，skill 补全，界面打磨 |
+| v0.4.0 | 全面审查后的修复：底层启动与切换、ACP 审批保护与 dsh 对齐、发送失败不丢输入；输入框上方合并成一行状态栏；对比度、点击区域、读屏；两种底层共用标签和上下文模块，ESLint 和多平台单测 |
+
+里程碑细节见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)，每个版本的改动见 [CHANGELOG](./packages/extension/CHANGELOG.md)。
 
 ## 与参考项目的关系
 
-社区项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 已经验证了这条对接路线。本项目借鉴它的技术做法（运行时发现、令牌处理、从会话日志还原 Diff、未保存保护等），**重新设计对话界面**，并把首版范围收窄到核心体验。详见 [DSH-INTEGRATION.md 第 4 节](./docs/DSH-INTEGRATION.md#4-参考项目分析)和 [DESIGN.md 3.1](./docs/DESIGN.md#31-界面设计原则)。
+社区项目 [HarcoChen/dsh-vsc-integration](https://github.com/HarcoChen/dsh-vsc-integration) 最早验证了 dsh 的对接路线。本项目借鉴它的技术做法（运行时发现、令牌处理、从会话日志还原 Diff、未保存保护等），**重新设计了对话界面**，之后扩展成可以接入多个底层的面板。详见 [DSH-INTEGRATION.md 第 4 节](./docs/DSH-INTEGRATION.md#4-参考项目分析)和 [DESIGN.md 3.1](./docs/DESIGN.md#31-界面设计原则)。
 
-## 开发计划
+底层图标归各自的所有者，只用来标明对应的产品，来源见 [assets/backends/README.md](./packages/webview-ui/src/assets/backends/README.md)。
 
-| 里程碑 | 内容 | 状态 |
-| --- | --- | --- |
-| M0 | 技术验证 + 脚手架：协议客户端、运行时管理、假模型、冒烟测试、CI | ✅ |
-| M1 | 基础对话界面、follow 完整语义、断线重连、会话切换、模型选择 | ✅ |
-| M2 | 工具活动行细化、审批与提问、权限切换、Diff、本轮改动、未保存保护 | ✅ |
-| M3 | VS Code 上下文：选区、`@文件`、右键菜单、斜杠命令 | ✅ |
-| M4 | 排队消息、计划审阅、状态条、API Key 引导、多根工作区、长会话性能 | ✅ |
-| M5 | 中英文界面、多版本兼容 CI、安全与界面自查、用户文档、v0.1.0 | ✅（三平台手工验收待做） |
+---
 
-详见 [DESIGN.md 第 12 节](./docs/DESIGN.md#12-里程碑与任务拆解)。
+## English
+
+**Harness Deck** is a VS Code chat panel for coding agents with a switchable backend: [dsh (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness), [oh-my-pi](https://github.com/can1357/oh-my-pi), [CodeBuddy](https://www.codebuddy.ai/cli), [Claude Code](https://github.com/agentclientprotocol/claude-agent-acp), or any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com). It streams replies, shows compact tool rows, asks before actions that need approval, and opens every change in the VS Code diff editor.
+
+- **Install**: download `harness-deck-<version>.vsix` from [Releases](https://github.com/izrio/dsh-vscode-copilot/releases/latest) and run `code --install-extension harness-deck-<version>.vsix`, then install at least one backend (see the table above). The panel asks which backend to use on first open.
+- **Usage, backend differences and settings**: [packages/extension/README.md](./packages/extension/README.md).
+- **Architecture**: the webview only knows a backend-neutral view model; each backend has a controller that projects its sessions into it. dsh is reached over HTTP and WebSocket, ACP agents over stdio JSON-RPC. The extension itself makes no model requests. See [docs/DESIGN.md](./docs/DESIGN.md), section 15.
+- **Development**: `pnpm install`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm package`. End-to-end tests run real agents against a local mock model (no keys needed): `pnpm --filter harness-deck e2e -- --dsh …` and `pnpm --filter harness-deck acp-e2e -- --omp … | --codebuddy … | --claude …`.

@@ -43,6 +43,11 @@ export const ArrowUpIcon = (p: IconProps) => (
     <path d="M8 13V3.5M4 7.5l4-4 4 4" />
   </svg>
 );
+export const ArrowDownIcon = (p: IconProps) => (
+  <svg {...base(p)} strokeWidth={1.8}>
+    <path d="M8 3v9.5M4 8.5l4 4 4-4" />
+  </svg>
+);
 export const StopIcon = (p: IconProps) => (
   <svg {...base(p)} fill="currentColor" stroke="none">
     <rect x="4" y="4" width="8" height="8" rx="1.5" />
@@ -251,5 +256,40 @@ export const BeakerIcon = (p: IconProps) => (
 export const ReplyIcon = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M6.5 4 3 7.5 6.5 11M3 7.5h6a4 4 0 0 1 4 4v1" />
+  </svg>
+);
+export const TextSizeIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M2 13l3.5-9 3.5 9M3.3 10h4.4M10 13l2-5 2 5M10.7 11.5h2.6" />
+  </svg>
+);
+export const ArrowLeftIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M13 8H3M7 4L3 8l4 4" />
+  </svg>
+);
+export const ArrowRightIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 8h10M9 4l4 4-4 4" />
+  </svg>
+);
+export const ImageIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="2" y="3" width="12" height="10" rx="1.5" />
+    <circle cx="5.5" cy="6.5" r="1.2" />
+    <path d="M14 11l-3.5-3.5L4 13" />
+  </svg>
+);
+export const AgentIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="3" y="5" width="10" height="8" rx="2" />
+    <path d="M8 2.5V5M6 9h.01M10 9h.01M1.5 9v1.5M14.5 9v1.5" />
+  </svg>
+);
+export const ServerIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="2.5" y="2.5" width="11" height="4.5" rx="1.2" />
+    <rect x="2.5" y="9" width="11" height="4.5" rx="1.2" />
+    <path d="M5 4.75h.01M5 11.25h.01" />
   </svg>
 );

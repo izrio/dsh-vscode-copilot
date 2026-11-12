@@ -16,6 +16,8 @@ export type SessionStreamStatus =
 export interface SessionStreamOptions {
   readonly client: DshClient;
   readonly sessionId: string;
+  /** 子代理会话的父会话：读取子代理的会话要用父会话地址。 */
+  readonly parentId?: string;
   /** 可见内容或状态变化时调用；调用方负责节流。 */
   readonly onChange: () => void;
   /** 每次收到开场快照时，带上其中的投影基线。 */
@@ -61,7 +63,7 @@ export class SessionStream {
     if (!this.journal.hasOlder || oldest === undefined) return Promise.resolve();
     this.loadingOlderPromise = (async () => {
       try {
-        const page = await this.options.client.readHistory(this.sessionId, oldest, this.journal.lastSeq, this.abort.signal);
+        const page = await this.options.client.readHistory(this.sessionId, oldest, this.journal.lastSeq, this.abort.signal, this.options.parentId);
         this.journal.prependOlder(page.records, page.hasMore);
       } catch (error) {
         this.log(`加载历史失败：${message(error)}`);
@@ -81,7 +83,7 @@ export class SessionStream {
       const signal = AbortSignal.any([this.abort.signal, follow.signal]);
       let rebaseline = false;
       try {
-        for await (const frame of this.options.client.follow(this.sessionId, signal, (line) => this.log(line))) {
+        for await (const frame of this.options.client.follow(this.sessionId, signal, (line) => this.log(line), this.options.parentId)) {
           if (this.journal.accept(frame) === 'rebaseline') {
             rebaseline = true;
             this.log(`会话 ${this.sessionId} 的 follow 状态不一致，重新打开`);

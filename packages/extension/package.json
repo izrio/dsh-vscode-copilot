@@ -1,9 +1,10 @@
 {
-  "name": "dsh-copilot",
-  "displayName": "DSH Copilot",
+  "name": "harness-deck",
+  "displayName": "Harness Deck",
   "description": "%extension.description%",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "publisher": "izrio",
+  "icon": "media/icon.png",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -34,113 +35,166 @@
     "viewsContainers": {
       "secondarySidebar": [
         {
-          "id": "dsh",
+          "id": "harnessDeck",
           "title": "%container.title%",
-          "icon": "media/dsh.svg"
+          "icon": "media/harness-deck.svg"
         }
       ]
     },
     "views": {
-      "dsh": [
+      "harnessDeck": [
         {
           "type": "webview",
-          "id": "dsh.chatView",
+          "id": "harnessDeck.chatView",
           "name": "%view.chat%"
         }
       ]
     },
     "commands": [
       {
-        "command": "dsh.openChat",
+        "command": "harnessDeck.openChat",
         "title": "%command.openChat%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.newSession",
+        "command": "harnessDeck.newSession",
         "title": "%command.newSession%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.interrupt",
+        "command": "harnessDeck.interrupt",
         "title": "%command.interrupt%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.selectModel",
+        "command": "harnessDeck.selectModel",
         "title": "%command.selectModel%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.openWebUI",
+        "command": "harnessDeck.openWebUI",
         "title": "%command.openWebUI%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.restartRuntime",
+        "command": "harnessDeck.restartRuntime",
         "title": "%command.restartRuntime%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.showLogs",
+        "command": "harnessDeck.showLogs",
         "title": "%command.showLogs%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.explainSelection",
+        "command": "harnessDeck.explainSelection",
         "title": "%command.explainSelection%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.fixSelection",
+        "command": "harnessDeck.fixSelection",
         "title": "%command.fixSelection%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.testSelection",
+        "command": "harnessDeck.testSelection",
         "title": "%command.testSelection%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.addToChat",
+        "command": "harnessDeck.addToChat",
         "title": "%command.addToChat%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.configureApiKey",
+        "command": "harnessDeck.configureApiKey",
         "title": "%command.configureApiKey%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.renameSession",
+        "command": "harnessDeck.renameSession",
         "title": "%command.renameSession%",
-        "category": "DSH"
+        "category": "Harness Deck"
       },
       {
-        "command": "dsh.selectFolder",
+        "command": "harnessDeck.selectFolder",
         "title": "%command.selectFolder%",
-        "category": "DSH"
+        "category": "Harness Deck"
+      },
+      {
+        "command": "harnessDeck.selectBackend",
+        "title": "%command.selectBackend%",
+        "category": "Harness Deck"
       }
     ],
     "configuration": {
       "title": "%config.title%",
       "properties": {
-        "dsh.runtime.path": {
+        "harnessDeck.dsh.path": {
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
           "markdownDescription": "%config.runtime.path%"
         },
-        "dsh.runtime.profile": {
+        "harnessDeck.dsh.profile": {
           "type": "string",
           "default": "web",
           "markdownDescription": "%config.runtime.profile%"
         },
-        "dsh.context.includeActiveEditor": {
+        "harnessDeck.backends": {
+          "type": "array",
+          "markdownDescription": "%config.backends%",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "command"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "markdownDescription": "%config.backends.id%"
+              },
+              "name": {
+                "type": "string",
+                "markdownDescription": "%config.backends.name%"
+              },
+              "command": {
+                "type": "string",
+                "markdownDescription": "%config.backends.command%"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "markdownDescription": "%config.backends.args%"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "markdownDescription": "%config.backends.env%"
+              },
+              "installHint": {
+                "type": "string",
+                "markdownDescription": "%config.backends.installHint%"
+              },
+              "singleSession": {
+                "type": "boolean",
+                "markdownDescription": "%config.backends.singleSession%"
+              }
+            }
+          }
+        },
+        "harnessDeck.context.includeActiveEditor": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.context.includeActiveEditor%"
         },
-        "dsh.ui.language": {
+        "harnessDeck.ui.language": {
           "type": "string",
           "enum": [
             "auto",
@@ -154,60 +208,100 @@
             "%config.ui.language.zh%",
             "%config.ui.language.en%"
           ]
+        },
+        "harnessDeck.ui.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32,
+          "markdownDescription": "%config.ui.fontSize%"
+        },
+        "harnessDeck.ui.fontFamily": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.ui.fontFamily%"
+        },
+        "harnessDeck.ui.codeFontFamily": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.ui.codeFontFamily%"
+        },
+        "harnessDeck.ui.palette": {
+          "type": "string",
+          "enum": [
+            "soft",
+            "theme"
+          ],
+          "enumDescriptions": [
+            "%config.ui.palette.soft%",
+            "%config.ui.palette.theme%"
+          ],
+          "default": "soft",
+          "markdownDescription": "%config.ui.palette%"
+        },
+        "harnessDeck.backendTrace": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.backendTrace%"
+        },
+        "harnessDeck.ui.showTurnChanges": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.ui.showTurnChanges%"
         }
       }
     },
     "submenus": [
       {
-        "id": "dsh.editorContext",
+        "id": "harnessDeck.editorContext",
         "label": "%submenu.editor%"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "submenu": "dsh.editorContext",
-          "group": "1_dsh@1",
+          "submenu": "harnessDeck.editorContext",
+          "group": "1_harnessDeck@1",
           "when": "resourceScheme == file"
         }
       ],
-      "dsh.editorContext": [
+      "harnessDeck.editorContext": [
         {
-          "command": "dsh.explainSelection",
+          "command": "harnessDeck.explainSelection",
           "group": "1_ask@1"
         },
         {
-          "command": "dsh.fixSelection",
+          "command": "harnessDeck.fixSelection",
           "group": "1_ask@2"
         },
         {
-          "command": "dsh.testSelection",
+          "command": "harnessDeck.testSelection",
           "group": "1_ask@3"
         },
         {
-          "command": "dsh.addToChat",
+          "command": "harnessDeck.addToChat",
           "group": "2_context@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "dsh.explainSelection",
+          "command": "harnessDeck.explainSelection",
           "when": "editorIsOpen"
         },
         {
-          "command": "dsh.fixSelection",
+          "command": "harnessDeck.fixSelection",
           "when": "editorIsOpen"
         },
         {
-          "command": "dsh.testSelection",
+          "command": "harnessDeck.testSelection",
           "when": "editorIsOpen"
         },
         {
-          "command": "dsh.addToChat",
+          "command": "harnessDeck.addToChat",
           "when": "editorIsOpen"
         },
         {
-          "command": "dsh.selectFolder",
+          "command": "harnessDeck.selectFolder",
           "when": "workspaceFolderCount > 1"
         }
       ]
@@ -220,10 +314,11 @@
     "smoke": "tsx scripts/m0-smoke.ts",
     "package": "vsce package --no-dependencies --skip-license",
     "e2e": "tsx scripts/ui-e2e.ts",
-    "vscode-e2e": "tsx scripts/vscode-e2e.ts"
+    "vscode-e2e": "tsx scripts/vscode-e2e.ts",
+    "acp-e2e": "tsx scripts/acp-e2e.ts"
   },
   "dependencies": {
-    "@dsh-copilot/shared": "workspace:*",
+    "@harness-deck/shared": "workspace:*",
     "diff": "^8.0.4",
     "ws": "^8.18.0",
     "zod": "^4.1.0"

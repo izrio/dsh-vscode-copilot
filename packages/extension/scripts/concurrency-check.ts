@@ -2,7 +2,7 @@
  * 多窗口并发检查：两个 dsh Host（同一个 DSH_HOME、同一个 web profile）同时运行时是否冲突，
  * 以及两个 Host 同时写同一个会话时 dsh 如何拒绝。对应 docs/DESIGN.md D4。
  *
- * 用法：pnpm --filter dsh-copilot exec tsx scripts/concurrency-check.ts -- --dsh <dsh> [--node-bin <Node 24 bin>]
+ * 用法：pnpm --filter harness-deck exec tsx scripts/concurrency-check.ts -- --dsh <dsh> [--node-bin <Node 24 bin>]
  */
 import { parseArgs } from 'node:util';
 import { DshClient } from '../src/dsh/DshClient.ts';

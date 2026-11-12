@@ -1,9 +1,11 @@
 /**
  * 待处理请求 → 界面卡片（纯函数）：审批卡片从会话日志里找到对应的工具调用；提问卡片带上计划审阅的 intent。
  */
-import type { PendingInteraction } from '@dsh-copilot/shared';
-import type { Pending } from '../dsh/InteractionService.ts';
-import { displayPath, toolVariant, type ToolCallInfo } from './projector.ts';
+import type { PendingInteraction } from '@harness-deck/shared';
+import type { Pending } from '../InteractionService.ts';
+import { displayPath } from '../../vm/paths.ts';
+import { toolVariant } from '../../vm/toolRows.ts';
+import type { ToolCallInfo } from './projector.ts';
 import { keepPlanningLabel } from './viewHelpers.ts';
 
 export interface ViewContext {

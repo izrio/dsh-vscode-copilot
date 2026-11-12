@@ -1,12 +1,19 @@
 export type { RuntimeStatus } from './runtime.ts';
+export { IMAGE_MEDIA_TYPES, MAX_IMAGE_BASE64, MAX_IMAGES } from './limits.ts';
+export { joinLabel, splitLabel } from './labels.ts';
 export type {
+  AppearanceState,
   AttachmentView,
+  BackendsState,
+  BackendView,
   ChangedFileView,
   CommandView,
   ConnectionState,
   ContextState,
   DiffRef,
   FileCandidate,
+  ImageMediaType,
+  ImageView,
   Item,
   LineStats,
   Locale,
@@ -15,8 +22,12 @@ export type {
   PendingInteraction,
   PermissionState,
   QuestionView,
+  SessionChangesView,
   SessionHeader,
   SessionListItem,
+  SubagentView,
+  TabsState,
+  TabView,
   WorkspaceState,
 } from './viewModel.ts';
 export {
@@ -25,5 +36,6 @@ export {
   type HostSnapshot,
   type HostToWebview,
   type ItemsPatch,
+  type PromptImage,
   type WebviewToHost,
 } from './bridge.ts';

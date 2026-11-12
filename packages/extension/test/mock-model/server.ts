@@ -1,5 +1,6 @@
 /**
- * 本地假模型：兼容 Anthropic Messages API（dsh 的 DeepSeek 适配器走 `POST /v1/messages`）。
+ * 本地假模型：兼容 Anthropic Messages API（dsh 的 DeepSeek 适配器、oh-my-pi 走 `POST /v1/messages`）
+ * 和 OpenAI Chat Completions（CodeBuddy 的 `CODEBUDDY_BASE_URL` 走 `POST /v1/chat/completions`）。
  *
  * 用法：dsh 的 `$DSH_HOME/settings.yaml` 里设置
  *   llm-deepseek:
@@ -29,7 +30,7 @@ export type Script =
 export interface MockModel {
   readonly url: string;
   /** 收到的请求；`userText` 是最近一条用户文本（用于检查 dsh 实际发给模型的内容）。 */
-  readonly requests: { readonly path: string; readonly marker?: string; readonly userText?: string }[];
+  readonly requests: { readonly path: string; readonly marker?: string; readonly userText?: string; readonly images?: number }[];
   close(): Promise<void>;
 }
 
@@ -38,12 +39,60 @@ interface AnthropicMessage {
   readonly content: string | readonly { readonly type: string; readonly text?: string }[];
 }
 
+interface OpenAIMessage {
+  readonly role: string;
+  readonly content?: string | null | readonly { readonly type: string; readonly text?: string }[];
+}
+
+/** 两种 API 的消息统一成一种形状：文本、图片数、工具结果数。 */
+interface Message {
+  readonly role: 'user' | 'assistant' | 'other';
+  readonly texts: readonly string[];
+  readonly images: number;
+  readonly toolResults: number;
+}
+
+function fromAnthropic(messages: readonly AnthropicMessage[]): Message[] {
+  return messages.map((message) => {
+    const blocks = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content;
+    return {
+      role: message.role === 'user' ? 'user' : message.role === 'assistant' ? 'assistant' : 'other',
+      texts: blocks.filter((block) => block.type === 'text').map((block) => block.text ?? ''),
+      images: blocks.filter((block) => block.type === 'image').length,
+      toolResults: blocks.filter((block) => block.type === 'tool_result').length,
+    };
+  });
+}
+
+/** OpenAI 的工具结果是单独的 `tool` 消息，这里当成「只有工具结果的用户消息」。 */
+function fromOpenAI(messages: readonly OpenAIMessage[]): Message[] {
+  return messages.map((message) => {
+    if (message.role === 'tool') return { role: 'user', texts: [], images: 0, toolResults: 1 };
+    const content = message.content ?? [];
+    const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+    return {
+      role: message.role === 'user' ? 'user' : message.role === 'assistant' ? 'assistant' : 'other',
+      texts: blocks.filter((block) => block.type === 'text').map((block) => block.text ?? '').filter((text) => text !== ''),
+      images: blocks.filter((block) => block.type === 'image_url').length,
+      toolResults: 0,
+    };
+  });
+}
+
+/** 一次流式回复：两种 API 各有一个实现。 */
+interface Stream {
+  start(): void;
+  text(index: number, chunks: readonly string[], delayMs?: number, close?: boolean): Promise<void>;
+  toolUse(index: number, tool: ToolUse): void;
+  stop(reason: 'end_turn' | 'tool_use'): void;
+}
+
 /**
  * 启动假模型。
  * @param scripts - 标记 → 脚本；最近一条用户文本包含某个标记时使用对应脚本，否则用 `default`。
  */
 export async function startMockModel(scripts: Readonly<Record<string, Script>>): Promise<MockModel> {
-  const requests: { path: string; marker?: string; userText?: string }[] = [];
+  const requests: { path: string; marker?: string; userText?: string; images?: number }[] = [];
   const openResponses = new Set<ServerResponse>();
 
   const server: Server = createServer((request, response) => {
@@ -61,7 +110,8 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
       response.end(JSON.stringify({ object: 'list', data: [{ id: 'deepseek-flash', object: 'model' }] }));
       return;
     }
-    if (request.method !== 'POST' || path !== '/v1/messages') {
+    const openai = path === '/v1/chat/completions' || path === '/chat/completions';
+    if (request.method !== 'POST' || (path !== '/v1/messages' && !openai)) {
       requests.push({ path });
       response.writeHead(404);
       response.end();
@@ -69,19 +119,28 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
     }
     let body = '';
     for await (const part of request) body += String(part);
-    const payload = JSON.parse(body) as { model?: string; messages?: readonly AnthropicMessage[] };
-    const messages = payload.messages ?? [];
-    const marker = Object.keys(scripts).find((key) => key !== 'default' && lastUserText(messages).includes(key));
-    requests.push({ path, ...(marker ? { marker } : {}), userText: lastUserText(messages) });
-    const script = scripts[marker ?? 'default'] ?? { kind: 'text', chunks: ['OK'] };
-    const afterTool = lastMessageIsToolResult(messages);
-    const completedTools = toolResultsSinceUserText(messages);
+    const payload = JSON.parse(body) as { model?: string; messages?: readonly unknown[]; tools?: readonly unknown[] };
+    const messages = openai ? fromOpenAI((payload.messages ?? []) as OpenAIMessage[]) : fromAnthropic((payload.messages ?? []) as AnthropicMessage[]);
 
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     openResponses.add(response);
     response.once('close', () => openResponses.delete(response));
-    const sse = new Sse(response, payload.model ?? 'deepseek-flash');
+    const sse: Stream = openai ? new OpenAISse(response, payload.model ?? 'mock-model') : new Sse(response, payload.model ?? 'deepseek-flash');
     sse.start();
+
+    // 不带工具的请求是代理的辅助请求（例如 CodeBuddy 生成会话标题），不按脚本回复，也不记录
+    if (openai && (payload.tools ?? []).length === 0) {
+      await sse.text(0, ['Mock title'], 0);
+      sse.stop('end_turn');
+      return;
+    }
+    const userText = lastUserText(messages);
+    const marker = Object.keys(scripts).find((key) => key !== 'default' && userText.includes(key));
+    const images = lastUserImages(messages);
+    requests.push({ path, ...(marker ? { marker } : {}), userText, ...(images ? { images } : {}) });
+    const script = scripts[marker ?? 'default'] ?? { kind: 'text', chunks: ['OK'] };
+    const afterTool = lastMessageIsToolResult(messages);
+    const completedTools = toolResultsSinceUserText(messages);
 
     if (script.kind === 'tools') {
       const next = script.tools[completedTools];
@@ -133,37 +192,41 @@ export async function startMockModel(scripts: Readonly<Record<string, Script>>):
   };
 }
 
-function lastUserText(messages: readonly AnthropicMessage[]): string {
+/** 最近一条带文字的用户消息里的图片数（检查底层有没有把图片发给模型）。 */
+function lastUserImages(messages: readonly Message[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message?.role !== 'user') continue;
-    if (typeof message.content === 'string') return message.content;
-    const texts = message.content.filter((block) => block.type === 'text').map((block) => block.text ?? '');
-    if (texts.length > 0) return texts.join('\n');
+    if (message?.role === 'user' && message.texts.length > 0) return message.images;
+  }
+  return 0;
+}
+
+function lastUserText(messages: readonly Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === 'user' && message.texts.length > 0) return message.texts.join('\n');
   }
   return '';
 }
 
 /** 最近一条用户文本之后，已经完成了几次工具调用。 */
-function toolResultsSinceUserText(messages: readonly AnthropicMessage[]): number {
+function toolResultsSinceUserText(messages: readonly Message[]): number {
   let count = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== 'user') continue;
-    if (typeof message.content === 'string') break;
-    const results = message.content.filter((block) => block.type === 'tool_result').length;
-    if (results === 0 && message.content.some((block) => block.type === 'text')) break;
-    count += results;
+    if (message.toolResults === 0 && message.texts.length > 0) break;
+    count += message.toolResults;
   }
   return count;
 }
 
-function lastMessageIsToolResult(messages: readonly AnthropicMessage[]): boolean {
+function lastMessageIsToolResult(messages: readonly Message[]): boolean {
   const last = messages[messages.length - 1];
-  return last?.role === 'user' && Array.isArray(last.content) && last.content.some((block) => block.type === 'tool_result');
+  return last?.role === 'user' && last.toolResults > 0;
 }
 
-class Sse {
+class Sse implements Stream {
   constructor(
     private readonly response: ServerResponse,
     private readonly model: string,
@@ -213,5 +276,43 @@ class Sse {
     this.event({ type: 'message_delta', delta: { stop_reason: reason, stop_sequence: null }, usage: { output_tokens: 5 } });
     this.event({ type: 'message_stop' });
     this.response.end();
+  }
+}
+
+/** OpenAI Chat Completions 的流式格式：`data: {chunk}`，最后 `data: [DONE]`。 */
+class OpenAISse implements Stream {
+  private readonly id = `chatcmpl-${randomUUID()}`;
+
+  constructor(
+    private readonly response: ServerResponse,
+    private readonly model: string,
+  ) {}
+
+  private chunk(delta: Record<string, unknown>, finishReason: string | null = null, extra: Record<string, unknown> = {}): void {
+    if (this.response.destroyed) return;
+    const data = { id: this.id, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: this.model, choices: [{ index: 0, delta, finish_reason: finishReason }], ...extra };
+    this.response.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  start(): void {
+    this.chunk({ role: 'assistant', content: '' });
+  }
+
+  async text(_index: number, chunks: readonly string[], delayMs = 30): Promise<void> {
+    for (const chunk of chunks) {
+      this.chunk({ content: chunk });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  toolUse(_index: number, tool: ToolUse): void {
+    const call = { index: 0, id: `call_${randomUUID().replaceAll('-', '')}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.input) } };
+    this.chunk({ tool_calls: [call] });
+  }
+
+  stop(reason: 'end_turn' | 'tool_use'): void {
+    this.chunk({}, reason === 'tool_use' ? 'tool_calls' : 'stop', { usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
+    if (this.response.destroyed) return;
+    this.response.end('data: [DONE]\n\n');
   }
 }

@@ -4,7 +4,7 @@
  * 覆盖 VS Code 外壳之外的全部链路，并截图供界面验收。
  *
  * 用法（需要先 `pnpm build`，本机装有 playwright 和 Chromium）：
- *   pnpm --filter dsh-copilot run e2e -- --dsh /path/to/dsh [--node-bin <Node 24 bin>] [--out <截图目录>]
+ *   pnpm --filter harness-deck run e2e -- --dsh /path/to/dsh [--node-bin <Node 24 bin>] [--out <截图目录>]
  */
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -13,16 +13,16 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { mkdir } from 'node:fs/promises';
-import { parseWebviewMessage, type HostToWebview } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview } from '@harness-deck/shared';
 import { DshConnection } from '../src/dsh/DshConnection.ts';
 import { RuntimeManager } from '../src/runtime/RuntimeManager.ts';
 import { setLocale } from '../src/i18n.ts';
-import { ChatController } from '../src/vm/ChatController.ts';
-import { reverseHunks, reverseToolDiffs } from '../src/vm/diffs.ts';
+import { ChatController } from '../src/dsh/view/ChatController.ts';
+import { reverseToolDiffs } from '../src/vm/diffs.ts';
 import type { DiffRequest, EditorSnapshot, Workbench } from '../src/vm/workbench.ts';
 import { createDshTestEnv } from '../test/support/dshEnv.ts';
 import { loadPlaywright, type Page } from './playwright-lite.ts';
-import { DARK_THEME, LIGHT_THEME } from './theme-vars.ts';
+import { DARK_THEME, LIGHT_THEME, VSCODE_DEFAULT_STYLES } from './theme-vars.ts';
 
 const { values: cli } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== '--'),
@@ -71,7 +71,12 @@ const MARKDOWN_ANSWER = [
 
 const env = await createDshTestEnv({
   nodeBin: cli['node-bin'],
-  files: { 'README.md': '# demo\n\n一个演示项目。\n', 'src/index.ts': 'export const answer = 42;\n' },
+  files: {
+    'README.md': '# demo\n\n一个演示项目。\n',
+    'src/index.ts': 'export const answer = 42;\n',
+    // 工作区里的 skill：dsh 的 skill 不在 commands/list 里，要从 skills/list 读到
+    '.dsh/skills/e2e-review/SKILL.md': '---\nname: e2e-review\ndescription: E2E 测试用的代码审查 skill\n---\n\n按清单审查改动。\n',
+  },
   scripts: {
     E2E_MARKDOWN: { kind: 'text', chunks: MARKDOWN_ANSWER, delayMs: 80 },
     E2E_TOOL: {
@@ -137,6 +142,11 @@ const env = await createDshTestEnv({
       },
       after: '明白，按你的选择来。',
     },
+    E2E_IMAGE: { kind: 'text', chunks: ['图片', '收到了。'] },
+    // 子代理：父会话派出子代理；子代理的回答带 E2E_SUBDONE，父会话收到结束通知后据此回复
+    E2E_SUBAGENT: { kind: 'tool', tool: { name: 'subagent', input: { description: '核对配置', prompt: 'CHILD_E2E 看一下配置' } }, after: '已派出子代理。' },
+    CHILD_E2E: { kind: 'text', chunks: ['E2E_SUBDONE ', '配置', '没问题。'], delayMs: 700 },
+    E2E_SUBDONE: { kind: 'text', chunks: ['子代理汇报：配置没问题。'] },
     default: { kind: 'text', chunks: ['你好！', '有什么可以帮你？'], delayMs: 40 },
   },
 });
@@ -169,6 +179,7 @@ let withoutKey = false;
 const inputAnswers: (string | undefined)[] = [];
 const workbench: Workbench = {
   openDiff: async (request) => void diffRequests.push(request),
+  readFile: (path) => readFile(path, 'utf8').catch(() => undefined),
   openFile: async () => undefined,
   activeEditor: () => editorSnapshot,
   findFiles: async () => [],
@@ -218,7 +229,9 @@ const harnessHtml = (theme: 'dark' | 'light', origin: string) => `<!doctype html
 <script nonce="${NONCE}">
   let state;
   window.__cspViolations = [];
-  document.addEventListener('securitypolicyviolation', (e) => window.__cspViolations.push(e.violatedDirective + ' ' + (e.blockedURI || 'inline')));
+  document.addEventListener('securitypolicyviolation', (e) =>
+    window.__cspViolations.push(e.violatedDirective + ' ' + (e.blockedURI || 'inline') + (e.sourceFile ? ' @ ' + e.sourceFile.split('/').pop() + ':' + e.lineNumber + ':' + e.columnNumber : '') + (e.sample ? ' ' + e.sample : '')),
+  );
   window.acquireVsCodeApi = () => ({
     postMessage: (m) => window.__toHost(JSON.stringify(m)),
     getState: () => state,
@@ -237,7 +250,7 @@ const server = createServer((request, response) => {
     }
     if (url.pathname === '/theme-dark.css' || url.pathname === '/theme-light.css') {
       response.writeHead(200, { 'content-type': 'text/css' });
-      response.end(`:root{${url.pathname === '/theme-dark.css' ? DARK_THEME : LIGHT_THEME}}`);
+      response.end(`:root{${url.pathname === '/theme-dark.css' ? DARK_THEME : LIGHT_THEME}}${VSCODE_DEFAULT_STYLES}`);
       return;
     }
     const path = normalize(join(webviewDist, url.pathname));
@@ -321,6 +334,9 @@ try {
     body: getComputedStyle(document.body).color,
   }));
   check('代码高亮颜色生效（不被 CSP 拦截）', colors.token !== colors.body, JSON.stringify(colors));
+  // 行内代码不能沿用 VS Code 默认样式里的 textPreformat 色（深色主题里是橙色，太抢眼）
+  const inlineColor = await page.locator('.inline-code').first().evaluate((el) => getComputedStyle(el).color);
+  check('行内代码用正文色，不是主题的橙色', inlineColor !== 'rgb(215, 186, 125)', inlineColor);
   check('表格渲染', (await page.locator('.markdown table').count()) === 1);
   const ring = page.getByTestId('context-ring');
   await ring.waitFor({ timeout: 10_000 }).then(
@@ -370,10 +386,127 @@ try {
   await page.waitForTimeout(500);
   const turnDiff = diffRequests.at(-1);
   check(
-    '点击汇总里的文件：用本轮 hunk 还原出修改前的 README',
-    turnDiff?.kind === 'turn' && turnDiff.path === join(env.workspace, 'README.md') && reverseHunks(readmeNow, turnDiff.hunks) === '# demo\n\n一个演示项目。\n',
+    '点击汇总里的文件：在本地用工具片段还原出修改前的 README（不请求 dsh）',
+    turnDiff?.kind === 'contents' && turnDiff.scope === 'turn' && turnDiff.path === join(env.workspace, 'README.md') && turnDiff.before === '# demo\n\n一个演示项目。\n' && turnDiff.after === undefined,
     JSON.stringify(turnDiff),
   );
+  const changesBar = page.getByTestId('session-changes');
+  check('输入框上方显示本会话改动栏', (await changesBar.innerText()).includes('2 个文件'), await changesBar.innerText().catch(() => ''));
+  await changesBar.locator('.session-changes__toggle').click();
+  // 文件列表展开在状态栏上方（和待办共用一个位置），不在「改动」那一段里面
+  await page.getByTestId('dock').locator('.session-changes__file', { hasText: 'README.md' }).click();
+  await page.waitForTimeout(300);
+  const sessionDiff = diffRequests.at(-1);
+  check(
+    '点击改动栏里的文件：打开本会话的累计 Diff',
+    sessionDiff?.kind === 'contents' && sessionDiff.scope === 'session' && sessionDiff.before === '# demo\n\n一个演示项目。\n',
+    JSON.stringify(sessionDiff),
+  );
+  await shot('13b-session-changes');
+  await changesBar.locator('.session-changes__toggle').click();
+
+  // 拖动输入框顶边调整高度，双击恢复
+  const inputBox = async () => (await composer.boundingBox())?.height ?? 0;
+  const autoHeight = await inputBox();
+  const handle = await page.getByTestId('composer-resize').boundingBox();
+  if (handle) {
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 6 });
+    await page.mouse.up();
+  }
+  const dragged = await inputBox();
+  check('拖动输入框顶边可以调高输入框', dragged >= autoHeight + 100, `${autoHeight} → ${dragged}`);
+  await shot('13c-composer-resized');
+  await page.getByTestId('composer-resize').evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  await page.waitForTimeout(100);
+  check('双击拖动条恢复自动高度', Math.abs((await inputBox()) - autoHeight) < 2, `${autoHeight} vs ${await inputBox()}`);
+
+  // 2b2. 粘贴图片：输入框显示缩略图，随消息发给 dsh，消息里显示 dsh 保存的图片
+  // 图片数据直接写在函数里：带参数的 evaluate 在页面里走 eval，会被 CSP 拦下并记成违规
+  await composer.evaluate((el) => {
+    const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await page.getByTestId('composer-images').locator('img').waitFor({ timeout: 5_000 }).then(
+    () => check('粘贴图片后输入框显示缩略图', true),
+    () => check('粘贴图片后输入框显示缩略图', false),
+  );
+  await send('E2E_IMAGE 看看这张图');
+  await page.locator('.user', { hasText: 'E2E_IMAGE' }).locator('.user__images img').waitFor({ timeout: 20_000 }).then(
+    () => check('消息里显示发送的图片', true),
+    () => check('消息里显示发送的图片', false),
+  );
+  for (let i = 0; i < 40 && !env.model.requests.some((r) => r.userText?.includes('E2E_IMAGE')); i++) await page.waitForTimeout(250);
+  check('dsh 把图片发给了模型', env.model.requests.some((r) => r.userText?.includes('E2E_IMAGE') && (r.images ?? 0) === 1), JSON.stringify(env.model.requests.filter((r) => r.userText?.includes('E2E_IMAGE'))));
+  check('发送后输入框里的缩略图清空', (await page.getByTestId('composer-images').count()) === 0);
+  await page.locator('.assistant', { hasText: '图片收到了' }).waitFor({ timeout: 20_000 });
+  await shot('14b-image');
+
+  // 2b4. 子代理：卡片显示任务和状态，结束后显示回答；可以打开子代理的对话（只读）
+  await send('E2E_SUBAGENT 派个子代理核对配置');
+  const subagent = page.getByTestId('subagent').first();
+  await subagent.waitFor({ timeout: 20_000 });
+  check('子代理显示成一张卡片（描述 + 运行中）', (await subagent.innerText()).includes('核对配置') && /运行中|已完成/u.test(await subagent.innerText()), await subagent.innerText());
+  await page.locator('.subagent--done').waitFor({ timeout: 30_000 }).then(
+    () => check('子代理结束后显示已完成和用时', true),
+    async () => check('子代理结束后显示已完成和用时', false, await subagent.innerText()),
+  );
+  await page.locator('.assistant', { hasText: '子代理汇报' }).waitFor({ timeout: 20_000 });
+  check('结束通知不显示成用户消息', (await page.locator('.user', { hasText: 'Background subagent' }).count()) === 0);
+  await subagent.locator('.subagent__row').click();
+  check('点开子代理看到任务和回答', (await subagent.innerText()).includes('看一下配置') && (await subagent.innerText()).includes('配置没问题'), await subagent.innerText());
+  await shot('14d-subagent');
+  await subagent.getByRole('button', { name: '查看子代理的对话' }).click();
+  await page.getByTestId('subagent-strip').waitFor({ timeout: 10_000 }).then(
+    () => check('打开子代理的对话：提示只读，输入框不可用', true),
+    () => check('打开子代理的对话：提示只读，输入框不可用', false),
+  );
+  check('子代理对话里输入框禁用', await composer.isDisabled());
+  check('子代理对话的标题用任务描述', (await page.locator('.header__title-text').innerText()) === '子代理 · 核对配置', await page.locator('.header__title-text').innerText());
+  await page.locator('.assistant', { hasText: '配置没问题' }).first().waitFor({ timeout: 10_000 }).then(
+    () => check('子代理的对话内容可以查看', true),
+    () => check('子代理的对话内容可以查看', false),
+  );
+  await shot('14e-subagent-chat');
+  await page.getByTestId('subagent-strip').getByRole('button', { name: '返回父会话' }).click();
+  await page.locator('.assistant', { hasText: '子代理汇报' }).waitFor({ timeout: 10_000 });
+  await page.getByTestId('tabs').locator('.tab').nth(1).hover();
+  await page.getByTestId('tabs').locator('.tab').nth(1).locator('.tab__close').click();
+  await page.waitForTimeout(200);
+
+  // 2b3. 字体与字号：「…」菜单里直接调整
+  const bodySize = () => page!.evaluate(() => Number.parseFloat(getComputedStyle(document.body).fontSize));
+  const sizeBefore = await bodySize();
+  await page.getByRole('button', { name: '更多' }).click();
+  await page.getByRole('menuitem', { name: /字体与字号/u }).click();
+  await page.getByTestId('appearance-panel').waitFor({ timeout: 5_000 });
+  await page.getByRole('button', { name: '增大字号' }).click();
+  await page.getByRole('button', { name: '增大字号' }).click();
+  check('字体面板里加大字号立即生效', (await bodySize()) === sizeBefore + 2, `${sizeBefore} → ${await bodySize()}`);
+  await shot('14c-appearance');
+  // 护眼配色：默认打开，正文比主题前景色暗一些；关掉后直接用主题前景色
+  const textColors = () =>
+    page!.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--vscode-foreground)';
+      document.body.append(probe);
+      const theme = getComputedStyle(probe).color;
+      probe.remove();
+      return { palette: document.documentElement.dataset.palette, body: getComputedStyle(document.body).color, theme };
+    });
+  const soft = await textColors();
+  check('默认是护眼配色：正文颜色比主题前景色柔和', soft.palette === 'soft' && soft.body !== soft.theme, JSON.stringify(soft));
+  await page.getByTestId('appearance-soft').click();
+  const themed = await textColors();
+  check('关掉护眼配色后正文用主题前景色', themed.palette === 'theme' && themed.body === themed.theme, JSON.stringify(themed));
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  check('恢复默认后回到原来的字号', (await bodySize()) === sizeBefore);
+  check('恢复默认后回到护眼配色', (await textColors()).palette === 'soft');
+  await page.keyboard.press('Escape');
 
   // 2c. 审批：允许
   await send('E2E_APPROVE 装一下依赖');
@@ -381,7 +514,7 @@ try {
   await approval.waitFor({ timeout: 30_000 });
   check('审批卡片显示要运行的命令', (await approval.locator('.interaction__command').innerText()).includes('echo installed'));
   check('审批卡片显示原因', (await approval.locator('.interaction__reason').innerText()).includes('需要访问网络下载依赖'));
-  check('等待审批时不显示「思考中」', (await page.locator('.thinking').count()) === 0);
+  check('等待审批时运行状态显示「等待你处理」', ((await page.getByTestId('run-status').innerText().catch(() => '')) ?? '').includes('等待你处理'));
   await shot('14-approval');
   await approval.getByRole('button', { name: '允许本次' }).click();
   await page.locator('.assistant', { hasText: '依赖装好了' }).waitFor({ timeout: 30_000 });
@@ -405,6 +538,21 @@ try {
   await question.getByRole('button', { name: '提交' }).click();
   await page.locator('.assistant', { hasText: '按你的选择来' }).waitFor({ timeout: 30_000 });
   check('提交后卡片消失，dsh 收到选择', (await question.count()) === 0);
+
+  // 2e2. 模型选择：当前项带勾；有多个思考等级的模型是级联菜单
+  await page.getByTestId('model-picker').click();
+  await page.locator('.model-menu').waitFor({ timeout: 5_000 });
+  check('模型菜单里当前模型带勾和强调色', (await page.locator('.model-menu .menu-item--active .model-item__check svg').count()) === 1);
+  const cascade = page.locator('.model-menu .model-item:has(.model-item__arrow)').first();
+  if ((await cascade.count()) > 0) {
+    await cascade.click();
+    await page.getByTestId('effort-menu').waitFor({ timeout: 5_000 });
+    check('点有多个思考等级的模型进入第二级选思考等级', (await page.locator('[data-testid="effort-menu"] .model-item').count()) > 1);
+    await shot('15b-model-efforts');
+    await page.locator('.model-menu__back').click();
+  }
+  await shot('15c-model-menu');
+  await page.keyboard.press('Escape');
 
   // 2f. 权限预设
   const permission = page.getByTestId('permission-picker');
@@ -482,6 +630,16 @@ try {
   await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
   const commandOptions = await completion.locator('[role="option"]').allInnerTexts();
   check('输入 / 列出插件模板和 dsh 命令（不含 /export）', ['/explain', '/fix', '/test', '/new', '/compact', '/plan'].every((name) => commandOptions.some((t) => t.includes(name))) && !commandOptions.some((t) => t.includes('/export')), commandOptions.join(' | '));
+  check('输入 / 也列出 dsh 的 skill，带 skill 标签', commandOptions.some((t) => t.includes('/e2e-review') && t.includes('skill')), commandOptions.join(' | '));
+  // 名字中间的一段也能搜到 skill
+  await page.keyboard.type('review');
+  await completion.locator('[role="option"]', { hasText: '/e2e-review' }).waitFor({ timeout: 5_000 }).then(
+    () => check('输入 /review 能搜到 e2e-review（名字中间匹配）', true),
+    async () => check('输入 /review 能搜到 e2e-review（名字中间匹配）', false, (await completion.allInnerTexts().catch(() => [])).join(' | ')),
+  );
+  await composer.fill('');
+  await composer.press('/');
+  await completion.locator('[role="option"]', { hasText: '/compact' }).waitFor({ timeout: 10_000 });
   await shot('20-commands');
   await composer.press('c');
   await composer.press('o');
@@ -569,10 +727,10 @@ try {
   await send('E2E_TODO 列一下待办');
   await page.locator('.assistant', { hasText: '待办列好了' }).waitFor({ timeout: 30_000 });
   const strip = page.getByTestId('status-strip');
-  check('待办显示在输入框上方（1/3，正在做的事）', (await strip.innerText()).includes('待办 1/3') && (await strip.innerText()).includes('修改启动逻辑'));
+  check('待办显示在输入框上方（1/3，正在做的事）', (await strip.innerText()).includes('待办') && (await strip.innerText()).includes('1/3') && (await strip.innerText()).includes('修改启动逻辑'));
   check('待办不在对话流里重复出现', (await page.locator('.activity', { hasText: 'todo_write' }).count()) === 0);
-  await strip.locator('.status-strip__todos').click();
-  check('点开待办看到全部条目', (await strip.locator('.todo').count()) === 3);
+  await strip.click();
+  check('点开待办看到全部条目', (await page.getByTestId('dock').locator('.todo').count()) === 3);
   await shot('23-todos');
 
   // 2k. 计划审阅
@@ -616,6 +774,16 @@ try {
   await page.locator('.assistant', { hasText: '正在仔细分析' }).waitFor({ timeout: 20_000 });
   const stop = page.getByRole('button', { name: '停止生成' });
   check('运行中显示停止按钮', await stop.isVisible());
+  const runStatus = page.getByTestId('run-status');
+  const firstTick = await runStatus.innerText().catch(() => '');
+  await page.waitForTimeout(2_200);
+  const secondTick = await runStatus.innerText().catch(() => '');
+  check('运行中显示运行状态和已用时间，每秒刷新', /秒/u.test(firstTick) && firstTick !== secondTick, `${firstTick} → ${secondTick}`);
+  // 系统要求减少动画（Windows 关了动画效果、远程桌面）时，加载中的转圈仍然要转
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const spinning = await runStatus.locator('.spin').evaluate((el) => el.getAnimations().some((a) => a.playState === 'running'));
+  check('减少动画模式下加载转圈仍在转', spinning);
+  await page.emulateMedia({ reducedMotion: null });
   await shot('07-running');
   await stop.click();
   await page.locator('.notice', { hasText: '已停止生成' }).waitFor({ timeout: 20_000 });
@@ -650,6 +818,23 @@ try {
   await page.locator('.sessions-menu .menu-item', { hasNotText: '你好' }).first().click();
   await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 20_000 });
   check('切换回第一个会话，历史完整恢复', activeSessionId === firstSession && (await page.locator('.changes').count()) === 1 && (await page.locator('.activity').count()) === firstSessionActivities, (await page.locator('.activity').allInnerTexts()).join(' | '));
+
+  // 4b. 多开会话：加号新开标签，不覆盖当前会话
+  const tabBar = page.getByTestId('tabs');
+  check('两个会话各占一个标签', (await tabBar.locator('.tab').count()) === 2, await tabBar.innerText().catch(() => ''));
+  await shot('09b-tabs');
+  const secondSession = await tabBar.locator('.tab').nth(1);
+  await secondSession.click();
+  await page.locator('.assistant', { hasText: '有什么可以帮你' }).waitFor({ timeout: 2_000 }).then(
+    () => check('点击后台标签立即切过去（流一直在跟随）', true),
+    () => check('点击后台标签立即切过去（流一直在跟随）', false),
+  );
+  await tabBar.locator('.tab').first().click();
+  await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 2_000 });
+  await tabBar.locator('.tab').nth(1).hover();
+  await tabBar.locator('.tab').nth(1).locator('.tab__close').click();
+  await page.waitForTimeout(200);
+  check('关闭标签后只剩一个会话，标签栏隐藏', (await page.getByTestId('tabs').count()) === 0 && activeSessionId === firstSession);
 
   // 5. Webview 重新加载：Host 是状态的唯一来源
   await load();
@@ -688,10 +873,32 @@ try {
 
   // 7. 浅色主题
   await load('light');
-  await page.locator('.assistant', { hasText: '需要我继续展开' }).waitFor({ timeout: 10_000 });
+  // 会话较长时开场只加载最近几轮，等最后一条消息
+  await page.locator('.user', { hasText: '重启之后还能继续吗' }).waitFor({ timeout: 10_000 });
   await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
   await page.locator('.shiki').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
   await shot('12-light');
+  // 翻到上面时出现「滚动到底部」按钮，点一下回到底部。
+  // 窗口调矮一些，不依赖这个会话开场加载了多少内容
+  await page.setViewportSize({ width: 380, height: 480 });
+  await page.locator('.thread').evaluate((el) => (el.scrollTop = 0));
+  const toBottom = page.getByTestId('to-bottom');
+  await toBottom.waitFor({ timeout: 5_000 }).then(
+    () => check('往上翻时出现「滚动到底部」按钮', true),
+    () => check('往上翻时出现「滚动到底部」按钮', false),
+  );
+  await shot('12b-to-bottom');
+  await toBottom.click();
+  await page
+    .waitForFunction(() => {
+      const el = document.querySelector('.thread');
+      return !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 48 && !document.querySelector('[data-testid="to-bottom"]');
+    }, undefined, { timeout: 5_000 })
+    .then(
+      () => check('点按钮回到底部，按钮消失', true),
+      () => check('点按钮回到底部，按钮消失', false),
+    );
+  await page.setViewportSize({ width: 380, height: 760 });
 
   // 8. 没有 API Key：引导配置，保存到 dsh 要求的凭据名后立即可用
   withoutKey = true;

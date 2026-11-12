@@ -1,6 +1,6 @@
 # DSH VS Code 插件整体方案
 
-> 状态：v0.8（M5 完成，v0.1.0）｜ 日期：2026-11-04 ｜ 后续开发以本文档为准，变更请同步更新本文档
+> 状态：v1.0（全面审查后的修复，见第 16 节）｜ 日期：2026-11-11 ｜ 后续开发以本文档为准，变更请同步更新本文档
 >
 > 相关文档：[dsh 对接说明](./DSH-INTEGRATION.md)（dsh 调研结果、参考项目分析、连接细节、M0 验证清单）
 
@@ -38,6 +38,8 @@
 | v0.6 | M3 完成：编辑器上下文（当前文件/选区标签）、`@` 文件引用补全、斜杠命令（插件模板 + dsh 原生命令）、右键菜单（[对接说明第 11 节](./DSH-INTEGRATION.md#11-m3-验证结果)）。确定上下文的线上格式：dsh 的 prompt 没有附件概念，上下文作为 `<ide_context>` 块拼在消息末尾，显示时解析成标签；`@路径` 沿用 dsh 自己的语法。第 5.6、8 节按实现更新 |
 | v0.7 | M4 完成：排队消息（dsh 的 `inbox` 队列：编辑、删除、插队、停止后现在发送）、计划审阅卡片、待办和目标状态条、会话重命名、API Key 配置引导、多根工作区选择文件夹、长会话性能（持久事件投影缓存、按对象比较增量、`content-visibility`）（[对接说明第 12 节](./DSH-INTEGRATION.md#12-m4-验证结果)）。会话搜索：dsh 的全文搜索在默认部署里关闭，保留按标题过滤。中英文界面推迟到 M5 |
 | **v0.8** | M5 完成：中英文界面、多版本兼容 CI（冒烟 + 界面端到端 + 真实 VS Code）、安全与界面原则自查（结果见 7.1、3.1.1）、用户文档和 CHANGELOG，版本 0.1.0。第 5.6 节的 `locale` 消息、第 8 节的 `dsh.ui.language` 已补上 |
+| **v0.9** | 多底层：插件改名 Harness Deck；dsh 成为底层之一，另可接入 ACP（Agent Client Protocol）代理，内置 oh-my-pi 和 CodeBuddy。结构见第 15 节，CodeBuddy 的适配见 15.1；设置从 `dsh.*` 改为 `harnessDeck.*`（第 8 节的旧名自动迁移） |
+| **v1.0** | 全面审查后的修复（第 16 节）：底层生命周期（启动、切换、中止、子进程回收）、ACP 与 dsh 的保护对齐、发送失败不丢输入；两种控制器共用标签和上下文模块，dsh 的投影和控制器移到 `src/dsh/view/`；输入框上方合并成一行状态栏；对比度、点击区域、读屏；ESLint 和多平台单测。本文档里与实现不符的地方一并改正 |
 
 ---
 
@@ -117,12 +119,12 @@ dsh 有五个对外入口：`dsh web`、Desktop、`dsh sdk`、`dsh acp`、`dsh h
 | 本轮改动卡片在对话流中 | ✅ |
 | 用户消息悬停时"复制 / 编辑后重发" | 自查时发现没做，M5 补上（编辑后重发 = 放回输入框修改再发送，不分叉会话） |
 | 单文件尽量不超过 500 行 | 部分：`ChatController` 从 1106 行拆到约 860 行（拆出 `viewHelpers`、`interactionViews`、`ViewPublisher`），剩下的是会话编排；`projector` 约 580 行。其余文件都在 400 行以内 |
-| 路径相对显示，过长时省略中间 | 部分：相对路径 ✅；过长时省略的是末尾（CSS 省略号），没有做中间省略 |
+| 路径相对显示，过长时省略中间 | ✅（v1.0）：文件名在前、目录在后，放不下时省略的是目录，文件名始终可见 |
 | 状态靠图标和颜色，跟随 VS Code 主题 | ✅（深色、浅色主题都有截图验证） |
 
 ### 3.2 界面布局
 
-插件注册到右侧辅助侧边栏（`viewsContainers.secondarySidebar`，参考项目已在用；VS Code 版本要求见 9.2）。也支持"在编辑器中打开"，以全宽面板显示。
+插件注册到右侧辅助侧边栏（`viewsContainers.secondarySidebar`，参考项目已在用；VS Code 版本要求见 9.2）。侧边栏可以拖宽：正文保持在 820px 的行宽以内并居中。"在编辑器中打开"（`WebviewPanel` 形态）还没有做。
 
 ```
 ┌──────────────────────────────────────────┐
@@ -205,7 +207,7 @@ P0 是 MVP 必须有的，P1 是正式版需要的，P2 后续再做。"dsh 能�
 
 | 集成点 | 做法 |
 | --- | --- |
-| 视图 | `viewsContainers.secondarySidebar` + `WebviewView`；另提供 `WebviewPanel` 编辑器形态 |
+| 视图 | `viewsContainers.secondarySidebar` + `WebviewView`（`WebviewPanel` 编辑器形态未做） |
 | Diff | `dsh-diff:` 只读虚拟文档提供改动前内容，用 `vscode.diff` 打开，右侧是磁盘上的真实文件（还原方法见 5.4） |
 | 跳转 | 回复、活动行、改动列表中的路径可点击，用 `showTextDocument` 打开并定位到行 |
 | 文件刷新 | dsh 直接写磁盘，VS Code 的文件监听会自动刷新已打开且没有未保存内容的编辑器 |
@@ -323,7 +325,9 @@ Chat Participant（在 Copilot Chat 里 `@dsh`）依赖用户安装 Copilot Chat
 
 #### D8. dsh 相关代码集中在适配层
 
-dsh 的协议和数据结构只出现在 `packages/extension/src/dsh/` 目录下。视图模型由插件自己定义，不直接暴露 dsh 的事件结构。dsh 出现破坏性变更时，只需要改这一层。
+dsh 的协议和数据结构只出现在 `packages/extension/src/dsh/` 目录下：协议客户端（`remote/`、`session/`）、连接与会话服务，以及把 dsh 事件投影成视图模型的 `view/`（`projector`、`ChatController`、`interactionViews`、`viewHelpers`）。视图模型由插件自己定义，不直接暴露 dsh 的事件结构。dsh 出现破坏性变更时，只需要改这一层。
+
+`src/vm/` 是两种底层共用的、与协议无关的部分（标签、编辑器上下文、推送、Diff 还原、工具行摘要、编辑器能力接口），不引用 `src/dsh/` 和 `src/acp/`。
 
 ### 4.4 时序
 
@@ -432,7 +436,7 @@ M2 中确定的几条规则：
 M3 中确定的几条规则：
 
 - **上下文的线上格式**：dsh 的 prompt 只有文本和图片，没有附件。插件把上下文拼成消息末尾的 `<ide_context>` 块（说明是参考数据、不是指令）：当前文件只给路径（`<active-file path="…" />`，模型需要时自己读，与 `@` 引用一致）；选区带路径、行号、语言和代码（单个选区最多 2 万字，整块 6 万字）；`/fix` 另外附带与选区重叠的错误和警告（`<diagnostics>`）。显示时把这个块从正文里去掉，解析成附件标签；历史消息也一样。
-- **当前编辑器标签**：输入框上方显示当前文件或选区，默认附带（设置 `dsh.context.includeActiveEditor`），点击切换本条是否附带，换了文件或选区恢复默认。只算磁盘上的文件（`file:` scheme）。
+- **当前编辑器标签**：输入框上方显示当前文件或选区，默认附带（设置 `harnessDeck.context.includeActiveEditor`），点击切换本条是否附带，换了文件或选区恢复默认。只算磁盘上的文件（`file:` scheme）。
 - **`@` 引用**：语法与 dsh 一致（`@path`、`@"带空格的路径"`、目录以 `/` 结尾）。有会话时候选来自 `fileReferences/list`（与 dsh 的排除规则一致）；新对话还没有会话，用 VS Code 的文件搜索（只有文件）。光标停在一个完整的引用或命令名后面时不打开补全，Enter 直接发送。
 - **斜杠命令**：`/explain`、`/fix`、`/test` 是插件模板，展开成提示词并附带上下文，没有上下文也没写说明时提示；`/new` 新建对话；其余名字在 dsh 的命令目录里的交给 `commands/execute`（新对话先创建会话），不认识的按普通消息发送。dsh 命令目录读一次缓存（各会话相同），`/export` 在 VS Code 里没有意义，不列出。
 - **命令在对话里的样子**：dsh 为命令持久化 `command/run` / `command/done`，渲染成一行"/compact  Compacted 3 history items"；`/permission`（多数来自权限菜单）渲染成"权限已切换为「只读」"的提示。
@@ -507,25 +511,36 @@ M4 中确定的几条规则：
 3. 某个片段在当前内容中找不到或出现多次时，**不猜测**，放弃还原（参考项目的原则："错的 Diff 比没有 Diff 更糟"）
 4. 还原失败时，在编辑器里打开只读的统一 diff 文档（`dsh-diff:` + `diff` 语言），显示这次的改动片段
 
+**按文件的改动历史还原**（会话改动栏、本轮汇总卡片）：投影时为每个文件记下按时间排列的"步"——有汇总的轮次是 `{ seq, index, 本轮修改它的工具调用, 汇总的增删行数 }`，没有汇总的轮次（汇总不可用、进行中的一轮）只有工具调用。打开某一步的 Diff 时从当前文件开始逐步往回撤：
+
+1. 每一步先用会话日志里的工具片段在本地撤回；撤回前后的增删行数与 dsh 汇总一致时采用（说明这一轮对该文件的改动全部来自文件工具），**不请求 dsh**
+2. 对不上（有命令造成的改动）时才读 `/api/changes.diff` 的 hunk 撤回；结果按 `会话:seq:index` 缓存，超时 15 秒
+3. 本轮 Diff 的右侧是这一轮结束时的内容（之后没再改过时直接用磁盘文件）；会话 Diff 的右侧是当前文件
+4. 任何一步撤不回时退回原来的方式（最后一次修改的 Diff / 统一 diff 片段）
+
+改动汇总同时最多读 2 个（新的轮次先读），避免打开长会话时几十个请求把 dsh 堵住、点开 Diff 要排队。会话改动栏的增删行数是各轮之和（同一处改了几次会重复计算），只统计已加载的历史。
+
+**会话标签**：Host 维护打开的标签（会话 id 或一个新对话），按工作区保存在 `workspaceState`。「+」/`/new` 新开标签（已有空的新对话标签时切过去），会话列表里选中的会话已在标签里时切过去，否则新开。切走的标签把 follow 流留在后台继续跟随（最多 4 个，超出时关掉最早切走的），切回时直接复用；重连时后台流全部关掉，切回时重新打开。标签上的运行状态取会话列表的 `running`，提醒点取等待处理的审批/提问。
+
 **审批前预览**：对 `edit`/`write` 的审批，用工具调用参数和当前文件内容生成"将要写入"的 Diff，审批卡片上提供"预览修改"按钮；`old_string` 找不到或不唯一（且没有 `replace_all`）时不预览。
 
 CRLF 文件先统一成 LF 计算，结果再转回 CRLF。增删行数用 jsdiff 的 `diffLines`，比较前给两边补齐结尾换行，避免把没有换行的最后一行算成修改。
 
 ### 5.5 Webview UI
 
-- **技术栈**：React 18 + TypeScript + Vite；状态管理用 zustand；Markdown 用 `react-markdown` + `remark-gfm`；代码高亮用 `shiki`（按需加载语言）
+- **技术栈**：React 18 + TypeScript + Vite；状态用 `useSyncExternalStore` 自己管（Host 推送，Webview 只做按 id 的增量合并，不需要状态库）；Markdown 用 `react-markdown` + `remark-gfm`；代码高亮用 `shiki`（按需加载语言）
 - **样式**：只用 VS Code 主题 CSS 变量，自动适配亮色、暗色和高对比度主题；遵循 [3.1](#31-界面设计原则) 的原则
 - **主要组件**：
   - `Header`：会话标题（下拉切换会话、搜索）、新建、更多菜单
-  - `ThreadView`：条目列表，长会话用虚拟列表，滚动到顶部时加载更早的历史
+  - `Thread`：条目列表，屏幕外的条目用 `content-visibility: auto` 跳过布局和绘制（没有做虚拟列表），顶部有「加载更早的消息」
   - `UserBubble`、`AssistantMessage`、`ReasoningLine`
   - `ActivityRow` 及各工具专用渲染（见 5.3）
   - `ApprovalCard`、`QuestionCard`、`PlanReviewCard`
   - `TurnChangesCard`：本轮改动
-  - `StatusStrip`：输入框上方的待办、排队、子任务、目标，有内容才出现
+  - `StatusDock`：输入框上方的一行状态栏（待办、本会话的改动、未保存的文件；目标单独一行），有内容才出现，见 16.5
   - `Composer`：输入框、附件标签、`@` 补全、`/` 命令、工具条（权限、模型、上下文用量、发送/停止）
   - `RuntimeBanner`：dsh 未安装、版本不支持、启动中、断线重连、未配置 API Key 等状态
-- **无障碍**：全部操作可用键盘完成，卡片有 ARIA 标签
+- **无障碍**：全部操作可用键盘完成，卡片有 ARIA 标签；弹出菜单 ↑↓ / Home / End 移动、关闭后焦点回到触发按钮；对话流不是 live region（流式输出不逐段播报），状态变化由一个隐藏的 `role="status"` 播报；文字对比度 4.5:1 以上，可点的控件至少 24px；`<html lang>` 跟随界面语言
 - **国际化**：中文、英文两套文案，跟随 VS Code 显示语言
 
 ### 5.6 Host ↔ Webview 消息协议
@@ -624,7 +639,7 @@ type PendingInteraction =
 
 按顺序查找：
 
-1. 设置项 `dsh.runtime.path` 指定的可执行文件
+1. 设置项 `harnessDeck.dsh.path` 指定的可执行文件
 2. `PATH` 中的 `dsh`：**DeepSeek Desktop 安装的 `dsh` 命令**（推荐，自带运行时，不需要用户装 Node），或 npm 全局安装的 `@deepseek-ai/dsh`
 3. 都找不到时，界面引导用户二选一：
    - 安装 DeepSeek Desktop，并在它的菜单「管理 dsh 命令…」里安装 `dsh` 命令
@@ -648,7 +663,7 @@ dsh --profile web --no-open --host 127.0.0.1 --port 0
 
 - 端口：`--port 0` 由系统分配，实际端口从就绪 URL 中读取（M0 实测可用）；启动器参数（如 `--patch`）必须放在 `--no-open` 之前
 - `cwd` 设为当前工作区文件夹；远程开发时 dsh 运行在远端（插件声明 `"extensionKind": ["workspace"]`）
-- 环境变量：继承 VS Code 进程环境；VS Code 配置了 `http.proxy` 时，传 `HTTPS_PROXY` / `HTTP_PROXY`；可通过 `dsh.runtime.env` 追加
+- 环境变量：继承 VS Code 进程环境；VS Code 配置了 `http.proxy` 时，传 `HTTPS_PROXY` / `HTTP_PROXY`；追加环境变量的设置还没有做（ACP 底层可以在 `harnessDeck.backends[].env` 里写）
 - **就绪**：从 stdout 解析带 `?token=` 的 URL 行；60 秒内没出现视为启动失败，显示 stderr 最后几十行
 - 子进程放进独立进程组，退出时能连同它的子进程一起结束
 
@@ -703,35 +718,42 @@ dsh 负责沙箱、审批和文件/命令边界，插件负责下面这些：
 
 模型、API Key、默认权限预设等**都保存在 dsh 中**（与 dsh Web UI、Desktop 共用），不在 VS Code 设置里重复一份。
 
-### 8.1 配置项（`dsh.*`）
+### 8.1 配置项（`harnessDeck.*`）
+
+改名前的 `dsh.*` 设置在启动时自动搬到新名下（`settings.ts` 的 `migrateSettings`）。
 
 | 配置 | 类型 / 默认值 | 说明 |
 | --- | --- | --- |
-| `dsh.runtime.path` | string / `""` | 指定 dsh 可执行文件；为空时在 `PATH` 中查找（`machine-overridable`，远程场景写在远端的 Machine 设置里） |
-| `dsh.runtime.profile` | string / `"web"` | 启动用的 dsh profile |
-| `dsh.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
-| `dsh.ui.language` | `auto` / `zh` / `en`，默认 `auto` | 界面语言；`auto` 跟随 VS Code 的显示语言 |
-
-计划中：`dsh.runtime.env`（追加环境变量）、`dsh.ui.showReasoning`、`dsh.log.level`。
+| `harnessDeck.dsh.path` | string / `""` | 指定 dsh 可执行文件；为空时在 `PATH` 中查找（`machine-overridable`，远程场景写在远端的 Machine 设置里） |
+| `harnessDeck.dsh.profile` | string / `"web"` | 启动用的 dsh profile；只接受字母、数字和 `. _ -`，其他值退回 `web` |
+| `harnessDeck.backends` | array / `[]` | 额外的 ACP 底层：`name`、`command`、`args`、`env`、`installHint`、`singleSession`；`id` 与内置项相同时覆盖内置项 |
+| `harnessDeck.backendTrace` | boolean / `false` | 把收发的 ACP 消息（脱敏后）写到「Harness Deck: Backend」输出面板 |
+| `harnessDeck.context.includeActiveEditor` | boolean / `true` | 发送时默认附带当前编辑器：有选区时附带代码和行号，否则只附带路径 |
+| `harnessDeck.ui.language` | `auto` / `zh` / `en`，默认 `auto` | 界面语言；`auto` 跟随 VS Code 的显示语言 |
+| `harnessDeck.ui.fontSize` | number / `0` | 对话面板字号（px）；`0` 跟随 VS Code，比工作台字号大 1px |
+| `harnessDeck.ui.fontFamily` / `harnessDeck.ui.codeFontFamily` | string / `""` | 对话面板字体 / 代码与路径的字体；为空时跟随 VS Code。通过 `appearance` 消息下发，Webview 设置成 CSS 变量（`--hd-*`） |
+| `harnessDeck.ui.palette` | `soft` / `theme`，默认 `soft` | 配色：柔和的文字颜色，或直接用主题前景色 |
+| `harnessDeck.ui.showTurnChanges` | boolean / `false` | 每轮结束时在对话流里显示改动汇总卡片（dsh） |
 
 ### 8.2 命令
 
 | 命令 ID | 标题 | 入口 |
 | --- | --- | --- |
-| `dsh.openChat` | DSH：打开对话 | 命令面板、状态栏 |
-| `dsh.newSession` | DSH：新建对话 | 命令面板 |
-| `dsh.explainSelection` | DSH：解释这段代码 | 命令面板、编辑器右键「DSH」 |
-| `dsh.fixSelection` | DSH：修复这段代码 | 命令面板、编辑器右键「DSH」 |
-| `dsh.testSelection` | DSH：为这段代码写测试 | 命令面板、编辑器右键「DSH」 |
-| `dsh.addToChat` | DSH：添加到对话 | 命令面板、编辑器右键「DSH」 |
-| `dsh.renameSession` | DSH：重命名会话 | 命令面板、更多菜单 |
-| `dsh.configureApiKey` | DSH：配置 API Key | 命令面板、更多菜单、空状态、缺少 Key 的提示 |
-| `dsh.selectFolder` | DSH：选择对话对应的文件夹 | 命令面板（多根工作区）、更多菜单 |
-| `dsh.interrupt` | DSH：停止生成 | 命令面板 |
-| `dsh.selectModel` | DSH：切换模型 | 命令面板 |
-| `dsh.openWebUI` | DSH：在浏览器中打开 dsh | 命令面板、更多菜单 |
-| `dsh.restartRuntime` | DSH：重启 dsh | 命令面板、状态提示 |
-| `dsh.showLogs` | DSH：查看日志 | 命令面板、更多菜单 |
+| `harnessDeck.openChat` | Harness Deck：打开对话 | 命令面板、状态栏 |
+| `harnessDeck.newSession` | Harness Deck：新建对话 | 命令面板 |
+| `harnessDeck.explainSelection` | Harness Deck：解释这段代码 | 命令面板、编辑器右键「DSH」 |
+| `harnessDeck.fixSelection` | Harness Deck：修复这段代码 | 命令面板、编辑器右键「DSH」 |
+| `harnessDeck.testSelection` | Harness Deck：为这段代码写测试 | 命令面板、编辑器右键「DSH」 |
+| `harnessDeck.addToChat` | Harness Deck：添加到对话 | 命令面板、编辑器右键「DSH」 |
+| `harnessDeck.renameSession` | Harness Deck：重命名会话 | 命令面板、更多菜单 |
+| `harnessDeck.configureApiKey` | Harness Deck：配置 API Key | 命令面板、更多菜单、空状态、缺少 Key 的提示 |
+| `harnessDeck.selectFolder` | Harness Deck：选择对话对应的文件夹 | 命令面板（多根工作区）、更多菜单 |
+| `harnessDeck.interrupt` | Harness Deck：停止生成 | 命令面板 |
+| `harnessDeck.selectModel` | Harness Deck：切换模型 | 命令面板 |
+| `harnessDeck.openWebUI` | Harness Deck：在浏览器中打开 dsh | 命令面板、更多菜单 |
+| `harnessDeck.restartRuntime` | Harness Deck：重启 dsh | 命令面板、状态提示 |
+| `harnessDeck.selectBackend` | Harness Deck：切换底层 | 命令面板 |
+| `harnessDeck.showLogs` | Harness Deck：查看日志 | 命令面板、更多菜单 |
 
 计划中：在编辑器中打开对话。
 
@@ -758,30 +780,34 @@ dsh-vscode-copilot/
 │   ├── extension/               # VS Code 插件主体（Extension Host）
 │   │   ├── package.json         # 插件清单：contributes 等
 │   │   ├── src/
-│   │   │   ├── extension.ts
-│   │   │   ├── runtime/         # RuntimeManager、启动、定位、版本
+│   │   │   ├── extension.ts     # 组装：底层列表与切换、视图、命令、状态栏
+│   │   │   ├── backend/         # 底层：配置（profiles）、两种底层的生命周期（dsh、acp）、共用的类型和宿主能力
+│   │   │   ├── runtime/         # RuntimeManager、启动（含 Windows 下 .cmd 的命令行）、定位、版本
 │   │   │   ├── dsh/             # dsh 适配层（唯一了解 dsh 协议的目录）
 │   │   │   │   ├── remote/              # connect、unary、mux、events、follow schema
 │   │   │   │   ├── session/             # journal（事件日志与结算）、SessionStream
+│   │   │   │   ├── view/                # projector（事件 → 条目）、ChatController、interactionViews、viewHelpers
 │   │   │   │   ├── DshClient.ts
 │   │   │   │   ├── DshConnection.ts
 │   │   │   │   ├── InteractionService.ts  # 审批、提问
 │   │   │   │   └── SessionService.ts
-│   │   │   ├── vm/              # projector（事件 → 条目）、ChatController、diffs（Diff 还原）、workbench（编辑器能力接口）
+│   │   │   ├── acp/             # ACP 适配层：connection（stdio JSON-RPC）、projection、AcpController
+│   │   │   ├── vm/              # 两种底层共用：TabsModel、EditorContext、ViewPublisher、context、diffs、toolRows、paths、workbench（编辑器能力接口）
 │   │   │   ├── webview/         # ChatViewProvider（HTML/CSP、消息校验）
 │   │   │   ├── workbench/       # VscodeWorkbench：dsh-diff: 文档、vscode.diff、未保存文件、确认框
 │   │   │   └── util/            # 脱敏
 │   │   ├── scripts/             # 构建、冒烟测试、界面端到端、真实 VS Code 验证
 │   │   ├── media/
 │   │   └── test/
-│   │       ├── fixtures/m0/     # 从真实 dsh 录制的 follow 帧
+│   │       ├── fixtures/        # 从真实 dsh 和各 ACP 代理录制的帧
 │   │       ├── mock-model/      # 本地假模型服务
 │   │       └── support/         # 隔离的 dsh 测试环境
 │   └── webview-ui/              # React + Vite，构建产物输出到 extension/dist/webview
-│       └── src/
-│           ├── components/      # Header、Thread、Items、Composer、Markdown、CodeBlock 等
-│           ├── store.ts         # Host 快照与增量的合并
-│           └── styles.css
+│       ├── src/
+│       │   ├── components/      # Header、TabBar、Thread、Items、Composer、StatusDock、Markdown、CodeBlock 等
+│       │   ├── store.ts         # Host 快照与增量的合并
+│       │   └── styles/          # 按部分拆开的样式，index.css 按顺序引入
+│       └── test/                # 组件和纯函数的单元测试（jsdom）
 └── .github/workflows/
     ├── ci.yml
     └── dsh-compat.yml           # 定时用多个 dsh 版本跑冒烟测试
@@ -801,7 +827,7 @@ dsh-vscode-copilot/
 | 数据校验 | zod | dsh 入站数据和 Bridge 消息都校验 |
 | 单元测试 | vitest | — |
 | 集成测试 | `@vscode/test-cli` + `@vscode/test-electron` | 官方方案 |
-| 代码规范 | ESLint + Prettier | — |
+| 代码规范 | ESLint（typescript-eslint：未使用的代码、悬空的 Promise、Hooks 规则），`pnpm lint` | 不用格式化工具：代码没有统一格式化过，一刀切会淹没历史 |
 | 发布 | `@vscode/vsce` | 产出 `.vsix` |
 | VS Code 版本 | `engines.vscode: ^1.106.0` | 参考项目同版本，已支持 `secondarySidebar`；M1 在 VS Code 1.144（code-server 4.144）中实测 |
 
@@ -815,8 +841,8 @@ dsh-vscode-copilot/
 | --- | --- | --- | --- |
 | 单元测试 | 协议客户端（connect、unary、mux、事件、两种 control 帧）、journal 结算规则、事件 → 视图模型（含按工具类型渲染、浏览合并、改动卡片及其回退、命令行、附件解析）、上下文块拼接与解析、斜杠命令、工具摘要、连接重连、控制器（增量推送、延迟创建会话、断线保留、初始化竞态、审批/提问/权限/Diff、Host 重启后的改动汇总）、Diff 还原、排队消息与队列操作、计划审阅、状态条、重命名、API Key 配置、切换文件夹、投影缓存与现算一致、版本比较、启动与重启 | vitest；follow 相关的输入用从真实 dsh 录制的帧（fixture） | `pnpm test` |
 | 冒烟测试 | 插件的协议客户端对真实 dsh：流式、写/改文件、命令、审批允许/拒绝、提问、停止、能力探测 | 无界面 | `pnpm smoke` |
-| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter dsh-copilot e2e` |
-| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter dsh-copilot vscode-e2e` |
+| 界面端到端 | Host 侧全部真实（RuntimeManager、DshConnection、ChatController），界面在 Chromium 中加载构建产物，CSP 与生产一致；覆盖流式渲染、代码高亮、浏览合并与命令行、文件修改与 Diff 还原（对照磁盘上的真实文件）、本轮改动卡片、审批允许/拒绝、提问、权限切换、未保存提示、停止、新对话与切换、Webview 重载、选区标签与 `@` 补全（检查 dsh 实际发给模型的文本）、`/` 命令（`/compact`、`/plan`）、固定标签、排队消息（编辑、删除、插队、停止后现在发送）、待办状态条、计划审阅（继续完善 → 批准）、重命名、不带 API Key 启动后从提示配置并直接对话、杀掉 dsh 后自动恢复（含重启后打开历史 Diff）、浅色主题 | Playwright（用本机安装的版本），每步截图 | `pnpm --filter harness-deck e2e` |
+| 真实 VS Code | 在 code-server 中安装打包好的 vsix：命令面板打开视图、对话、工具活动行、CSP 下的高亮、状态栏、点击修改行和改动卡片打开 Diff 编辑器、切换到完全访问时的模态确认、编辑器右键「DSH → 解释这段代码」（检查 dsh 收到的路径、行号和代码）、命令面板切换模型 | Playwright 驱动 code-server | `pnpm --filter harness-deck vscode-e2e` |
 | 兼容测试 | 用最低支持版本、`latest`、`alpha` 三个 dsh 版本跑冒烟测试 | GitHub Actions 定时任务 | `.github/workflows/dsh-compat.yml` |
 | 手工验收 | 每个里程碑的验收项（见第 12 节） | Windows / macOS / Linux + Remote-SSH | — |
 
@@ -832,7 +858,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 - **打包**：`pnpm package` → 构建 webview-ui → 构建 extension → `vsce package --no-dependencies`（依赖已由 esbuild 打进产物）
 - **不打包 dsh 运行时**：由 6.1 的方式获取
 - **CI**（GitHub Actions）：
-  - PR：lint、类型检查、单元测试、集成测试（Linux 下用 xvfb）、打包
+  - PR：lint、类型检查、单元测试、打包（Ubuntu）；单元测试另在 macOS 和 Windows 上各跑一遍（Windows 暂时只看结果不拦合并：测试里的 POSIX 路径还没改成可移植的）
   - 定时：多版本 dsh 兼容测试
   - 打 tag：产出 `.vsix` 上传到 Release
 - **版本**：插件自己用语义化版本；`CHANGELOG.md` 写明每个版本支持的 dsh 版本范围
@@ -958,7 +984,7 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 | 改动前内容还原失败（文件之后又被改过） | Diff 打不开 | 不猜测，退回片段视图；每轮汇总可用时优先用它 |
 | 多窗口或与用户自己的 dsh 争用同一会话 | 会话打不开 | 识别 `session/writer-held` 并给出明确提示；后续考虑共享 Host |
 | 远程开发场景 | 远端缺 dsh 或访问不了模型 API | dsh 跑在远端；文档写明远端要求；启动失败时显示 dsh 的报错 |
-| Webview 长会话卡顿 | 体验差 | Host 合并流式推送；虚拟列表；只读操作合并；代码高亮放到空闲时执行 |
+| Webview 长会话卡顿 | 体验差 | Host 合并流式推送（面板隐藏时放慢到 500ms）；`content-visibility`；只读操作合并；代码高亮延后；流式的 Markdown 用 `useDeferredValue`，忙不过来时跳过中间版本 |
 | 功能范围膨胀（参考项目功能非常多） | 核心体验做不精 | 首版严格按 3.3 的 P0/P1 范围；新功能先评估是否值得占用界面 |
 
 ---
@@ -974,3 +1000,118 @@ fixture 录制方法：用真实 dsh 跑典型场景（纯问答、改文件、�
 | Q5 | 你们会不会 fork 或定制 dsh（比如加插件、改默认配置）？ | 假设不 fork，直接用官方发布版本 |
 | Q6 | 分发方式：VS Code 市场 / Open VSX / 内部 vsix？ | 假设先出 vsix，稳定后再上市场 |
 | Q7 | 插件的开源协议？ | 未定，`package.json` 暂写 `UNLICENSED` |
+
+
+## 15. 多底层（dsh + ACP）
+
+插件改名为 Harness Deck 后，对话面板背后的「底层」可以切换。界面和视图模型（`shared/viewModel`）与底层无关；每种底层有自己的控制器，实现同一个接口 `ChatBackendController`（`backend/types.ts`），把底层的数据投影成视图模型、处理 Webview 消息。
+
+```
+extension.ts ── 底层列表（dsh + 内置 ACP 代理 + 设置 harnessDeck.backends）── 当前底层 RunningBackend
+                                                         ├─ dsh：RuntimeManager → DshConnection → ChatController
+                                                         └─ ACP：AcpConnection（stdio JSON-RPC）→ AcpController
+```
+
+| 模块 | 职责 |
+| --- | --- |
+| `backend/types.ts` | 控制器接口、两种控制器共用的宿主选项（`ControllerHostOptions`）、底层配置、正在运行的底层 |
+| `backend/host.ts` | extension.ts 提供给各底层的能力（`BackendHost`）、带代理设置的进程环境 |
+| `vm/TabsModel.ts`、`vm/EditorContext.ts` | 两种控制器共用：标签的规则（只有一个新对话标签、同一会话不重复、关掉最后一个换成新对话）；当前编辑器和固定的上下文 |
+| `vm/toolRows.ts`、`vm/paths.ts` | 工具调用怎么显示成一行（归类、摘要）、路径的显示形式 |
+| `backend/profiles.ts` | 内置的 ACP 代理（oh-my-pi、CodeBuddy），解析设置里的 ACP 底层（校验、去重、默认 id、同 id 覆盖内置项） |
+| `backend/dsh.ts` / `backend/acp.ts` | 两种底层的生命周期：启动、状态、重启、停止 |
+| `acp/connection.ts` | 启动代理进程，按行分隔的 JSON-RPC 2.0；回答代理的请求、转发 `session/update` |
+| `acp/projection.ts` | 一个 ACP 会话的投影：回复和推理按 messageId 拼接，工具调用按 kind / 工具名渲染（读和搜索合并成「浏览」、命令带输出、修改带增删行数和 diff），plan → 待办，usage、命令、config option、标题 |
+| `acp/AcpController.ts` | 会话（`session/new` 草稿会话、`session/list`、`session/load` 回放）、发送（编辑器上下文、图片、一轮进行中时本地排队）、`session/cancel`、审批（`session/request_permission`）、模型 / 思考等级 / 模式（`session/set_config_option`）、Diff |
+
+约定：
+
+- 同一时间只运行一个底层；切换时停掉旧的、启动新的，Webview 重新取快照。会话和标签按底层分开保存在 workspaceState。
+- 新对话先建草稿会话（`session/new`），这样发消息前就能看到代理的模型、模式和斜杠命令；第一条消息发出后草稿成为正式会话。
+- 代理的 config option 按 category 对应界面：model → 模型选择，thought_level → 思考等级（挂在当前模型下），mode → 权限选择（显示代理给的名称）；mode 为 plan 时显示计划模式标记。
+- 文案里的「dsh」换成当前底层的名称（Webview 文案的 `{agent}` 占位）；只对 dsh 成立的内容（沙箱说明、API Key、浏览器打开）在其他底层不显示。
+- ACP 没有的能力（每轮改动汇总、命令造成的改动、插队、子代理、提问卡片）在界面上自然不出现。
+- 会话改动栏：投影把完成了的修改类工具调用按文件归并（片段增删行数的合计，第一次是新建时标出），按投影的 version 缓存；点文件时从磁盘上的当前内容倒着撤回本会话的 diff（`reverseToolDiffs`）还原会话开始前的内容，撤不回去时显示最后一次修改。
+- 多开标签和 dsh 规则相同（只有一个新对话标签，新对话标签用草稿会话；打开已在标签里的会话时切过去；关掉最后一个换成新对话）。ACP 的每个会话都有自己的投影，后台标签继续收更新；关闭标签时取消它还在等的审批。单会话代理（CodeBuddy）切到别的标签发消息时仍要重启。
+- 模型和思考等级是会话级的（Claude 的新会话总是 Default）：记住每个底层上次的选择（globalState），草稿会话建好后、或在别的会话里换了模型时，对还没用过的草稿会话套用；已有会话不动。
+- 回复文字按时间顺序显示：同一个 messageId 的文字只接在最后一条后面（有的模型网关每次回复都给同一个 id）；后面出现工具调用时前面的回复结束流式（不再显示光标）。设置 `harnessDeck.backendTrace` 把 ACP 消息原文写到输出面板，排查代理实际发了什么。
+- 内置的 ACP 代理写在代码里而不是设置的默认值里：用户改过 `harnessDeck.backends` 后默认值不再生效，新加的内置项会看不到。设置里 id 相同的一项替换内置项。
+- 代理要求登录（`session/new` 返回 -32000）：只有一种方式时直接 `authenticate`；有多种时让用户选，`authenticate` 等浏览器登录完成，期间显示可以取消的进度。
+
+### 15.0 Claude
+
+Claude 通过 Claude Code 的官方 ACP 适配器 `claude-agent-acp`（`@agentclientprotocol/claude-agent-acp`，0.101 测试）接入，基本是标准 ACP，投影不需要改（帧见 `test/fixtures/claude/tools.json`）：工具带 `name`，TodoWrite 是 `plan` 更新，写入和修改带 diff，支持 `session/list`、`session/load`，同一进程可以同时有多个会话。
+
+- 没有登录方式（`authMethods` 为空），没登录时 `session/prompt` 才返回 -32000。底层配置的 `signInHint` 用来在对话里说明怎么登录（`claude` → `/login`，或 `ANTHROPIC_API_KEY`）；有登录方式的代理则登录后重发这一轮。
+- 默认模式是 Auto（由 Claude 判断要不要问）；`echo`、`ls` 这类只读命令在 Manual 模式下也不问。
+- 端到端测试用 `ANTHROPIC_BASE_URL` 指向本地假模型，并且不把运行环境自己的 `ANTHROPIC_*` / `CLAUDE_*` 变量传给代理。
+
+### 15.1 CodeBuddy 的差异
+
+CodeBuddy（`codebuddy --acp`，2.181 测试）基本遵守 ACP，但有几处要适配（实测，帧见 `test/fixtures/codebuddy/tools.json`）：
+
+| 现象 | 处理 |
+| --- | --- |
+| 工具名不在 `name`，在 `_meta['codebuddy.ai/toolName']`；第一帧 `kind` 是 other，之后同一个 id 再发一次完整的 `tool_call` | 工具名从 `_meta` 取；类型后来才知道是读 / 搜索时，把这一行改成「浏览」 |
+| 参数生成完时，`tool_call_update` 的内容是参数 JSON 原样；完成时的内容只是「已写入」这样的文字 | 回显参数的内容不当输出；合并时保留之前的 diff |
+| 命令结果在 `rawOutput.text`，格式 `Stdout: …\n\nStderr: …\nExit Code: N` | 只显示输出，非 0 退出码附在末尾 |
+| 待办是 TaskCreate / TaskUpdate 工具，没有 `plan` 更新；完成帧的 `_meta['codebuddy.ai/rawResponse'].todos` 是整张表 | 待办工具不显示成行，整张表进状态条 |
+| Edit 的 diff 是 old_string → new_string 片段 | 片段在磁盘文件里只出现一次时还原整个文件的修改前内容，Diff 显示整个文件 |
+| 审批请求的 toolCall 只有 id 和参数 | 用已收到的工具调用补上标题、类型和路径 |
+| 当前模型可以不在模型选项里（第三方模型、`--model`） | 补在选项最前面 |
+| 不支持 `session/list` | 用本地记住的会话列表 |
+| **一个进程只给一个会话推送实时更新**：最近 `session/new` 的会话，或新进程里第一个 `session/load` 的会话。之后再 load 别的会话只回放历史，回复、工具和审批都收不到（`takeWriter`、`session/resume` 都不能改变） | 底层配置 `singleSession`（CodeBuddy 内置为 true）。控制器记住绑定的会话：在没有绑定的会话里发消息时重启代理，新进程第一个加载这个会话后再发送；绑定的会话正在回复时不新建草稿会话（等这一轮结束再建），也不在别的会话里发送（提示等它结束或先停止） |
+
+测试：`acp/projection` 的单元测试用真实 oh-my-pi 和 CodeBuddy 的帧；`scripts/acp-e2e.ts` 用真实的 `omp acp` / `codebuddy --acp` + 本地假模型（oh-my-pi 走 Anthropic Messages，CodeBuddy 用 `CODEBUDDY_BASE_URL` 走 OpenAI Chat Completions，都不需要账号）+ Chromium 里的 Webview 跑通对话、审批、工具行、待办、会话列表和回放、模式、停止，CodeBuddy 还覆盖切回旧会话时的重启和重新加载；CI（`acp-compat.yml`）每天对两者的固定版本和最新版本各跑一次。
+
+## 16. 全面审查后的修复（v1.0）
+
+一次对代码和界面的全面审查发现的问题和处理方式。这里只记规则，细节在代码注释和 CHANGELOG 里。
+
+### 16.1 底层的生命周期
+
+- **什么时候启动**：面板显示时。`resolveWebviewView`、视图从隐藏变为可见、Webview 发来 `ready` 都会走到 `startIfNeeded`：当前底层的状态是 `idle` / `notInstalled` / `untrusted` 时启动。失败过的不在这里自动重试（横幅里有「重试」）。之前只在视图第一次创建时启动，面板隐藏期间切换的底层会一直停在「正在查找」。
+- **切换是串行的**：`switchBackend` 排队执行（停掉旧的 → 启动新的）。两次切换交错时，先启动的底层不会再没人去停。切换途中 `active` 为空，这时的命令不做任何事。
+- **停止不等启动**：`RuntimeManager.stop()` 中止正在进行的启动（`AbortSignal` 传到版本检查和 `launchRuntime`），立即结束还没就绪的进程。中止不算失败。
+- **子进程回收**：`trackChild` 记下插件启动的进程，扩展宿主退出时（包括来不及等 `deactivate`）结束它们。宿主被强杀时仍可能残留，没有办法兜住。
+- **ACP 连接**：stdin 的写入错误有监听（代理关掉输入时是 `EPIPE`），等待中的请求被拒绝；`initialize` 30 秒没有回应时失败并提示检查命令。
+- **Windows 下的 `.cmd` / `.bat`**：不用 Node 的 `shell: true`（不加引号）。`spawnSpec` 自己拼 `cmd.exe /d /s /c "…"` 的命令行，逐个参数加引号并用 `^` 转义（做法与 cross-spawn 相同）。dsh 的 profile 名先过 `safeProfile`。没有在 Windows 真机上验证过。
+
+### 16.2 ACP 与 dsh 的保护对齐
+
+| 保护 | dsh | ACP |
+| --- | --- | --- |
+| 审批要改的文件有未保存内容 | 卡片提示、Host 拦下「允许」 | 同样：目标文件取工具调用的 `locations` / 参数里的路径 |
+| 切到不再询问的模式 | `danger-full-access` 先确认 | 模式的 id 或名称匹配 bypass / yolo / full access / dontAsk 等时先确认（`isUnrestrictedMode`） |
+| 日志脱敏 | dsh 的输出先脱敏 | 代理的 stderr 和 `backendTrace` 同样先脱敏（在 `extension.ts` 的 `runtimeLog` 里统一做） |
+| 没人看得到的审批 | 会话列表标出 | 同样：等着审批的会话在列表里有提醒点，即使标签已关 |
+
+代理提供 `allow_always` 选项时，审批卡片多一个按钮（文字用代理给的名称）。
+
+### 16.3 发送不丢输入
+
+- 控制器的 `send` 返回消息是否已经交出去（进了会话、队列或本地回显）。没交出去时 Host 发 `restoreDraft`，Webview 把文字放回输入框；这期间用户新写的内容接在后面。图片不还原。
+- 固定的上下文（「添加到对话」）在消息确实交出去之后才清空。
+- ACP：代理退出时排队的消息留在队列里。dsh：新对话里连发两条消息共用正在创建的那个会话。
+
+### 16.4 结构
+
+- 两种控制器重复的部分提到 `vm/TabsModel` 和 `vm/EditorContext`；宿主提供的公共选项是 `backend/types.ts` 的 `ControllerHostOptions`。ACP 不再引用 dsh 控制器的类型和 `backend/dsh.ts`。
+- dsh 的投影和控制器在 `dsh/view/`，`vm/` 只剩共用的部分（D8）。
+- dsh 控制器里「算视图」（`buildView`）和「随之而来的状态更新」（`sync`：记下工具调用、读取改动汇总、撤回本地回显）分开；渲染和取快照走 `refresh`，只看一眼视图的地方用 `buildView`。
+- 活动行的摘要（工具名 + 详情）用 `shared/labels.ts` 的 `joinLabel` / `splitLabel` 拼和拆，分隔符只在那里出现。仍是一个字符串字段，没有拆成两个字段（要动录制的 fixture 和大量断言）。
+- 斜杠命令的来源 `'dsh'` 改叫 `'agent'`；CSS 变量 `--dsh-*` 改叫 `--hd-*`；`workspaceState` 的键改成 `harnessDeck.*`，读取时兼容旧键。
+
+### 16.5 界面
+
+- **状态栏**（`StatusDock`）：待办、本会话的改动、未保存的文件合在输入框上方的一行里，各占一段；点「待办」或「改动」在这一行上方展开列表，同时只展开一个。目标（`/goal`）在上面单独一行。之前三样各占一张卡片，250px 宽的侧边栏里底部占掉四成高度。
+- **标签**不压缩，放不下时横向滚动；**正文**最大行宽 820px。
+- **输入框**：运行中写了内容时停止和发送并排；Esc 停止（补全列表打开时先关列表，输入法组合输入时不拦截）。
+- **对话条目**：修改行文件名在前；失败的命令写「运行失败」；回复里像路径的行内代码（带目录和扩展名，可带 `:行号`）和浏览行里读过的文件可以点开；回复右上角有复制按钮（浮在上面，不占高度）。
+- **提示**：错误不自动消失，有关闭按钮；启动失败的横幅先显示一行。
+- **颜色**：文字链接用 `--link`（主题的 `textLink.foreground`），不用强调色（它优先取按钮背景色，当文字用只有 3.9:1）；浅色主题下警告和错误文字往前景色混（`--warning-text`、`--error-text`）。
+
+### 16.6 没有做的
+
+- 流式输出仍然每次推送整条消息的全文（没有改成增量）；长回复时 Webview 侧用 `useDeferredValue` 缓解。
+- 发送失败时图片不还原；`WebviewPanel` 编辑器形态；Windows 上的测试可移植性和真机验证；许可证仍是 `UNLICENSED`。

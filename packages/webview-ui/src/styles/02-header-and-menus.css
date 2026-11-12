@@ -1,0 +1,366 @@
+/* ---------- 会话标签 ---------- */
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* 标签不压缩：放不下时整行横向滚动（当前标签会滚到可见范围），标题不会被挤成一个字 */
+.tab {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  max-width: 160px;
+  padding: 4px 4px 5px 10px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--muted);
+  font-size: 0.88em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tab--active {
+  color: var(--text-strong);
+  cursor: default;
+}
+
+.tab--active::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.tab__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab__close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tab__close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tab:hover .tab__close,
+.tab--active .tab__close,
+.tab:focus-visible .tab__close {
+  opacity: 1;
+}
+
+.tab__close:hover {
+  background: var(--hover);
+}
+
+.tab .dot {
+  flex: none;
+}
+
+/* ---------- 顶栏 ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 8px;
+  min-height: 34px;
+}
+
+.header__title-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.header__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.header__title:hover {
+  background: var(--hover);
+}
+
+.header__title-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.header__more {
+  position: relative;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--hover);
+}
+
+.icon-button--small {
+  width: 24px;
+  height: 24px;
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dot--attention {
+  background: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.dot--running {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ---------- 弹出层与菜单 ---------- */
+
+.popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--vscode-menu-background, var(--surface));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+.sessions-menu {
+  left: 0;
+  width: min(340px, calc(100vw - 16px));
+}
+
+.more-menu {
+  right: 0;
+}
+
+.model-menu {
+  bottom: calc(100% + 6px);
+  top: auto;
+  left: 0;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.model-item__check {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--accent);
+}
+
+.model-item__check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.model-item__arrow {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+/* 第二级（推理强度）的标题行：点击返回模型列表 */
+.model-menu__back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 4px 8px 6px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-menu__back:hover {
+  background: var(--hover);
+}
+
+.model-menu__back-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  transform: rotate(180deg);
+  color: var(--muted);
+}
+
+.model-menu__back-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.model-menu__back-hint {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.sessions-menu__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 2px 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--muted);
+}
+
+.sessions-menu__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+}
+
+.sessions-menu__list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+/* 当前选中项：强调色底色 + 加粗，在任何主题下都看得出来 */
+.menu-item--active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.menu-item--active .menu-item__hint {
+  color: var(--accent);
+}
+
+.menu-item--active:hover,
+.menu-item--active:focus-visible {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--text-strong);
+}
+
+.menu-item__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.menu-item__hint {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.menu-heading {
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.menu-empty {
+  padding: 8px;
+  color: var(--muted);
+}

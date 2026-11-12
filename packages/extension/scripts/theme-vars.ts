@@ -7,7 +7,22 @@ const common = `--vscode-font-family: -apple-system, "Segoe WPC", "Segoe UI", sy
 --vscode-editor-font-family: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
 --vscode-editor-font-size: 12px;`;
 
+/**
+ * VS Code 给每个 Webview 注入的默认样式里与插件相关的部分（插件自己的样式表在它之后加载）。
+ * 主题的 textPreformat 色在很多深色主题里是橙色：插件没覆盖的地方会显示成橙色。
+ */
+export const VSCODE_DEFAULT_STYLES = `
+code {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textPreformat-foreground);
+  background-color: var(--vscode-textPreformat-background);
+  padding: 1px 3px;
+  border-radius: 4px;
+}`;
+
 export const DARK_THEME = `${common}
+--vscode-textPreformat-foreground: #d7ba7d;
+--vscode-textPreformat-background: #ffffff1a;
 --vscode-foreground: #cccccc;
 --vscode-descriptionForeground: #9d9d9d;
 --vscode-sideBar-background: #181818;
@@ -42,9 +57,13 @@ export const DARK_THEME = `${common}
 --vscode-inputValidation-warningBorder: #b89500;
 --vscode-inputValidation-errorBorder: #be1100;
 --vscode-progressBar-background: #0078d4;
---vscode-editorCursor-foreground: #aeafad;`;
+--vscode-editorCursor-foreground: #aeafad;
+--vscode-gitDecoration-addedResourceForeground: #81b88b;
+--vscode-gitDecoration-deletedResourceForeground: #c74e39;`;
 
 export const LIGHT_THEME = `${common}
+--vscode-textPreformat-foreground: #a31515;
+--vscode-textPreformat-background: #0000001a;
 --vscode-foreground: #3b3b3b;
 --vscode-descriptionForeground: #6f6f6f;
 --vscode-sideBar-background: #f8f8f8;
@@ -79,4 +98,6 @@ export const LIGHT_THEME = `${common}
 --vscode-inputValidation-warningBorder: #bf8803;
 --vscode-inputValidation-errorBorder: #be1100;
 --vscode-progressBar-background: #005fb8;
---vscode-editorCursor-foreground: #000000;`;
+--vscode-editorCursor-foreground: #000000;
+--vscode-gitDecoration-addedResourceForeground: #587c0c;
+--vscode-gitDecoration-deletedResourceForeground: #ad0707;`;

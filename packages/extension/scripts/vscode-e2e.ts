@@ -3,14 +3,14 @@
  * 通过命令面板打开对话、发消息、看工具调用和代码高亮、切换模型，并截图。
  *
  * 前置条件：
- * - 已执行 `pnpm package`（产出 packages/extension/dsh-copilot-*.vsix）
+ * - 已执行 `pnpm package`（产出 packages/extension/harness-deck-*.vsix）
  * - 本机装有 code-server（`npm install code-server`，需要 Node 24）和 playwright + Chromium
  *
  * 用法：
- *   pnpm --filter dsh-copilot run vscode-e2e -- --code-server <code-server 可执行文件> --dsh <dsh> \
+ *   pnpm --filter harness-deck run vscode-e2e -- --code-server <code-server 可执行文件> --dsh <dsh> \
  *     [--node-bin <Node 24 bin>] [--vsix <vsix>] [--out <截图目录>]
  *
- * 注意：远程场景（code-server、Remote-SSH）下 machine 范围的设置（dsh.runtime.path）从远端的
+ * 注意：远程场景（code-server、Remote-SSH）下 machine 范围的设置（harnessDeck.dsh.path）从远端的
  * Machine/settings.json 读取，而不是用户设置。
  */
 import { execFileSync, spawn } from 'node:child_process';
@@ -90,7 +90,7 @@ await writeFile(
     'workbench.tips.enabled': false,
   }),
 );
-await writeFile(join(data, 'Machine', 'settings.json'), JSON.stringify({ 'dsh.runtime.path': cli.dsh }));
+await writeFile(join(data, 'Machine', 'settings.json'), JSON.stringify({ 'harnessDeck.dsh.path': cli.dsh }));
 const childEnv = { ...process.env, ...env.env, HOME: env.home };
 execFileSync(codeServer, ['--extensions-dir', extensions, '--user-data-dir', data, '--install-extension', vsix], { env: childEnv, stdio: 'ignore' });
 
@@ -133,9 +133,9 @@ try {
   };
 
   // code-server 的显示语言是英文：插件界面、命令标题都应该是英文（package.nls.json）
-  await runCommand('DSH: Open Chat');
+  await runCommand('Harness Deck: Open Chat');
   const webview = await findWebview();
-  check('命令面板「DSH: 打开对话」打开插件视图', true);
+  check('命令面板「Harness Deck: 打开对话」打开插件视图', true);
   // 等到会话列表可用（空状态出现、没有状态提示）再开始对话
   await webview.locator('.empty').waitFor({ timeout: 120_000 });
   await webview.waitForFunction(() => !document.querySelector('.banner'), undefined, { timeout: 120_000 });
@@ -159,7 +159,7 @@ try {
     body: getComputedStyle(document.body).color,
   }));
   check('代码高亮在 Webview 的 CSP 下生效', colors.token !== colors.body);
-  const status = await page.locator('.statusbar-item', { hasText: 'DSH' }).first().innerText();
+  const status = await page.locator('.statusbar-item', { hasText: 'DeepSeek' }).first().innerText();
   check(`状态栏显示当前模型（${status.replace(/\s+/gu, ' ').trim()}）`, status.includes('·'));
   await page.screenshot({ path: join(outDir, 'conversation.png') });
 
@@ -199,7 +199,7 @@ try {
     () => check('确认后权限切换为完全访问', false),
   );
 
-  // 编辑器右键菜单：选中代码 →「DSH → 解释这段代码」
+  // 编辑器右键菜单：选中代码 →「Harness Deck → 解释这段代码」
   await page.keyboard.press('Control+P');
   await page.locator('.quick-input-widget input').waitFor();
   await page.keyboard.type('index.ts');
@@ -211,10 +211,10 @@ try {
   await page.keyboard.press('Control+A');
   await page.waitForTimeout(400);
   await editorLines.click({ button: 'right' });
-  const dshMenu = page.locator('.monaco-menu .action-item', { hasText: 'DSH' }).first();
+  const dshMenu = page.locator('.monaco-menu .action-item', { hasText: 'Harness Deck' }).first();
   await dshMenu.waitFor({ timeout: 10_000 }).then(
-    () => check('编辑器右键菜单里有 DSH 子菜单', true),
-    () => check('编辑器右键菜单里有 DSH 子菜单', false),
+    () => check('编辑器右键菜单里有 Harness Deck 子菜单', true),
+    () => check('编辑器右键菜单里有 Harness Deck 子菜单', false),
   );
   await dshMenu.hover();
   const explain = page.locator('.monaco-menu .action-label', { hasText: 'Explain This Code' }).first();
@@ -232,9 +232,9 @@ try {
   );
   await page.screenshot({ path: join(outDir, 'explain.png') });
 
-  await runCommand('DSH: Switch Model');
+  await runCommand('Harness Deck: Switch Model');
   await page.waitForTimeout(800);
-  check('命令「DSH: 切换模型」列出模型', (await page.locator('.quick-input-list .monaco-list-row').count()) > 0);
+  check('命令「Harness Deck: 切换模型」列出模型', (await page.locator('.quick-input-list .monaco-list-row').count()) > 0);
   await page.screenshot({ path: join(outDir, 'select-model.png') });
   await page.keyboard.press('Escape');
 } catch (error) {

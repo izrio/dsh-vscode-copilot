@@ -1,11 +1,11 @@
 /**
  * 查找 dsh 可执行文件。顺序见 docs/DESIGN.md 6.1：
- * 1. 设置项 `dsh.runtime.path`
+ * 1. 设置项 `harnessDeck.dsh.path`
  * 2. PATH 中的 `dsh`（DeepSeek Desktop 安装的命令，或 npm 全局安装）
  */
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
-import { delimiter, join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 
 export interface LocateOptions {
   /** 用户在设置里指定的路径；空字符串视为未设置。 */
@@ -30,13 +30,15 @@ async function isExecutableFile(path: string, platform: NodeJS.Platform): Promis
   }
 }
 
-function candidateNames(platform: NodeJS.Platform, env: LocateOptions['env']): string[] {
-  if (platform !== 'win32') return ['dsh'];
+function candidateNames(name: string, platform: NodeJS.Platform, env: LocateOptions['env']): string[] {
+  if (platform !== 'win32') return [name];
+  // 已经带扩展名（omp.cmd）时只找这个名字
+  if (/\.[a-z0-9]+$/iu.test(name)) return [name];
   const extensions = (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
     .split(';')
     .map((ext) => ext.trim().toLowerCase())
     .filter(Boolean);
-  return extensions.map((ext) => `dsh${ext}`);
+  return extensions.map((ext) => `${name}${ext}`);
 }
 
 /**
@@ -44,6 +46,17 @@ function candidateNames(platform: NodeJS.Platform, env: LocateOptions['env']): s
  * @returns 找到时给出命令路径和来源；设置项指定了但无效时 `configuredPathInvalid` 为 true。
  */
 export async function locateDsh(options: LocateOptions): Promise<LocateResult> {
+  return locateExecutable('dsh', options);
+}
+
+/**
+ * 在 PATH（Windows 上加 PATHEXT）里查找可执行文件；`name` 是绝对路径或带目录时直接检查它。
+ * 设置项 `configuredPath` 优先。
+ */
+export async function locateExecutable(name: string, options: LocateOptions): Promise<LocateResult> {
+  if (isAbsolute(name) || /[\\/]/u.test(name)) {
+    return (await isExecutableFile(name, options.platform)) ? { kind: 'found', command: name, source: 'setting' } : { kind: 'notFound', configuredPathInvalid: true };
+  }
   const configured = options.configuredPath?.trim();
   if (configured) {
     if (await isExecutableFile(configured, options.platform)) {
@@ -52,7 +65,7 @@ export async function locateDsh(options: LocateOptions): Promise<LocateResult> {
     return { kind: 'notFound', configuredPathInvalid: true };
   }
   const pathValue = options.env.PATH ?? options.env.Path ?? '';
-  const names = candidateNames(options.platform, options.env);
+  const names = candidateNames(name, options.platform, options.env);
   for (const directory of pathValue.split(delimiter)) {
     if (!directory) continue;
     for (const name of names) {

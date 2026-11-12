@@ -16,6 +16,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm package
@@ -23,3 +24,23 @@ jobs:
         with:
           name: vsix
           path: packages/extension/*.vsix
+
+  # 插件里有按平台分支的代码（Windows 下 .cmd 的启动方式、PATHEXT、结束进程树；macOS 的路径）：单元测试在这两个平台上也跑一遍。
+  platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # Windows：测试里有不少写死的 POSIX 路径（/w/src/a.ts），还没有逐个改成可移植的写法。先跑起来看结果，不拦合并；
+    # 改完后去掉这一行。
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test

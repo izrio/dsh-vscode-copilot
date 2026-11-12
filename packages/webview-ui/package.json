@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-copilot/webview-ui",
+  "name": "@harness-deck/webview-ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@dsh-copilot/shared": "workspace:*",
+    "@harness-deck/shared": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",

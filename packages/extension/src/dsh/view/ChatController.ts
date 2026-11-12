@@ -5,26 +5,26 @@
  * 推送按约 30ms 合并，流式输出时不会产生消息风暴。不依赖 vscode API，便于测试。
  */
 import { isAbsolute, resolve } from 'node:path';
+import { renderDelay, type ChatBackendController, type ControllerHostOptions } from '../../backend/types.ts';
 import type {
   CommandView,
   ConnectionState,
-  ContextState,
   DiffRef,
   HostSnapshot,
-  HostToWebview,
   ModelState,
   PermissionState,
   RuntimeStatus,
   SessionHeader,
   SessionListItem,
+  TabsState,
   WebviewToHost,
-} from '@dsh-copilot/shared';
-import { ChangesUnavailableError, type ChangesSummary, type DshClient, type ModelSelection } from '../dsh/DshClient.ts';
-import type { ConnectionStatus } from '../dsh/DshConnection.ts';
-import { InteractionService } from '../dsh/InteractionService.ts';
-import { RemoteError } from '../dsh/remote/errors.ts';
-import { SessionService } from '../dsh/SessionService.ts';
-import { SessionStream } from '../dsh/session/SessionStream.ts';
+} from '@harness-deck/shared';
+import { ChangesUnavailableError, type ChangesDiff, type ChangesSummary, type DshClient, type ModelSelection } from '../DshClient.ts';
+import type { ConnectionStatus } from '../DshConnection.ts';
+import { InteractionService } from '../InteractionService.ts';
+import { RemoteError } from '../remote/errors.ts';
+import { SessionService, type PendingImage } from '../SessionService.ts';
+import { SessionStream } from '../session/SessionStream.ts';
 import {
   CONTEXT_OPEN,
   isTemplate,
@@ -35,11 +35,14 @@ import {
   withContext,
   type ContextAttachment,
   type TemplateName,
-} from './context.ts';
-import { displayPath, project, projectEvents, type EventsProjection, type ToolCallInfo } from './projector.ts';
-import { noWorkbench, type EditorSnapshot, type Workbench } from './workbench.ts';
+} from '../../vm/context.ts';
+import { project, projectEvents, type EventsProjection, type FileStep, type Projection, type ToolCallInfo } from './projector.ts';
+import { EditorContext, type GatherOptions } from '../../vm/EditorContext.ts';
+import { TabsModel } from '../../vm/TabsModel.ts';
+import { lineStats, reverseHunks, reverseToolDiffs } from '../../vm/diffs.ts';
+import { noWorkbench, type Workbench } from '../../vm/workbench.ts';
 import { approvalView, interactionView, type ViewContext } from './interactionViews.ts';
-import { ViewPublisher, type ControllerView } from './ViewPublisher.ts';
+import { ViewPublisher, type ControllerView } from '../../vm/ViewPublisher.ts';
 import {
   buildModelState,
   contextUsageOf,
@@ -50,51 +53,45 @@ import {
   queuedText,
   titleOf,
   todosOf,
-  withoutDiagnostics,
 } from './viewHelpers.ts';
 
 export { friendlyError, plainTitle } from './viewHelpers.ts';
-import { getLocale, t } from '../i18n.ts';
+import { getLocale, t } from '../../i18n.ts';
 
-export interface ChatControllerOptions {
+export interface ChatControllerOptions extends ControllerHostOptions {
   readonly workspacePath: string;
-  readonly post: (message: HostToWebview) => void;
-  readonly log: (line: string) => void;
   /** 记住每个工作区上次打开的会话（VS Code workspaceState）。 */
   readonly loadActiveSessionId: () => string | undefined;
   readonly saveActiveSessionId: (sessionId: string | undefined) => void;
-  readonly openExternal: (url: string) => void;
+  /** 记住每个工作区打开的会话标签（VS Code workspaceState）。 */
+  readonly loadOpenTabs?: () => readonly string[] | undefined;
+  readonly saveOpenTabs?: (sessionIds: readonly string[]) => void;
   readonly restartRuntime: () => void;
-  readonly showLogs: () => void;
-  readonly openWebUI: () => void;
-  /** 当前模型的显示名变化时调用（状态栏用）。 */
-  readonly onModelChange?: (label: string | undefined) => void;
-  /** 打开 Diff、未保存文件、确认框、当前编辑器。 */
-  readonly workbench?: Workbench;
-  /** 设置 `dsh.context.includeActiveEditor`：默认附带当前编辑器。 */
-  readonly includeActiveEditor?: () => boolean;
-  /** 多根工作区：让用户选择文件夹（选好后调用 setWorkspace）。 */
-  readonly selectFolder?: () => void;
-  /** 多根工作区时当前文件夹的显示名。 */
-  readonly folderLabel?: () => string | undefined;
-  readonly renderDelayMs?: number;
+  /** 在浏览器中打开 dsh；`sessionTitle` 是当前会话的标题（dsh 网页不支持直接定位到会话，提示用户在列表里选）。 */
+  readonly openWebUI: (sessionTitle?: string) => void;
+  /**
+   * 每轮结束时在对话流里显示改动汇总卡片（设置 `harnessDeck.ui.showTurnChanges`）。不传时显示。
+   * 关掉时改动只在输入框上方的会话改动栏里显示，汇总仍会读取，用于打开 Diff。
+   */
+  readonly showTurnChanges?: () => boolean;
 }
+
+/** 同时读取改动汇总的请求数：打开长会话时不一次发出几十个请求，把 dsh 堵住（点开 Diff 的请求要排在后面）。 */
+const SUMMARY_CONCURRENCY = 2;
+/** 后台标签最多保留几个 follow 流：切回这些标签时内容立即可见，更多的标签切回时重新打开。 */
+const MAX_BACKGROUND_STREAMS = 4;
 
 const DEFAULT_CREDENTIAL_REF = 'DEEPSEEK_API_KEY';
 const DANGER_PRESET = 'danger-full-access';
 /** 在 VS Code 里没有意义的 dsh 命令（/export 在浏览器里触发下载）。 */
 const HIDDEN_DSH_COMMANDS = new Set(['export']);
 
-export interface SendOptions {
-  /** 附带当前编辑器（默认 true；输入框上方的标签被关掉时为 false）。 */
-  readonly includeActive?: boolean;
-  /** 额外附带的上下文（右键菜单的选区）。 */
-  readonly extra?: readonly ContextAttachment[];
-  /** 附带选区的诊断信息（/fix）。 */
-  readonly diagnostics?: boolean;
+export interface SendOptions extends GatherOptions {
+  /** 粘贴或拖进来的图片。 */
+  readonly images?: readonly PendingImage[];
 }
 
-export class ChatController {
+export class ChatController implements ChatBackendController {
   private runtime: RuntimeStatus = { kind: 'idle' };
   private connection: ConnectionState = 'idle';
   private service: SessionService | undefined;
@@ -116,11 +113,14 @@ export class ChatController {
   private toolCalls: ReadonlyMap<string, ToolCallInfo> = new Map();
   /** 改动汇总来自哪个 Host；Host 重启（换了端口）后内存里的汇总都没了，要重新读取。 */
   private changesOrigin: string | undefined;
-  /** 用「添加到对话」固定的上下文，发送后清空。 */
-  private pinned: (ContextAttachment & { id: string })[] = [];
-  private pinCounter = 0;
+  /** 当前编辑器和用「添加到对话」固定的上下文。 */
+  private readonly editorContext: EditorContext;
+  /** 新对话正在创建的会话：连续发两条消息时共用同一个，不建两个会话。 */
+  private creatingSession: Promise<string> | undefined;
   /** dsh 的斜杠命令目录（各会话相同），打开会话时读取。 */
   private dshCommands: CommandView[] = [];
+  /** 正在读取命令和 skill 的会话（同一个会话不重复读）。 */
+  private loadingCommands: string | undefined;
   private client: DshClient | undefined;
   private workspacePath: string;
   /** dsh 在 MISSING_CREDENTIAL 里要求配置的凭据名。 */
@@ -133,21 +133,114 @@ export class ChatController {
   /** 改动汇总每读到一份递增，作为缓存键的一部分。 */
   private changesVersion = 0;
   private readonly publisher: ViewPublisher;
+  /** 当前会话每个文件的改动历史（绝对路径），用于打开累计 Diff 和某一轮的 Diff。 */
+  private fileHistory: ReadonlyMap<string, readonly FileStep[]> = new Map();
+  /** `/api/changes.diff` 的结果，键是 `会话:seq:index`；一轮结束后内容不再变化。 */
+  private readonly turnDiffs = new Map<string, Promise<ChangesDiff>>();
+  /** 正在打开的 Diff：重复点击不重复请求。 */
+  private readonly openingDiffs = new Set<string>();
+  /** 等待读取的改动汇总（新的在前）。 */
+  private summaryQueue: { readonly sessionId: string; readonly seq: number }[] = [];
+  private summariesInFlight = 0;
+  /** 对话面板里打开的标签；当前标签的会话就是 activeId。 */
+  private readonly tabs: TabsModel;
+  /** 子代理会话 → 父会话：从父会话里打开时由 Webview 告知，会话列表刷新后也能从 dsh 读到。 */
+  private readonly subagentParents = new Map<string, string>();
+  /** 子代理会话 → 任务描述：dsh 给子代理会话起的标题带着给子代理的说明，用描述代替。 */
+  private readonly subagentLabels = new Map<string, string>();
+
+  /** 会话标题；子代理的会话显示「子代理 · 描述」。 */
+  private titleFor(sessionId: string, projections: Readonly<Record<string, unknown>>, items: Parameters<typeof titleOf>[1]): string {
+    const label = this.subagentLabels.get(sessionId);
+    if (label) return t('subagent.title', label);
+    return titleOf(projections, items);
+  }
+
+  /** 子代理会话的父会话；不是子代理会话时为 undefined。 */
+  private parentOf(sessionId: string): string | undefined {
+    return this.subagentParents.get(sessionId) ?? this.service?.parentOf(sessionId);
+  }
+
+  /** 后台标签的 follow 流（会话 id → 流），按切走的先后排列。 */
+  private readonly background = new Map<string, SessionStream>();
 
   constructor(private readonly options: ChatControllerOptions) {
     this.workspacePath = options.workspacePath;
     this.activeId = options.loadActiveSessionId();
     this.publisher = new ViewPublisher(options.post, options.onModelChange);
+    this.editorContext = new EditorContext(
+      () => this.workbench,
+      () => this.options.includeActiveEditor?.() ?? true,
+      () => this.workspacePath,
+    );
+    this.tabs = new TabsModel({
+      keyPrefix: 'tab',
+      load: () => this.options.loadOpenTabs?.(),
+      save: (ids) => this.options.saveOpenTabs?.(ids),
+      onActivate: (sessionId) => this.setActive(sessionId),
+      onClose: (tab) => {
+        if (!tab.sessionId) return;
+        // 关掉的标签不再跟随：后台的流、或者当前正显示的流都关掉
+        this.background.get(tab.sessionId)?.dispose();
+        this.background.delete(tab.sessionId);
+        if (this.stream?.sessionId === tab.sessionId) {
+          this.stream.dispose();
+          this.stream = undefined;
+        }
+      },
+      onChange: () => this.scheduleRender(),
+    });
+    this.tabs.restore(this.activeId);
+  }
+
+  private disposeBackground(): void {
+    for (const stream of this.background.values()) stream.dispose();
+    this.background.clear();
+  }
+
+  /** 当前会话还在某个标签里时把它的流留在后台，否则关掉。 */
+  private parkStream(): void {
+    const stream = this.stream;
+    this.stream = undefined;
+    if (!stream) return;
+    const open = this.tabs.items.some((tab) => tab.sessionId === stream.sessionId);
+    if (!open || stream.status.kind === 'failed' || stream.status.kind === 'disconnected') {
+      stream.dispose();
+      return;
+    }
+    this.background.delete(stream.sessionId);
+    this.background.set(stream.sessionId, stream);
+    while (this.background.size > MAX_BACKGROUND_STREAMS) {
+      const [oldestId, oldest] = this.background.entries().next().value!;
+      oldest.dispose();
+      this.background.delete(oldestId);
+    }
+  }
+
+  private tabsState(service: SessionService | undefined, current: SessionHeader, attention: ReadonlySet<string>): TabsState {
+    const flag = (sessionId: string | undefined) => (sessionId && attention.has(sessionId) ? { needsAttention: true } : {});
+    const items = this.tabs.view(
+      { title: current.title, running: current.running, ...flag(this.tabs.current?.sessionId) },
+      (sessionId) => ({
+        title: this.titleFor(sessionId, service?.projections(sessionId) ?? {}, []),
+        running: service?.sessions.find((s) => s.sessionId === sessionId)?.running ?? false,
+        ...flag(sessionId),
+      }),
+      newSessionTitle(),
+    );
+    return { items, active: this.tabs.activeTabKey };
   }
 
   /** 多根工作区切换文件夹：会话列表、新建会话和路径显示都换到这个文件夹。 */
   setWorkspace(path: string): void {
     if (path === this.workspacePath) return;
     this.workspacePath = path;
-    this.pinned = [];
+    this.editorContext.clearPinned();
     this.activeId = this.options.loadActiveSessionId();
     this.staleService = undefined;
     this.staleStream = undefined;
+    this.disposeBackground();
+    this.tabs.restore(this.activeId);
     this.setClient(this.client);
   }
 
@@ -158,11 +251,17 @@ export class ChatController {
   dispose(): void {
     if (this.renderTimer) clearTimeout(this.renderTimer);
     this.stream?.dispose();
+    this.disposeBackground();
     this.service?.dispose();
     this.interactions?.dispose();
   }
 
-  /** 界面语言变化（设置 `dsh.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
+  /** 界面语言变化（设置 `harnessDeck.ui.language`）：通知 Webview，Host 生成的文字重新计算。 */
+  /** 界面字号或字体的设置变化时调用。 */
+  appearanceChanged(): void {
+    this.options.post({ type: 'appearance', payload: this.options.appearance?.() ?? {} });
+  }
+
   localeChanged(): void {
     this.options.post({ type: 'locale', payload: getLocale() });
     this.scheduleRender();
@@ -175,7 +274,7 @@ export class ChatController {
 
   /** 右键菜单「解释 / 修复 / 写测试」：带上当前选区（没有选区时是当前文件）立即发送。 */
   async askAboutSelection(template: TemplateName): Promise<void> {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
+    const attachment = this.editorContext.active();
     if (!attachment) {
       this.toast('info', t('context.none'));
       return;
@@ -185,21 +284,12 @@ export class ChatController {
 
   /** 右键菜单「添加到对话」：固定当前选区（或文件），下一条消息发送时附带。 */
   pinActiveEditor(): void {
-    const attachment = this.snapshotAttachment(this.workbench.activeEditor());
-    if (!attachment) {
+    if (!this.editorContext.pinActive()) {
       this.toast('info', t('context.none'));
       return;
     }
-    this.pinned.push({ ...attachment, id: `pin-${++this.pinCounter}` });
     this.scheduleRender();
     this.options.post({ type: 'focusComposer', payload: {} });
-  }
-
-  private snapshotAttachment(editor: EditorSnapshot | undefined): ContextAttachment | undefined {
-    if (!editor) return undefined;
-    if (!editor.selection) return { kind: 'file', path: editor.path };
-    const { startLine, endLine, text, diagnostics } = editor.selection;
-    return { kind: 'selection', path: editor.path, startLine, endLine, languageId: editor.languageId, text, ...(diagnostics.length ? { diagnostics } : {}) };
   }
 
   setRuntimeStatus(status: RuntimeStatus): void {
@@ -222,6 +312,8 @@ export class ChatController {
       this.stream.dispose();
       this.staleStream = this.stream;
     }
+    // 后台标签的流绑定在旧连接上；切回时在新连接上重新打开
+    this.disposeBackground();
     if (this.service) {
       this.service.dispose();
       this.staleService = this.service;
@@ -232,12 +324,14 @@ export class ChatController {
     this.interactions?.dispose();
     this.interactions = undefined;
     for (const [key, value] of this.changes) if (value === 'loading') this.changes.delete(key);
+    this.summaryQueue = [];
     this.scheduleRender();
     if (!client) return;
     this.interactions = new InteractionService(client, () => this.scheduleRender(), this.options.log);
     const origin = client.credential?.origin;
     if (origin !== this.changesOrigin) {
       this.changes.clear();
+      this.turnDiffs.clear();
       this.changesVersion++;
       this.changesOrigin = origin;
     }
@@ -258,7 +352,10 @@ export class ChatController {
         // 斜杠命令目录与会话无关，任选一个已有会话读取，新对话里也能补全 dsh 命令
         const anySession = service.sessions.find((s) => s.sessionId === restoredId)?.sessionId ?? service.sessions[0]?.sessionId;
         if (anySession) this.loadCommands(anySession);
-        if (restoredId && !service.sessions.some((s) => s.sessionId === restoredId)) {
+        // 已经不存在的会话（被删除或不属于这个工作区）不再保留标签
+        const known = (id: string) => service.sessions.some((s) => s.sessionId === id) || this.parentOf(id) !== undefined;
+        this.tabs.prune(known);
+        if (restoredId && !known(restoredId)) {
           this.options.log(`上次打开的会话 ${restoredId} 已不存在，改为新对话`);
           this.setActive(undefined);
         } else {
@@ -275,12 +372,13 @@ export class ChatController {
 
   /** Webview 加载（或重新加载）后取完整快照；之后的增量都相对于这份快照。 */
   snapshot(): HostSnapshot {
-    const view = this.compute();
+    const view = this.refresh();
     this.publisher.reset(view);
     return {
       runtime: this.runtime,
       connection: this.connection,
       sessions: view.sessions,
+      tabs: view.tabs,
       session: view.session,
       items: view.items,
       models: view.models,
@@ -290,7 +388,13 @@ export class ChatController {
       context: view.context,
       commands: view.commands,
       locale: getLocale(),
+      appearance: this.options.appearance?.() ?? {},
+      backends: this.options.backends?.() ?? { items: [], active: '' },
     };
+  }
+
+  backendsChanged(): void {
+    this.options.post({ type: 'backends', payload: this.options.backends?.() ?? { items: [], active: '' } });
   }
 
   async handle(message: WebviewToHost): Promise<void> {
@@ -298,8 +402,14 @@ export class ChatController {
       case 'ready':
         this.options.post({ type: 'snapshot', payload: this.snapshot() });
         return;
-      case 'sendMessage':
-        return this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true });
+      case 'sendMessage': {
+        const accepted = await this.send(message.payload.text, { includeActive: message.payload.includeActive ?? true, ...(message.payload.images ? { images: message.payload.images } : {}) });
+        // 没发出去（没连上、建不了会话…）：输入框已经清空了，把文字放回去
+        if (!accepted) this.options.post({ type: 'restoreDraft', payload: { text: message.payload.text } });
+        return;
+      }
+      case 'loadImage':
+        return this.loadImage(message.payload.attachmentId);
       case 'searchFiles':
         return this.searchFiles(message.payload.requestId, message.payload.query);
       case 'queueAction':
@@ -312,16 +422,24 @@ export class ChatController {
         this.options.selectFolder?.();
         return;
       case 'removeAttachment':
-        this.pinned = this.pinned.filter((p) => p.id !== message.payload.id);
+        this.editorContext.unpin(message.payload.id);
         this.scheduleRender();
         return;
       case 'interrupt':
         return this.interrupt();
       case 'newSession':
-        this.setActive(undefined);
+        this.tabs.openNew();
         return;
       case 'switchSession':
-        this.setActive(message.payload.sessionId);
+        if (message.payload.parentId) this.subagentParents.set(message.payload.sessionId, message.payload.parentId);
+        if (message.payload.label) this.subagentLabels.set(message.payload.sessionId, message.payload.label);
+        this.tabs.open(message.payload.sessionId);
+        return;
+      case 'activateTab':
+        this.tabs.activate(message.payload.key);
+        return;
+      case 'closeTab':
+        this.tabs.close(message.payload.key);
         return;
       case 'loadOlder':
         await this.stream?.loadOlder();
@@ -343,10 +461,10 @@ export class ChatController {
         this.options.showLogs();
         return;
       case 'openWebUI':
-        this.options.openWebUI();
+        this.options.openWebUI(this.activeId ? this.buildView().view.session.title : undefined);
         return;
       case 'respondApproval':
-        return this.respondApproval(message.payload.id, message.payload.decision === 'allow');
+        return this.respondApproval(message.payload.id, message.payload.decision !== 'reject');
       case 'previewApproval':
         return this.previewApproval(message.payload.id);
       case 'answerQuestion': {
@@ -356,8 +474,30 @@ export class ChatController {
         }
         return;
       }
-      case 'openDiff':
-        return this.openDiff(message.payload.ref);
+      case 'openDiff': {
+        const { ref, token } = message.payload;
+        const key = JSON.stringify(ref);
+        if (this.openingDiffs.has(key)) return;
+        this.openingDiffs.add(key);
+        try {
+          await this.openDiff(ref);
+        } finally {
+          this.openingDiffs.delete(key);
+          if (token !== undefined) this.options.post({ type: 'diffOpened', payload: { token } });
+        }
+        return;
+      }
+      case 'openSettings':
+        this.options.openSettings?.();
+        return;
+      case 'setAppearance':
+        try {
+          await this.options.setAppearance?.(message.payload);
+        } catch (error) {
+          this.toast('error', t('appearance.failed', describe(error)));
+          this.appearanceChanged();
+        }
+        return;
       case 'openFile': {
         const { path, startLine, endLine } = message.payload;
         return this.workbench.openFile(this.absolute(path), startLine ? { startLine, ...(endLine ? { endLine } : {}) } : undefined);
@@ -404,25 +544,133 @@ export class ChatController {
       return this.workbench.openDiff({ kind: 'tool', path: call.path, diffs: call.diffs ?? [], created: call.created ?? false });
     }
     const sessionId = this.activeId;
-    const client = this.service?.client;
-    if (!sessionId || !client) return;
+    if (!sessionId) return;
     try {
-      const diff = await client.changesDiff(sessionId, ref.seq, ref.index);
-      const path = this.absolute(diff.path);
-      if (diff.kind !== 'text') {
-        this.toast('info', diff.kind === 'binary' ? t('diff.binary') : t('diff.oversized'));
-        return this.workbench.openFile(path);
-      }
-      await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
+      if (ref.kind === 'session') return await this.openSessionDiff(sessionId, ref.path);
+      return await this.openTurnDiff(sessionId, ref.seq, ref.index);
     } catch (error) {
       if (error instanceof ChangesUnavailableError) {
         // 汇总已经不在 Host 内存里：卡片改为按文件工具汇总，那里的 Diff 来自会话日志
-        this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
+        if (ref.kind === 'turn') this.changes.set(`${sessionId}:${ref.seq}`, 'unavailable');
         this.changesVersion++;
         this.scheduleRender();
         this.toast('info', t('diff.turnGone'));
       } else this.toast('error', t('diff.readFailed', describe(error)));
     }
+  }
+
+  /** 本会话对一个文件的累计改动：从当前内容依次撤回每一轮的修改。还原不了时打开最后一次修改的 Diff。 */
+  private async openSessionDiff(sessionId: string, path: string): Promise<void> {
+    const steps = this.fileHistory.get(path) ?? [];
+    const last = steps.at(-1);
+    if (!last) return this.workbench.openFile(path);
+    if (steps.some((s) => s.flags?.length)) {
+      this.toast('info', steps.some((s) => s.flags?.includes('binary')) ? t('diff.binary') : t('diff.oversized'));
+      return this.workbench.openFile(path);
+    }
+    const rewound = await this.rewind(sessionId, path, steps, 0, 'session');
+    if (rewound) return this.workbench.openDiff({ kind: 'contents', path, ...rewound, scope: 'session' });
+    this.options.log(`无法还原 ${path} 在本会话修改前的内容，改为显示最后一次修改`);
+    if (last.turnSeq !== undefined && last.index !== undefined) return this.openTurnDiff(sessionId, last.turnSeq, last.index);
+    const callId = last.calls.at(-1);
+    if (callId) return this.openDiff({ kind: 'tool', callId });
+    return this.workbench.openFile(path);
+  }
+
+  /**
+   * 某一轮里一个文件的改动。优先用会话日志里的工具片段在本地还原（不请求 dsh，几乎是即时的）；
+   * 本轮有命令造成的改动、或片段对不上时，才读取 dsh 记录的 hunk。
+   */
+  private async openTurnDiff(sessionId: string, seq: number, index: number): Promise<void> {
+    const summary = this.changes.get(`${sessionId}:${seq}`);
+    const file = typeof summary === 'object' ? summary.files[index] : undefined;
+    if (file) {
+      const path = this.absolute(file.path);
+      if (file.binary || file.oversized) {
+        this.toast('info', file.binary ? t('diff.binary') : t('diff.oversized'));
+        return this.workbench.openFile(path);
+      }
+      const steps = this.fileHistory.get(path) ?? [];
+      const at = steps.findIndex((s) => s.turnSeq === seq && s.index === index);
+      const rewound = at >= 0 ? await this.rewind(sessionId, path, steps, at, 'turn') : undefined;
+      if (rewound) return this.workbench.openDiff({ kind: 'contents', path, ...rewound, scope: 'turn' });
+    }
+    // 还原不了：交给编辑器用 hunk 还原，仍不行时显示修改片段
+    const diff = await this.turnDiff(sessionId, seq, index);
+    const path = this.absolute(diff.path);
+    if (diff.kind !== 'text') {
+      this.toast('info', diff.kind === 'binary' ? t('diff.binary') : t('diff.oversized'));
+      return this.workbench.openFile(path);
+    }
+    await this.workbench.openDiff({ kind: 'turn', path, before: diff.before, after: diff.after, hunks: diff.hunks });
+  }
+
+  /**
+   * 从文件的当前内容往回撤，得到第 `at` 步之前的内容。右侧：`turn` 是第 `at` 步之后的内容，`session` 是当前内容。
+   * `after` 为 undefined 表示右侧直接用磁盘上的文件（可以继续编辑）。
+   */
+  private async rewind(
+    sessionId: string,
+    path: string,
+    steps: readonly FileStep[],
+    at: number,
+    scope: 'turn' | 'session',
+  ): Promise<{ before: string; after?: string; created: boolean } | undefined> {
+    const current = await this.workbench.readFile(path);
+    let text = current ?? '';
+    for (let i = steps.length - 1; i > at; i--) {
+      const previous = await this.reverseStep(sessionId, text, steps[i]!);
+      if (previous === undefined) return undefined;
+      text = previous;
+    }
+    const step = steps[at]!;
+    const before = await this.reverseStep(sessionId, text, step);
+    if (before === undefined) return undefined;
+    // 文件已经被删除时右侧是空内容
+    const after = current === undefined ? '' : scope === 'session' || at === steps.length - 1 ? undefined : text;
+    return { before, ...(after === undefined ? {} : { after }), created: before === '' && steps[at]!.created };
+  }
+
+  /** 撤回一步修改。工具片段还原出的结果与 dsh 汇总的增删行数一致时直接采用，否则读取 dsh 的 hunk。 */
+  private async reverseStep(sessionId: string, text: string, step: FileStep): Promise<string | undefined> {
+    const local = this.reverseCalls(text, step.calls);
+    if (step.turnSeq === undefined || step.index === undefined) return local;
+    if (local !== undefined) {
+      const stats = lineStats(local, text);
+      if (stats.additions === step.stats.additions && stats.deletions === step.stats.deletions) return local;
+    }
+    const diff = await this.turnDiff(sessionId, step.turnSeq, step.index);
+    if (diff.kind !== 'text') return undefined;
+    if (!diff.before) return '';
+    return reverseHunks(diff.after ? text : '', diff.hunks);
+  }
+
+  /** 按时间倒序撤回几次工具修改；新建文件的那次撤回后是空内容。 */
+  private reverseCalls(text: string, callIds: readonly string[]): string | undefined {
+    if (callIds.length === 0) return undefined;
+    let result = text;
+    for (const callId of [...callIds].reverse()) {
+      const call = this.toolCalls.get(callId);
+      if (!call) return undefined;
+      if (call.created) return '';
+      const previous = reverseToolDiffs(result, call.diffs ?? []);
+      if (previous === undefined) return undefined;
+      result = previous;
+    }
+    return result;
+  }
+
+  private turnDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
+    const client = this.service?.client;
+    if (!client) return Promise.reject(new Error(t('diff.notConnected')));
+    const key = `${sessionId}:${seq}:${index}`;
+    let pending = this.turnDiffs.get(key);
+    if (!pending) {
+      pending = client.changesDiff(sessionId, seq, index);
+      this.turnDiffs.set(key, pending);
+      pending.catch(() => this.turnDiffs.delete(key));
+    }
+    return pending;
   }
 
   private async selectPermission(preset: string): Promise<void> {
@@ -453,50 +701,74 @@ export class ChatController {
   /**
    * 发送一条消息。以 `/` 开头时先看是不是斜杠命令：插件模板展开成提示词，dsh 命令交给 dsh 执行。
    * 新对话的第一条消息发送时才在 dsh 中创建会话，避免每次打开面板都留下空会话。
+   * @returns 消息是否已经交出去（进了会话或本地回显）；false 时调用方把文字还给输入框。
    */
-  async send(text: string, options: SendOptions = {}): Promise<void> {
+  async send(text: string, options: SendOptions = {}): Promise<boolean> {
     const slash = parseSlash(text);
     if (slash?.name === 'new') {
-      this.setActive(undefined);
-      if (slash.args.trim()) await this.send(slash.args, options);
-      return;
+      this.tabs.openNew();
+      return slash.args.trim() ? this.send(slash.args, options) : true;
     }
     if (slash && isTemplate(slash.name)) {
-      const attachments = this.gatherContext({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
+      const attachments = this.editorContext.gather({ ...options, diagnostics: options.diagnostics ?? slash.name === 'fix' });
       if (attachments.length === 0 && !slash.args.trim()) {
         this.toast('info', t('template.needsContext', slash.name));
-        return;
+        return false;
       }
-      return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments);
+      return this.sendPrompt(templatePrompt(slash.name, slash.args), attachments, options.images);
     }
-    if (slash && this.dshCommands.some((c) => c.name === slash.name)) return this.runCommand(text.trim());
-    return this.sendPrompt(text, this.gatherContext(options));
+    // skill 不是命令：照常作为消息发出，dsh 识别 `/name` 调用 skill
+    if (slash && this.dshCommands.some((c) => c.name === slash.name && c.source === 'agent')) return this.runCommand(text.trim());
+    return this.sendPrompt(text, this.editorContext.gather(options), options.images);
   }
 
-  /** 本条消息附带的上下文：固定的、额外的、当前编辑器。诊断信息只在 /fix 时附带。 */
-  private gatherContext(options: SendOptions): ContextAttachment[] {
-    const active = options.includeActive !== false ? this.snapshotAttachment(this.workbench.activeEditor()) : undefined;
-    const all = [...this.pinned.map(({ id: _id, ...rest }) => rest as ContextAttachment), ...(options.extra ?? []), ...(active ? [active] : [])];
-    return options.diagnostics ? all : all.map((a) => (a.kind === 'selection' ? withoutDiagnostics(a) : a));
+  /** 历史消息里的图片：向 dsh 读取后以 data URL 回传，Webview 缓存。读不到时回传空，显示占位。 */
+  private async loadImage(attachmentId: string): Promise<void> {
+    const sessionId = this.activeId;
+    const client = this.service?.client;
+    let dataUrl: string | undefined;
+    if (sessionId && client) {
+      try {
+        const image = await client.attachment(sessionId, attachmentId);
+        dataUrl = `data:${image.mediaType};base64,${image.data}`;
+      } catch (error) {
+        this.options.log(`读取图片失败：${describe(error)}`);
+      }
+    }
+    this.options.post({ type: 'imageData', payload: { attachmentId, ...(dataUrl ? { dataUrl } : {}) } });
   }
 
-  private async sendPrompt(text: string, attachments: readonly ContextAttachment[]): Promise<void> {
+  private async sendPrompt(text: string, attachments: readonly ContextAttachment[], images: readonly PendingImage[] = []): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
+    }
+    if (this.activeId && this.parentOf(this.activeId)) {
+      // 子代理的对话由父会话里的代理驱动，这里只能查看
+      this.toast('info', t('subagent.readOnly'));
+      return false;
+    }
+    let sessionId: string;
+    try {
+      sessionId = await this.ensureSession(service);
+    } catch (error) {
+      this.options.log(`新建会话失败：${describe(error)}`);
+      this.toast('error', friendlyError(error));
+      return false;
     }
     try {
-      const sessionId = await this.ensureSession(service);
-      await service.prompt(sessionId, withContext(text, attachments, this.workspacePath));
-      if (this.pinned.length) {
-        this.pinned = [];
+      await service.prompt(sessionId, withContext(text, attachments, this.workspacePath), undefined, images);
+      if (this.editorContext.hasPinned) {
+        this.editorContext.clearPinned();
         this.scheduleRender();
       }
     } catch (error) {
+      // 会话服务已经留下一条「发送失败」的回显，可以在那里重试或删除，文字没有丢
       this.options.log(`发送失败：${describe(error)}`);
       this.toast('error', friendlyError(error));
     }
+    return true;
   }
 
   private async queueAction(payload: Extract<WebviewToHost, { type: 'queueAction' }>['payload']): Promise<void> {
@@ -574,24 +846,34 @@ export class ChatController {
   }
 
   /** dsh 的斜杠命令：结果以 command/run、command/done 事件出现在对话里。 */
-  private async runCommand(line: string): Promise<void> {
+  private async runCommand(line: string): Promise<boolean> {
     const service = this.service;
     if (!service) {
       this.toast('error', t('notConnected'));
-      return;
+      return false;
     }
     try {
       const sessionId = await this.ensureSession(service);
       await service.client.executeCommand(sessionId, line);
+      return true;
     } catch (error) {
       this.options.log(`执行 ${line} 失败：${describe(error)}`);
       this.toast('error', t('command.failed', describe(error)));
+      return false;
     }
   }
 
   /** 当前会话；新对话时在 dsh 里创建，并应用新对话里选好的模型和权限。 */
-  private async ensureSession(service: SessionService): Promise<string> {
-    if (this.activeId) return this.activeId;
+  private ensureSession(service: SessionService): Promise<string> {
+    if (this.activeId) return Promise.resolve(this.activeId);
+    // 会话还在创建时又来一条消息（连按两次发送、右键「解释」）：等同一个会话，不再建一个
+    this.creatingSession ??= this.createSession(service).finally(() => {
+      this.creatingSession = undefined;
+    });
+    return this.creatingSession;
+  }
+
+  private async createSession(service: SessionService): Promise<string> {
     const sessionId = await service.createSession();
     this.setActive(sessionId);
     if (this.draftModel) {
@@ -622,21 +904,42 @@ export class ChatController {
     this.options.post({ type: 'fileCandidates', payload: { requestId, items: items.slice(0, 50) } });
   }
 
+  /**
+   * 斜杠命令和 skill。skill 不在 commands/list 里，要另外读 skills/list（会话的工作目录和预设决定能用哪些）；
+   * 每次打开会话都重新读，新装的 skill 也能出现。
+   */
   private loadCommands(sessionId: string): void {
     const client = this.service?.client;
-    if (!client || this.dshCommands.length > 0) return;
+    if (!client || this.loadingCommands === sessionId) return;
+    this.loadingCommands = sessionId;
     // 放进 then 里调用：读取失败（包括同步抛错）都不能影响打开会话
-    void Promise.resolve()
-      .then(() => client.commands(sessionId))
+    const commands = Promise.resolve().then(() => client.commands(sessionId));
+    const skills = Promise.resolve()
+      .then(() => client.skills(sessionId))
+      .catch((error: unknown) => {
+        this.options.log(`读取 skill 失败（旧版本 dsh 可能没有 skills/list）：${describe(error)}`);
+        return [];
+      });
+    void Promise.all([commands, skills])
       .then(
-      (commands) => {
-        this.dshCommands = commands
-          .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
-          .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'dsh' as const }));
-        this.scheduleRender();
-      },
-      (error: unknown) => this.options.log(`读取斜杠命令失败：${describe(error)}`),
-    );
+        ([list, skillList]) => {
+          const views: CommandView[] = list
+            .filter((c) => !HIDDEN_DSH_COMMANDS.has(c.name) && !(PLUGIN_COMMAND_NAMES as readonly string[]).includes(c.name))
+            .map((c) => ({ name: c.name, description: c.description ?? '', ...(c.input?.hint ? { hint: c.input.hint } : {}), source: 'agent' as const }));
+          const taken = new Set([...views.map((c) => c.name), ...PLUGIN_COMMAND_NAMES]);
+          for (const skill of skillList) {
+            if (taken.has(skill.name)) continue;
+            taken.add(skill.name);
+            views.push({ name: skill.name, description: skill.description ?? skill.whenToUse ?? '', source: 'skill' });
+          }
+          this.dshCommands = views;
+          this.scheduleRender();
+        },
+        (error: unknown) => this.options.log(`读取斜杠命令失败：${describe(error)}`),
+      )
+      .finally(() => {
+        if (this.loadingCommands === sessionId) this.loadingCommands = undefined;
+      });
   }
 
   private async interrupt(): Promise<void> {
@@ -670,14 +973,17 @@ export class ChatController {
     if (!sessionId || !service || !pending) return;
     try {
       // 复用同一个 requestId：dsh 对已接收的请求直接返回原结果，不会重复插入
-      await service.prompt(sessionId, pending.text, requestId);
+      await service.prompt(sessionId, pending.text, requestId, pending.images ?? []);
     } catch (error) {
       this.toast('error', friendlyError(error));
     }
   }
 
+  /** 切换当前标签显示的会话（undefined 为新对话）；标签的切换、新建、关闭见 activateTab 等。 */
   private setActive(sessionId: string | undefined): void {
+    this.tabs.setCurrentSession(sessionId);
     if (sessionId === this.activeId && (sessionId === undefined || this.stream)) return;
+    this.parkStream();
     this.activeId = sessionId;
     // 换了会话就不再显示旧会话的残留内容
     if (this.staleStream?.sessionId !== sessionId) this.staleStream = undefined;
@@ -690,10 +996,19 @@ export class ChatController {
     this.stream = undefined;
     const service = this.service;
     const sessionId = this.activeId;
-    if (service && sessionId) {
+    const parked = sessionId ? this.background.get(sessionId) : undefined;
+    if (sessionId && parked) this.background.delete(sessionId);
+    if (service && sessionId && parked && parked.status.kind !== 'failed' && parked.status.kind !== 'disconnected') {
+      // 后台标签的流一直在跟随，内容立即可见
+      this.stream = parked;
+      this.loadCommands(sessionId);
+    } else if (service && sessionId) {
+      parked?.dispose();
+      const parentId = this.parentOf(sessionId);
       const stream = new SessionStream({
         client: service.client,
         sessionId,
+        ...(parentId ? { parentId } : {}),
         onChange: () => this.scheduleRender(),
         onSnapshotProjections: (baseline) => service.acceptSnapshotProjections(sessionId, baseline),
         log: this.options.log,
@@ -710,18 +1025,44 @@ export class ChatController {
     this.renderTimer = setTimeout(() => {
       this.renderTimer = undefined;
       this.render();
-    }, this.options.renderDelayMs ?? 30);
+    }, renderDelay(this.options));
   }
 
   /** 计算当前视图并推送变化的部分。 */
   render(): void {
-    this.publisher.publish(this.compute());
+    this.publisher.publish(this.refresh());
   }
 
-  private compute(): ControllerView {
-    // 新连接还没准备好时，先显示断线前的内容
+  /**
+   * 计算视图，并做随之而来的状态更新（见 `sync`）。渲染和取快照都走这里；只想看一眼当前视图时用 `buildView`。
+   */
+  private refresh(): ControllerView {
+    // 新连接已经就绪：不再需要断线前留下来显示的旧数据
     if (this.service?.initialized) this.staleService = undefined;
     if (this.stream?.status.kind === 'live') this.staleStream = undefined;
+    const built = this.buildView();
+    this.sync(built);
+    return built.view;
+  }
+
+  /**
+   * 投影带出来的状态更新：记下工具调用和文件改动历史（打开 Diff、审批预览要用），
+   * 读取新出现的每轮改动汇总，撤掉已经进了历史或 dsh 队列的本地回显。
+   */
+  private sync({ projection, sessionId, service, canLoadChanges }: ReturnType<ChatController['buildView']>): void {
+    this.toolCalls = projection.toolCalls;
+    this.fileHistory = projection.fileHistory;
+    if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
+    if (sessionId && canLoadChanges) this.loadChanges(sessionId, projection.changeSeqs);
+    // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
+    if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
+      service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
+    }
+  }
+
+  /** 从当前状态算出视图。除了更新投影缓存，不改任何状态。 */
+  private buildView(): { view: ControllerView; projection: Projection; sessionId: string | undefined; service: SessionService | undefined; canLoadChanges: boolean } {
+    // 新连接还没准备好时，先显示断线前的内容
     const service = this.service?.initialized ? this.service : (this.staleService ?? this.service);
     const sessionId = this.activeId;
     const stream = this.stream?.status.kind !== 'live' && this.staleStream?.sessionId === sessionId ? this.staleStream : this.stream;
@@ -749,20 +1090,15 @@ export class ChatController {
       inbox: projections.inbox,
       changes,
     }, this.eventsMemo.value);
-    this.toolCalls = projection.toolCalls;
-    if (projection.missingCredentialRef) this.credentialRef = projection.missingCredentialRef;
-    if (sessionId && streamLive && !showingStale) this.loadChanges(sessionId, projection.changeSeqs);
-    // 已经出现在历史或 dsh 队列里的本地回显撤掉：之后从队列里删除的消息不能再以回显的形式冒出来
-    if (sessionId && service && (projection.persistedRequestIds.size > 0 || projection.queuedRequestIds.size > 0)) {
-      service.retirePending(sessionId, new Set([...projection.persistedRequestIds, ...projection.queuedRequestIds]));
-    }
+    // 审批卡片要查本次投影里的工具调用（上一次 sync 记下的可能还没有它）
+    const viewContext: ViewContext = { toolCalls: projection.toolCalls, workspacePath: this.workspacePath, dirtyFiles: this.workbench.dirtyFiles() };
 
     const streamStatus = stream?.status;
     // follow 流就绪后以事件日志为准；会话列表里的 running 由通知触发刷新，会滞后
     const running = streamLive ? projection.turnOpen : projection.turnOpen || (summary?.running ?? false);
     const session: SessionHeader = {
       ...(sessionId ? { id: sessionId } : {}),
-      title: sessionId ? titleOf(projections, projection.items) : newSessionTitle(),
+      title: sessionId ? this.titleFor(sessionId, projections, projection.items) : newSessionTitle(),
       running,
       hasOlder: stream?.journal.hasOlder ?? false,
       loadingOlder: stream?.loadingOlder ?? false,
@@ -774,6 +1110,9 @@ export class ChatController {
       ...todosOf(projections),
       ...goalOf(projections),
       ...(this.options.folderLabel?.() ? { folder: this.options.folderLabel() } : {}),
+      ...(projection.sessionChanges ? { changes: projection.sessionChanges } : {}),
+      ...(running && this.eventsMemo.value.turnStartedAt !== undefined ? { runningSince: this.eventsMemo.value.turnStartedAt } : {}),
+      ...(sessionId && this.parentOf(sessionId) ? { subagentOf: { parentId: this.parentOf(sessionId)! } } : {}),
     };
 
     const attention = this.interactions?.sessionsNeedingAttention() ?? new Set<string>();
@@ -785,7 +1124,7 @@ export class ChatController {
       ...(attention.has(s.sessionId) ? { needsAttention: true } : {}),
     }));
 
-    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => interactionView(p, this.viewContext())) : [];
+    const interactions = sessionId ? (this.interactions?.pendingFor(sessionId) ?? []).map((p) => interactionView(p, viewContext)) : [];
     const catalog = service?.permissions;
     const currentPermission = sessionId
       ? (projections.permissions as { currentValue?: string } | undefined)?.currentValue
@@ -795,52 +1134,58 @@ export class ChatController {
       ...(currentPermission ? { current: currentPermission } : {}),
     };
 
-    return {
+    const view: ControllerView = {
       sessionKey: sessionId ?? '',
       sessions,
+      tabs: this.tabsState(service, session, attention),
       session,
-      items: projection.items,
+      items: this.options.showTurnChanges?.() === false ? projection.items.filter((item) => item.kind !== 'changes') : projection.items,
       models: buildModelState(projections, service?.models, this.draftModel),
       interactions,
       permissions,
       workspace: { dirtyFiles: this.workbench.dirtyFiles().length },
-      context: this.contextState(),
+      context: this.editorContext.state(),
       commands: [...pluginCommands().map((c) => ({ ...c, source: 'plugin' as const })), ...this.dshCommands],
     };
+    return { view, projection, sessionId, service, canLoadChanges: streamLive && !showingStale };
   }
 
-  private contextState(): ContextState {
-    const view = (a: ContextAttachment) => ({
-      kind: a.kind,
-      path: displayPath(a.path, this.workspacePath),
-      ...(a.kind === 'selection' ? { startLine: a.startLine, endLine: a.endLine } : {}),
-    });
-    const active = this.snapshotAttachment(this.workbench.activeEditor());
-    return {
-      ...(active ? { active: { ...view(active), key: active.kind === 'file' ? `f:${active.path}` : `s:${active.path}:${active.startLine}-${active.endLine}` } } : {}),
-      includeActiveByDefault: this.options.includeActiveEditor?.() ?? true,
-      pinned: this.pinned.map((p) => ({ ...view(p), id: p.id })),
-    };
-  }
-
-  /** 读取还没读过的改动汇总。Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。 */
+  /**
+   * 读取还没读过的改动汇总。新的轮次先读，同时最多 SUMMARY_CONCURRENCY 个请求。
+   * Host 重启后汇总不再可用，记为 unavailable，投影退回按文件工具汇总。
+   */
   private loadChanges(sessionId: string, seqs: readonly number[]): void {
+    const fresh = seqs.filter((seq) => !this.changes.has(`${sessionId}:${seq}`));
+    if (fresh.length === 0) return;
+    for (const seq of fresh) this.changes.set(`${sessionId}:${seq}`, 'loading');
+    this.summaryQueue = [...[...fresh].reverse().map((seq) => ({ sessionId, seq })), ...this.summaryQueue];
+    this.pumpSummaries();
+  }
+
+  private pumpSummaries(): void {
     const client = this.service?.client;
     if (!client) return;
-    for (const seq of seqs) {
-      const key = `${sessionId}:${seq}`;
-      if (this.changes.has(key)) continue;
-      this.changes.set(key, 'loading');
-      void client.changesSummary(sessionId, seq).then(
-        (summary) => this.changes.set(key, summary),
-        (error: unknown) => {
-          if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
-          this.changes.set(key, 'unavailable');
-        },
-      ).finally(() => {
-        this.changesVersion++;
-        this.scheduleRender();
-      });
+    while (this.summariesInFlight < SUMMARY_CONCURRENCY) {
+      const next = this.summaryQueue.shift();
+      if (!next) return;
+      const key = `${next.sessionId}:${next.seq}`;
+      if (this.changes.get(key) !== 'loading') continue;
+      this.summariesInFlight++;
+      void client
+        .changesSummary(next.sessionId, next.seq)
+        .then(
+          (summary) => this.changes.set(key, summary),
+          (error: unknown) => {
+            if (!(error instanceof ChangesUnavailableError)) this.options.log(`读取改动汇总失败：${describe(error)}`);
+            this.changes.set(key, 'unavailable');
+          },
+        )
+        .finally(() => {
+          this.summariesInFlight--;
+          this.changesVersion++;
+          this.scheduleRender();
+          this.pumpSummaries();
+        });
     }
   }
 

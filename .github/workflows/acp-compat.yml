@@ -1,0 +1,100 @@
+# 用真实的 ACP 代理 + 本地假模型跑界面端到端测试（不需要 API Key 或账号）。
+# 覆盖 oh-my-pi（omp acp）、CodeBuddy（codebuddy --acp）和 Claude（claude-agent-acp）：latest 用来提前发现破坏性变更，固定版本是插件测试过的版本。
+name: ACP compatibility
+
+on:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+env:
+  # 与 scripts/playwright-lite.ts 的约定一致：使用全局安装的 playwright
+  PLAYWRIGHT_VERSION: '1.63.0'
+
+jobs:
+  oh-my-pi:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        omp: ['18.18.0', latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: pnpm install --frozen-lockfile
+      - name: Install oh-my-pi ${{ matrix.omp }}
+        run: bun install -g "@oh-my-pi/pi-coding-agent@${{ matrix.omp }}" && omp --version
+      - name: Install Playwright and Chromium
+        run: npm install -g "playwright@${PLAYWRIGHT_VERSION}" && npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+      - name: UI end-to-end test
+        run: |
+          pnpm build
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck acp-e2e -- --omp "$(command -v omp)" --out "$GITHUB_WORKSPACE/acp-screenshots"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-omp-${{ matrix.omp }}
+          path: acp-screenshots/
+
+  codebuddy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        codebuddy: ['2.181.0', latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install CodeBuddy ${{ matrix.codebuddy }}
+        run: npm install -g "@tencent-ai/codebuddy-code@${{ matrix.codebuddy }}" && codebuddy --version
+      - name: Install Playwright and Chromium
+        run: npm install -g "playwright@${PLAYWRIGHT_VERSION}" && npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+      - name: UI end-to-end test
+        run: |
+          pnpm build
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck acp-e2e -- --codebuddy "$(command -v codebuddy)" --out "$GITHUB_WORKSPACE/acp-screenshots"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-codebuddy-${{ matrix.codebuddy }}
+          path: acp-screenshots/
+
+  claude:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: ['0.101.0', latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Claude ACP adapter ${{ matrix.adapter }}
+        run: npm install -g "@agentclientprotocol/claude-agent-acp@${{ matrix.adapter }}" && command -v claude-agent-acp
+      - name: Install Playwright and Chromium
+        run: npm install -g "playwright@${PLAYWRIGHT_VERSION}" && npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+      - name: UI end-to-end test
+        run: |
+          pnpm build
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck acp-e2e -- --claude "$(command -v claude-agent-acp)" --out "$GITHUB_WORKSPACE/acp-screenshots"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-claude-${{ matrix.adapter }}
+          path: acp-screenshots/

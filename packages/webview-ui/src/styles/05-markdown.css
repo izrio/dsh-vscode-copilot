@@ -1,0 +1,176 @@
+/* ---------- Markdown ---------- */
+
+.markdown {
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote {
+  margin: 0.5em 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+
+.markdown strong,
+.markdown b {
+  color: var(--text-strong);
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  color: var(--text-strong);
+  margin: 0.9em 0 0.4em;
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.markdown h1 {
+  font-size: 1.2em;
+}
+
+.markdown a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.markdown a:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--border));
+  color: var(--muted);
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * 行内代码：正文颜色 + 淡淡的中性底色和描边，用等宽字体区分。
+ * 一定要写 color：VS Code 注入的默认样式把 code 设成主题的 textPreformat 色（很多深色主题是橙色），太抢眼。
+ */
+.inline-code {
+  padding: 0.5px 5px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+  color: color-mix(in srgb, var(--vscode-foreground) 92%, transparent);
+  font-family: var(--mono);
+  font-size: 0.88em;
+  /* 跨行时每一段都有完整的描边和圆角 */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* 回复里提到的文件路径：可以点开 */
+button.inline-code--link {
+  font-size: 0.88em;
+  line-height: inherit;
+  color: var(--link);
+  cursor: pointer;
+}
+
+button.inline-code--link:hover {
+  text-decoration: underline;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown th,
+.markdown td {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.md-image-placeholder {
+  color: var(--muted);
+}
+
+.code-block {
+  margin: 0.6em 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, var(--surface));
+  overflow: hidden;
+}
+
+.code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 0 10px;
+  min-height: 24px;
+  color: color-mix(in srgb, var(--vscode-foreground) 70%, transparent);
+  font-size: 0.85em;
+}
+
+.code-block__bar .icon-button {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.code-block:hover .icon-button,
+.code-block .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.code-block__body {
+  margin: 0;
+  padding: 0 10px 8px;
+  overflow-x: auto;
+  background: transparent;
+  font-family: var(--mono);
+  /* 跟随对话文字的字号（不用编辑器字号）：等宽字体看起来偏大，再小一点才和正文协调 */
+  font-size: 0.88em;
+  line-height: 1.55;
+}
+
+/* VS Code 给 Webview 注入的默认样式会给 code 加底色和内边距，代码块里不需要 */
+.code-block__body code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* shiki 双主题：根据 VS Code 设置在 body 上的主题类选择配色 */
+.vscode-light .shiki span,
+.vscode-high-contrast-light .shiki span {
+  color: var(--shiki-light);
+}
+
+.vscode-dark .shiki span,
+.vscode-high-contrast .shiki span {
+  color: var(--shiki-dark);
+}

@@ -8,17 +8,25 @@
  */
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, relative } from 'node:path';
-import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, SessionSummaryWire } from './DshClient.ts';
-import { isMethodUnavailable } from './remote/errors.ts';
+import type { DshClient, ModelCatalog, ModelSelection, PermissionCatalog, PromptImageInput, SessionSummaryWire } from './DshClient.ts';
+import { isMethodUnavailable, RemoteError } from './remote/errors.ts';
+import { t } from '../i18n.ts';
 
 export type Projections = Readonly<Record<string, unknown>>;
 
 export interface PendingPrompt {
   readonly requestId: string;
   readonly text: string;
+  /** 随消息发送的图片；保留内容，失败重试时原样再发。 */
+  readonly images?: readonly PendingImage[];
   readonly sentAt: number;
   readonly state: 'sending' | 'accepted' | 'failed';
   readonly error?: string;
+}
+
+export interface PendingImage extends PromptImageInput {
+  /** Webview 里这张图片的标识，本地回显据此显示。 */
+  readonly localId: string;
 }
 
 export interface SessionServiceOptions {
@@ -34,6 +42,8 @@ const LIST_EVENTS = ['api-session/added', 'api-session/removed', 'api-session/st
 export class SessionService {
   private workspaceId: string | undefined;
   private summaries: SessionSummaryWire[] = [];
+  /** 子代理会话 → 父会话。 */
+  private children = new Map<string, string>();
   private readonly projectionValues = new Map<string, Record<string, unknown>>();
   private readonly pendingBySession = new Map<string, PendingPrompt[]>();
   private catalog: ModelCatalog | undefined;
@@ -65,6 +75,11 @@ export class SessionService {
   /** 当前工作区的会话，按最近更新排序；空白会话不列出。 */
   get sessions(): readonly SessionSummaryWire[] {
     return this.summaries;
+  }
+
+  /** 子代理会话的父会话 id；不是子代理会话（或还没读到）时为 undefined。子代理会话不出现在会话列表里。 */
+  parentOf(sessionId: string): string | undefined {
+    return this.children.get(sessionId);
   }
 
   /** 重新读取模型目录（例如刚配置了 API Key）。 */
@@ -149,13 +164,15 @@ export class SessionService {
    * 发送一条消息。立即加入本地回显；失败时回显标记为失败，可以重试。
    * @returns requestId。
    */
-  async prompt(sessionId: string, text: string, requestId: string = randomUUID()): Promise<string> {
-    this.setPending(sessionId, requestId, { requestId, text, sentAt: Date.now(), state: 'sending' });
+  async prompt(sessionId: string, text: string, requestId: string = randomUUID(), images: readonly PendingImage[] = []): Promise<string> {
+    this.setPending(sessionId, requestId, { requestId, text, ...(images.length ? { images } : {}), sentAt: Date.now(), state: 'sending' });
     try {
-      await this.client.prompt(sessionId, text, requestId);
+      await this.client.prompt(sessionId, text, requestId, images);
       this.updatePending(sessionId, requestId, { state: 'accepted' });
     } catch (error) {
-      this.updatePending(sessionId, requestId, { state: 'failed', error: describe(error) });
+      // 图片被 dsh 拒绝时给出能看懂的原因，其他错误保留原文
+      const reason = error instanceof RemoteError && error.code.startsWith('session/attachment') ? t('send.imageInvalid') : describe(error);
+      this.updatePending(sessionId, requestId, { state: 'failed', error: reason });
       throw error;
     }
     return requestId;
@@ -215,6 +232,9 @@ export class SessionService {
   private async refreshList(): Promise<void> {
     try {
       const all = await this.client.listSessions(this.abort.signal);
+      this.children = new Map(
+        all.filter((summary) => summary.parentSessionId && isInside(this.options.workspacePath, summary.cwd)).map((summary) => [summary.sessionId, summary.parentSessionId!]),
+      );
       this.summaries = all
         .filter((summary) => !summary.blank && summary.origin !== 'subagent' && !summary.parentSessionId)
         .filter((summary) => isInside(this.options.workspacePath, summary.cwd))

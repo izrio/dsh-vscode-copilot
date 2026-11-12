@@ -110,6 +110,14 @@ const commandListSchema = z.array(
 );
 export type DshCommand = z.infer<typeof commandListSchema>[number];
 
+/** `skills/list`：会话能用的 skill（dsh 的 skill 不在 commands/list 里，用 `/name` 调用）。 */
+const skillListSchema = z
+  .object({
+    skills: z.array(z.object({ name: z.string(), description: z.string().optional(), whenToUse: z.string().optional() }).loose()),
+  })
+  .loose();
+export type DshSkill = z.infer<typeof skillListSchema>['skills'][number];
+
 const fileReferencesSchema = z.array(z.object({ path: z.string(), kind: z.enum(['file', 'directory']) }));
 
 /** `/api/changes.summary`：一轮里改动过的文件（包括命令造成的）。 */
@@ -149,6 +157,24 @@ const changesDiffSchema = z.union([
   z.object({ kind: z.enum(['binary', 'oversized']), path: z.string() }).loose(),
 ]);
 export type ChangesDiff = z.infer<typeof changesDiffSchema>;
+
+const attachmentValue = z.object({ attachment: z.object({ mediaType: z.string() }).loose(), data: z.string() });
+
+/** 随消息发送的一张图片。 */
+export interface PromptImageInput {
+  readonly mediaType: string;
+  /** base64，不带 data: 前缀。 */
+  readonly data: string;
+  readonly name?: string;
+}
+
+/**
+ * 会话地址。子代理的会话必须带上父会话（dsh 拒绝直接按 id 读取：「subagent Sessions require their durable parent address」）；
+ * mode 填 unknown，由 dsh 按子代理的记录核对。
+ */
+export function sessionAddress(sessionId: string, parentId?: string): Record<string, string> {
+  return parentId ? { kind: 'subagent', parentSessionId: parentId, childSessionId: sessionId, mode: 'unknown' } : { kind: 'session', sessionId };
+}
 
 /** 改动汇总只保存在 Host 内存里，Host 重启后返回 404。 */
 export class ChangesUnavailableError extends Error {
@@ -214,12 +240,17 @@ export class DshClient {
   }
 
   /**
-   * 发送一条文本消息。`requestId` 由插件生成，重试时复用同一个可以避免重复插入。
+   * 发送一条消息（文字和图片）。`requestId` 由插件生成，重试时复用同一个可以避免重复插入。
+   * 图片直接以 base64 放进 content，dsh 收下后转存成附件（历史里是 `{ type: 'image', attachment }`）。
    * @returns 本次请求的 requestId。
    */
-  async prompt(sessionId: string, text: string, requestId: string = randomUUID()): Promise<string> {
+  async prompt(sessionId: string, text: string, requestId: string = randomUUID(), images: readonly PromptImageInput[] = []): Promise<string> {
+    const content = [
+      ...(text.trim() ? [{ type: 'text', text }] : []),
+      ...images.map((image) => ({ type: 'image', mediaType: image.mediaType, data: image.data, ...(image.name ? { name: image.name } : {}) })),
+    ];
     const value = await this.unary.call('session/prompt', {
-      request: { requestId, sessionId, mode: 'queue', content: [{ type: 'text', text }] },
+      request: { requestId, sessionId, mode: 'queue', content },
     });
     parse(acceptedValue, value, 'session/prompt');
     return requestId;
@@ -229,9 +260,9 @@ export class DshClient {
    * 读取 `beforeSeq` 之前的一页历史，按轮次对齐。优先用 `session/events`，不可用时回退到 `session/page`。
    * 两者请求格式相同；0.2.1-rc.5 要求必须带 throughSeq。
    */
-  async readHistory(sessionId: string, beforeSeq: number, throughSeq: number, signal?: AbortSignal): Promise<{ records: WireEvent[]; hasMore: boolean }> {
+  async readHistory(sessionId: string, beforeSeq: number, throughSeq: number, signal?: AbortSignal, parentId?: string): Promise<{ records: WireEvent[]; hasMore: boolean }> {
     const request = {
-      address: { kind: 'session', sessionId },
+      address: sessionAddress(sessionId, parentId),
       throughSeq,
       beforeSeq,
       turnWindow: { minMessages: 50, minTurns: 2 },
@@ -280,6 +311,11 @@ export class DshClient {
     return parse(commandListSchema, await this.unary.call('commands/list', { agentId: sessionId }), 'commands/list');
   }
 
+  /** 会话能用的 skill（`/name` 调用）。旧版本 dsh 没有这个方法时抛错，调用方当作没有 skill。 */
+  async skills(sessionId: string): Promise<DshSkill[]> {
+    return parse(skillListSchema, await this.unary.call('skills/list', { request: { sessionId } }), 'skills/list').skills;
+  }
+
   /**
    * `@` 引用的候选：会话工作目录下的文件和目录。
    * @param query - `@` 后面的路径文本；以 `/` 结尾时列出目录内容。
@@ -302,17 +338,24 @@ export class DshClient {
     return parse(changesSummarySchema, await this.getJson('/api/changes.summary', { sessionId, seq: String(seq) }), 'changes.summary');
   }
 
-  /** 一轮里第 `index` 个文件的改动。 */
-  async changesDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
-    return parse(changesDiffSchema, await this.getJson('/api/changes.diff', { sessionId, seq: String(seq), index: String(index) }), 'changes.diff');
+  /** 读取消息里的一张图片（`session/attachment`）。 */
+  async attachment(sessionId: string, attachmentId: string): Promise<{ mediaType: string; data: string }> {
+    const value = parse(attachmentValue, await this.unary.call('session/attachment', { request: { sessionId, attachmentId } }), 'session/attachment');
+    return { mediaType: value.attachment.mediaType, data: value.data };
   }
 
-  private async getJson(path: string, query: Record<string, string>): Promise<unknown> {
+  /** 一轮里第 `index` 个文件的改动。 */
+  async changesDiff(sessionId: string, seq: number, index: number): Promise<ChangesDiff> {
+    // 用户点击后在等：比汇总的超时短，超时后提示，而不是长时间没有反应
+    return parse(changesDiffSchema, await this.getJson('/api/changes.diff', { sessionId, seq: String(seq), index: String(index) }, 15_000), 'changes.diff');
+  }
+
+  private async getJson(path: string, query: Record<string, string>, timeoutMs = 30_000): Promise<unknown> {
     const url = new URL(path, this.credential.origin);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
     let response: Response;
     try {
-      response = await this.fetchImpl(url.toString(), { method: 'GET', headers: { cookie: this.credential.cookie }, signal: AbortSignal.timeout(30_000) });
+      response = await this.fetchImpl(url.toString(), { method: 'GET', headers: { cookie: this.credential.cookie }, signal: AbortSignal.timeout(timeoutMs) });
     } catch (cause) {
       throw new TransportError(`${path} 请求失败`, { cause });
     }
@@ -354,11 +397,11 @@ export class DshClient {
    * 跟随一个会话：先给开场快照，之后是增量。带 `assistantStream: true` 才有逐字流。
    * 无法识别的帧会跳过并记日志，不中断整个流。
    */
-  async *follow(sessionId: string, signal?: AbortSignal, log: (line: string) => void = () => undefined): AsyncGenerator<FollowFrame> {
+  async *follow(sessionId: string, signal?: AbortSignal, log: (line: string) => void = () => undefined, parentId?: string): AsyncGenerator<FollowFrame> {
     // 与官方客户端相同的开场窗口：至少 50 条消息、跨过至少两轮（历史不够时给全部）
     const stream = this.mux.open(
       'session/follow',
-      { request: { address: { kind: 'session', sessionId }, assistantStream: true, turnWindow: { minMessages: 50, minTurns: 2 } } },
+      { request: { address: sessionAddress(sessionId, parentId), assistantStream: true, turnWindow: { minMessages: 50, minTurns: 2 } } },
       signal,
     );
     for await (const raw of stream) {

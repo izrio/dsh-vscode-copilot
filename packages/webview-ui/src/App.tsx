@@ -1,13 +1,17 @@
-import { useEffect } from 'react';
-import type { HostToWebview } from '@dsh-copilot/shared';
+import { useEffect, useState } from 'react';
+import type { HostToWebview } from '@harness-deck/shared';
 import { applyHostMessage, requestPrefill, useView } from './store.ts';
 import { postToHost } from './vscode.ts';
+import { BackendChooser } from './components/BackendChooser.tsx';
+import { BackendLogo } from './components/BackendLogo.tsx';
+import { HarnessDeckLogo } from './components/HarnessDeckLogo.tsx';
 import { Composer } from './components/Composer.tsx';
 import { Header } from './components/Header.tsx';
 import { RuntimeBanner } from './components/RuntimeBanner.tsx';
+import { TabBar } from './components/TabBar.tsx';
 import { Thread } from './components/Thread.tsx';
 import { Toasts } from './components/Toasts.tsx';
-import { BeakerIcon, BookIcon, BugIcon, DiffIcon, GlobeIcon, KeyIcon, SparkleIcon, SpinnerIcon } from './components/icons.tsx';
+import { BeakerIcon, BookIcon, BugIcon, ChevronDownIcon, DiffIcon, FolderIcon, GlobeIcon, KeyIcon, SpinnerIcon } from './components/icons.tsx';
 import type { MessageKey } from './i18n.ts';
 import { useT } from './i18n.ts';
 
@@ -26,13 +30,38 @@ export function App() {
   // 打开已有会话、follow 还没拿到快照：显示加载中，而不是"新对话"的空状态
   const opening = useView((s) => s.session.id !== undefined && s.items.length === 0 && s.session.sync === 'opening');
   const t = useT();
+  const appearance = useView((s) => s.appearance);
+  // 第一次使用：先选底层（选择卡片占满对话区；运行时横幅这时只会干扰）
+  const needsChoice = useView((s) => s.backends.needsChoice === true && s.backends.items.length > 1);
+
+  // 字号和字体通过 CSS 变量生效；不设置时样式表里跟随 VS Code（字号大 1px）
+  useEffect(() => {
+    const style = document.documentElement.style;
+    const apply = (name: string, value: string | undefined) => (value ? style.setProperty(name, value) : style.removeProperty(name));
+    apply('--hd-font-size', appearance.fontSize ? `${appearance.fontSize}px` : undefined);
+    apply('--hd-font-family', appearance.fontFamily);
+    apply('--hd-code-font-family', appearance.codeFontFamily);
+    // 配色：默认柔和，「跟随主题」时直接用主题前景色（见 styles/01-base.css 的文字层级变量）
+    document.documentElement.dataset.palette = appearance.palette ?? 'soft';
+  }, [appearance]);
 
   return (
     <div className="app">
       <Header />
-      <RuntimeBanner status={runtime} connection={connection} />
+      <TabBar />
+      {needsChoice ? null : <RuntimeBanner status={runtime} connection={connection} />}
       {failure ? <div className="banner banner--warn banner--inline">{t('session.failed', failure)}</div> : null}
-      {opening ? <SessionLoading /> : empty ? <EmptyState /> : <Thread />}
+      {needsChoice ? (
+        <div className="empty empty--chooser">
+          <BackendChooser welcome />
+        </div>
+      ) : opening ? (
+        <SessionLoading />
+      ) : empty ? (
+        <EmptyState />
+      ) : (
+        <Thread />
+      )}
       <Toasts />
       <Composer />
     </div>
@@ -45,7 +74,7 @@ function EmptyState() {
   if (needsApiKey) {
     return (
       <div className="empty" data-testid="api-key-setup">
-        <div className="empty__logo empty__logo--key">
+        <div className="home__logo home__logo--key" aria-hidden="true">
           <KeyIcon />
         </div>
         <p className="empty__title">{t('apiKey.title')}</p>
@@ -63,20 +92,73 @@ function EmptyState() {
       </div>
     );
   }
-  return (
-    <div className="empty">
-      <div className="empty__logo">
-        <SparkleIcon />
+  return <Home />;
+}
+
+/** 首页：标识、当前底层和工作区、示例任务、输入提示。点底层标签打开选择卡片。 */
+function Home() {
+  const t = useT();
+  const [choosing, setChoosing] = useState(false);
+  const backends = useView((s) => s.backends);
+  const folder = backends.workspace;
+  const current = backends.items.find((b) => b.id === backends.active);
+  if (choosing) {
+    return (
+      <div className="empty empty--chooser">
+        <BackendChooser welcome={false} onClose={() => setChoosing(false)} />
       </div>
-      <p className="empty__title">{t('empty.title')}</p>
-      <p className="empty__hint">{t('empty.hint')}</p>
+    );
+  }
+  return (
+    <div className="empty home">
+      <div className="home__hero">
+        <div className="home__logo" aria-hidden="true">
+          <HarnessDeckLogo />
+        </div>
+        <p className="empty__title">{t('empty.title')}</p>
+        <p className="empty__hint">{t('empty.hint')}</p>
+        <div className="home__context">
+          {current && backends.items.length > 1 ? (
+            <button type="button" className="home__chip home__chip--backend" data-testid="home-backend" title={t('home.switchBackend')} onClick={() => setChoosing(true)}>
+              <BackendLogo backend={current} size="sm" />
+              {current.name}
+              {current.available === false ? <span className="status-dot status-dot--missing" title={t('backend.missing')} /> : null}
+              <ChevronDownIcon />
+            </button>
+          ) : null}
+          {folder ? (
+            <span className="home__chip" title={folder}>
+              <FolderIcon />
+              {folder}
+            </span>
+          ) : null}
+        </div>
+      </div>
       <div className="suggestions" data-testid="suggestions">
         {SUGGESTIONS.map(({ key, icon }) => (
           <button key={key} type="button" className="suggestion" onClick={() => requestPrefill(t(`empty.suggest.${key}Prompt` as MessageKey))}>
-            <span className="suggestion__icon">{icon}</span>
-            <span className="suggestion__title">{t(`empty.suggest.${key}` as MessageKey)}</span>
+            <span className={`suggestion__icon suggestion__icon--${key}`}>{icon}</span>
+            <span className="suggestion__text">
+              <span className="suggestion__title">{t(`empty.suggest.${key}` as MessageKey)}</span>
+              <span className="suggestion__desc">{t(`empty.suggest.${key}Desc` as MessageKey)}</span>
+            </span>
           </button>
         ))}
+      </div>
+      <div className="home__tips" aria-hidden="true">
+        <span>
+          <kbd>@</kbd>
+          {t('home.tips.mention')}
+        </span>
+        <span>
+          <kbd>/</kbd>
+          {t('home.tips.command')}
+        </span>
+        <span>
+          <kbd>⇧</kbd>
+          <kbd>↵</kbd>
+          {t('home.tips.newline')}
+        </span>
       </div>
     </div>
   );

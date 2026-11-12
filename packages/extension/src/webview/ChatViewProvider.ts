@@ -4,18 +4,20 @@
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@dsh-copilot/shared';
+import { parseWebviewMessage, type HostToWebview, type WebviewToHost } from '@harness-deck/shared';
 
 export interface ChatViewHost {
   /** 已校验的 Webview 消息。 */
   readonly onMessage: (message: WebviewToHost) => void;
-  /** 视图第一次打开时调用（用于按需启动 dsh）。 */
+  /** 视图打开、或隐藏后重新显示时调用（用于按需启动底层）。 */
   readonly onViewVisible: () => void;
+  /** 界面语言（写进 `<html lang>`，读屏据此选择发音）。 */
+  readonly locale?: () => 'zh' | 'en';
   readonly log: (line: string) => void;
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewId = 'dsh.chatView';
+  static readonly viewId = 'harnessDeck.chatView';
   private view: vscode.WebviewView | undefined;
 
   constructor(
@@ -27,7 +29,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const webviewRoot = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
     view.webview.options = { enableScripts: true, localResourceRoots: [webviewRoot] };
-    view.webview.html = renderHtml(view.webview, webviewRoot);
+    view.webview.html = renderHtml(view.webview, webviewRoot, this.host.locale?.() ?? 'zh');
     view.webview.onDidReceiveMessage((raw: unknown) => {
       const message = parseWebviewMessage(raw);
       if (message) this.host.onMessage(message);
@@ -35,6 +37,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
     view.onDidDispose(() => {
       if (this.view === view) this.view = undefined;
+    });
+    // 隐藏后重新显示：resolveWebviewView 不会再调用，这里补上（面板隐藏期间切换的底层在这时启动）
+    view.onDidChangeVisibility(() => {
+      if (view.visible) this.host.onViewVisible();
     });
     this.host.onViewVisible();
   }
@@ -49,7 +55,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
-function renderHtml(webview: vscode.Webview, root: vscode.Uri): string {
+function renderHtml(webview: vscode.Webview, root: vscode.Uri, locale: 'zh' | 'en'): string {
   const nonce = randomBytes(16).toString('base64');
   const script = webview.asWebviewUri(vscode.Uri.joinPath(root, 'index.js'));
   const style = webview.asWebviewUri(vscode.Uri.joinPath(root, 'index.css'));
@@ -62,7 +68,7 @@ function renderHtml(webview: vscode.Webview, root: vscode.Uri): string {
     `script-src 'nonce-${nonce}' ${webview.cspSource}`,
   ].join('; ');
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale === 'zh' ? 'zh-CN' : 'en'}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

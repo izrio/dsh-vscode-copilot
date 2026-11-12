@@ -7,15 +7,18 @@
  * - 工具调用按类型渲染：命令一行、文件修改带增删行数、连续的只读操作合并成一行「浏览」；
  * - 一轮结束时的 `workspace/changes` 渲染成改动汇总卡片（汇总内容由调用方从 Host 读取后传入）。
  */
-import type { ChangedFileView, Item, LineStats } from '@dsh-copilot/shared';
-import { isAbsolute, relative, resolve } from 'node:path';
-import type { ChangesSummary } from '../dsh/DshClient.ts';
-import type { PendingPrompt } from '../dsh/SessionService.ts';
-import { liveBlocksText, type WireEvent } from '../dsh/remote/follow.ts';
-import type { LiveAttempt } from '../dsh/session/journal.ts';
-import { splitContext } from './context.ts';
-import { countLines, lineStats, sumStats, type ToolDiff } from './diffs.ts';
-import { t } from '../i18n.ts';
+import { joinLabel, splitLabel, type ChangedFileView, type ImageView, type Item, type LineStats, type SessionChangesView } from '@harness-deck/shared';
+import { resolve } from 'node:path';
+import type { ChangesSummary } from '../DshClient.ts';
+import type { PendingPrompt } from '../SessionService.ts';
+import { liveBlocksText, type WireEvent } from '../remote/follow.ts';
+import type { LiveAttempt } from '../session/journal.ts';
+import { splitContext } from '../../vm/context.ts';
+import { countLines, lineStats, sumStats, type ToolDiff } from '../../vm/diffs.ts';
+import { t } from '../../i18n.ts';
+import { canonicalTool } from '../../vm/toolNames.ts';
+import { displayPath } from '../../vm/paths.ts';
+import { activityLabel, FILE_KEYS, firstLine, parseArguments, stringArg, toolVariant } from '../../vm/toolRows.ts';
 
 /** 某一轮改动汇总的读取结果：还没读到时为 undefined。 */
 export type ChangesLookup = (seq: number) => ChangesSummary | 'unavailable' | undefined;
@@ -49,6 +52,24 @@ export interface ToolCallInfo {
   readonly created?: boolean;
 }
 
+/**
+ * 某个文件在一轮里的改动。按时间顺序排成文件的改动历史，用于打开累计 Diff（会话改动栏）和某一轮的 Diff。
+ * 能用会话日志里的工具片段还原时不必请求 dsh；命令造成的改动只能用 `/api/changes.diff` 的 hunk。
+ */
+export interface FileStep {
+  /** 本轮 `workspace/changes` 的序号和文件在汇总里的位置；汇总不可用或本轮还没结束时没有。 */
+  readonly turnSeq?: number;
+  readonly index?: number;
+  /** 本轮修改这个文件的工具调用（时间顺序）。 */
+  readonly calls: readonly string[];
+  /** 汇总里的增删行数，没有汇总时是工具片段的合计。 */
+  readonly stats: LineStats;
+  /** 来自 dsh 的汇总（包括命令造成的改动）。 */
+  readonly fromSummary: boolean;
+  readonly created: boolean;
+  readonly flags?: readonly ('binary' | 'oversized')[];
+}
+
 export interface Projection {
   readonly items: Item[];
   /** 已经出现在持久历史里的 requestId，用于撤掉本地回显。 */
@@ -62,20 +83,12 @@ export interface Projection {
   readonly missingCredentialRef?: string;
   /** 已经进入 dsh 队列的 requestId：本地回显可以撤掉（之后由队列或持久历史显示）。 */
   readonly queuedRequestIds: ReadonlySet<string>;
+  /** 绝对路径 → 改动历史。 */
+  readonly fileHistory: ReadonlyMap<string, readonly FileStep[]>;
+  readonly sessionChanges?: SessionChangesView;
 }
 
 const OUTPUT_LIMIT = 4_000;
-
-const COMMAND_TOOLS = new Set(['bash', 'pwsh', 'powershell', 'shell']);
-const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'apply_patch', 'notebook_edit']);
-const EXPLORE_TOOLS = new Set(['read', 'read_image', 'glob', 'grep', 'ls', 'list']);
-
-export function toolVariant(tool: string): 'command' | 'edit' | 'explore' | 'generic' {
-  if (COMMAND_TOOLS.has(tool)) return 'command';
-  if (EDIT_TOOLS.has(tool)) return 'edit';
-  if (EXPLORE_TOOLS.has(tool)) return 'explore';
-  return 'generic';
-}
 
 interface ContentBlock {
   readonly type?: string;
@@ -100,7 +113,14 @@ export interface EventsProjection {
   readonly toolCalls: ReadonlyMap<string, ToolCallInfo>;
   readonly changeSeqs: readonly number[];
   readonly missingCredentialRef?: string;
+  readonly fileHistory: ReadonlyMap<string, readonly FileStep[]>;
+  readonly sessionChanges?: SessionChangesView;
+  /** 进行中这一轮的开始时间。 */
+  readonly turnStartedAt?: number;
 }
+
+/** 短于这个时长的轮次不显示用时。 */
+const MIN_DURATION_MS = 1_000;
 
 /** 投影持久事件。结果只取决于 events、workspacePath 和 changes 的返回值。 */
 export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspacePath' | 'changes'>): EventsProjection {
@@ -112,9 +132,73 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
   const changeSeqs: number[] = [];
   let turnEdits: TurnEdit[] = [];
   let turnOpen = false;
+  let turnStartedAt: number | undefined;
   let missingCredentialRef: string | undefined;
   /** /permission 命令的预设显示名，命令结束时用。 */
   const permissionArgs = new Map<string, string>();
+  const fileHistory = new Map<string, FileStep[]>();
+  const pushStep = (path: string, step: FileStep) => {
+    const steps = fileHistory.get(path);
+    if (steps) steps.push(step);
+    else fileHistory.set(path, [step]);
+  };
+  /** 没有汇总可用的文件工具修改：按文件合并成一步。 */
+  const flushEdits = (edits: readonly TurnEdit[]) => {
+    for (const [path, group] of groupEdits(edits)) {
+      pushStep(path, { calls: group.map((e) => e.callId), stats: sumStats(group.map((e) => e.stats ?? ZERO)), fromSummary: false, created: group[0]?.created ?? false });
+    }
+  };
+
+  const handleUserMessage = (event: WireEvent, data: Record<string, unknown>): void => {
+    const source = data.source as { kind?: string; rpcId?: string } | undefined;
+    if (source?.kind !== 'user') return;
+    if (source.rpcId) persistedRequestIds.add(source.rpcId);
+    // 子代理会话的第一条消息：dsh 在任务后面追加了给子代理的说明（父代理 id、怎样回报），不显示
+    const content = Array.isArray(data.content)
+      ? (data.content as ContentBlock[]).filter((block) => !(block.type === 'text' && /^Your parent agent id is /u.test(block.text ?? '')))
+      : data.content;
+    const { text, attachments } = splitContext(textOf(content));
+    const images = imagesOf(data.content);
+    if (text || attachments.length || images.length) {
+      items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}), ...(images.length ? { images } : {}) });
+    }
+  };
+
+  /** 最近一次 subagent 工具调用（等它的 subagent/catalog）；子会话 id → 条目位置。 */
+  let lastSubagentCall: string | undefined;
+  const subagentIndex = new Map<string, number>();
+
+  /**
+   * 子代理结束的通知（`source.kind === 'subagent-settled'`）：更新对应子代理条目的状态和最终回答。
+   * 对应的条目不在已加载的历史里时单独显示一行。
+   * @returns 是这类通知（已处理，不再当作用户消息）。
+   */
+  const settleSubagent = (event: WireEvent, data: Record<string, unknown>): boolean => {
+    const source = data.source as { kind?: string; senderSessionId?: unknown; summary?: unknown } | undefined;
+    if (source?.kind !== 'subagent-settled') return false;
+    const childId = typeof source.senderSessionId === 'string' ? source.senderSessionId : undefined;
+    const { result, failed } = settledResult(data.content, typeof source.summary === 'string' ? source.summary : '');
+    const index = childId ? subagentIndex.get(childId) : undefined;
+    const previous = index !== undefined ? items[index] : undefined;
+    if (index !== undefined && previous?.kind === 'activity' && previous.subagent) {
+      items[index] = {
+        ...previous,
+        status: failed ? 'error' : 'ok',
+        subagent: { ...previous.subagent, state: failed ? 'failed' : 'done', endedAt: event.time, ...(result ? { result } : {}) },
+      };
+      return true;
+    }
+    items.push({
+      kind: 'activity',
+      id: `s:${event.seq}`,
+      tool: 'subagent',
+      variant: 'subagent',
+      label: t('subagent.untitled'),
+      status: failed ? 'error' : 'ok',
+      subagent: { state: failed ? 'failed' : 'done', endedAt: event.time, ...(childId ? { childId } : {}), ...(result ? { result } : {}) },
+    });
+    return true;
+  };
 
   const openExplore = (): number | undefined => {
     const index = items.length - 1;
@@ -125,18 +209,17 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     if (event.surfaceOp !== undefined && event.surfaceOp !== 'append') continue;
     const data = (event.data ?? {}) as Record<string, unknown>;
     switch (event.type) {
+      case 'user/message':
+        if (settleSubagent(event, data)) break;
+        handleUserMessage(event, data);
+        break;
       case 'turn/start':
         turnOpen = true;
+        turnStartedAt = event.time;
+        // 上一轮没有 workspace/changes（中断、旧版 dsh）：工具修改单独记一步
+        flushEdits(turnEdits);
         turnEdits = [];
         break;
-      case 'user/message': {
-        const source = data.source as { kind?: string; rpcId?: string } | undefined;
-        if (source?.kind !== 'user') break;
-        if (source.rpcId) persistedRequestIds.add(source.rpcId);
-        const { text, attachments } = splitContext(textOf(data.content));
-        if (text || attachments.length) items.push({ kind: 'user', id: `u:${event.seq}`, text, ...(attachments.length ? { attachments } : {}) });
-        break;
-      }
       case 'command/run': {
         // 斜杠命令（/compact、/plan 等）不产生用户消息，只有 command/run 和 command/done
         const commandId = typeof data.commandId === 'string' ? data.commandId : `seq-${event.seq}`;
@@ -165,7 +248,7 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         items[at.index] = {
           ...previous,
           status: data.kind === 'error' ? 'error' : 'ok',
-          label: result ? `${previous.label}  ${firstLine(result)}` : previous.label,
+          label: result ? joinLabel(previous.label, firstLine(result)) : previous.label,
           ...(result.includes('\n') ? { output: truncate(result) } : {}),
         };
         break;
@@ -191,15 +274,17 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
         const callId = typeof data.callId === 'string' ? data.callId : `seq-${event.seq}`;
         const tool = typeof data.name === 'string' ? data.name : 'tool';
         const args = parseArguments(data.arguments);
-        const file = stringArg(args, 'file_path', 'notebook_path', 'path');
+        const file = stringArg(args, ...FILE_KEYS, 'path');
         const path = file && input.workspacePath ? resolve(input.workspacePath, file) : file;
         toolCalls.set(callId, { callId, tool, args, ...(path ? { path } : {}), status: 'running' });
         // 待办由输入框上方的状态条显示，不在对话流里重复
-        if (tool === 'todo_write') break;
+        if (canonicalTool(tool) === 'todo_write') break;
         const variant = toolVariant(tool);
         const label = activityLabel(tool, args, input.workspacePath);
         if (variant === 'explore') {
-          const entry = { id: callId, label, status: 'running' as const };
+          // 读文件的那一步带上路径：浏览行展开后点它打开文件
+          const readsFile = file && ['read', 'read_image'].includes(canonicalTool(tool));
+          const entry = { id: callId, label, status: 'running' as const, ...(readsFile ? { path: displayPath(path ?? file, input.workspacePath) } : {}) };
           const index = openExplore();
           if (index !== undefined) {
             const group = items[index] as Explore;
@@ -212,6 +297,22 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           break;
         }
         itemIndex.set(callId, { index: items.length });
+        if (variant === 'subagent') {
+          // 显示委派任务的简短描述；子会话 id 由随后的 subagent/catalog 或工具结果补上
+          const description = stringArg(args, 'description', 'label', 'name');
+          const prompt = stringArg(args, 'prompt', 'task', 'message');
+          lastSubagentCall = callId;
+          items.push({
+            kind: 'activity',
+            id: `t:${callId}`,
+            tool,
+            variant,
+            label: description ?? t('subagent.untitled'),
+            status: 'running',
+            subagent: { state: 'running', startedAt: event.time, ...(prompt ? { prompt } : {}) },
+          });
+          break;
+        }
         items.push({
           kind: 'activity',
           id: `t:${callId}`,
@@ -220,6 +321,17 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           label: variant === 'edit' && file ? displayPath(file, input.workspacePath) : label,
           status: 'running',
         });
+        break;
+      }
+      case 'subagent/catalog': {
+        // 紧跟在 subagent 工具调用之后：记下子会话 id 和开始时间
+        const childId = typeof data.childId === 'string' ? data.childId : undefined;
+        const at = lastSubagentCall ? itemIndex.get(lastSubagentCall) : undefined;
+        const previous = at ? items[at.index] : undefined;
+        if (!childId || previous?.kind !== 'activity' || !previous.subagent || previous.subagent.childId) break;
+        const startedAt = typeof data.childCreatedAt === 'number' ? data.childCreatedAt : previous.subagent.startedAt;
+        items[at!.index] = { ...previous, subagent: { ...previous.subagent, childId, ...(startedAt !== undefined ? { startedAt } : {}) } };
+        subagentIndex.set(childId, at!.index);
         break;
       }
       case 'tool/result': {
@@ -240,7 +352,18 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
           break;
         }
         if (previous?.kind !== 'activity') break;
-        if (call.tool === 'exit_plan_mode') {
+        if (previous.variant === 'subagent' && previous.subagent) {
+          // 工具结果只是「started subagent <id>」；出错时显示原因
+          const text = textOf(message?.content);
+          const childId = previous.subagent.childId ?? /started subagent (\S+)/u.exec(text)?.[1];
+          if (childId && !previous.subagent.childId) subagentIndex.set(childId, at.index);
+          items[at.index] =
+            status === 'error'
+              ? { ...previous, status, subagent: { ...previous.subagent, state: 'failed', endedAt: event.time, ...(text ? { result: truncate(text) } : {}) } }
+              : { ...previous, subagent: { ...previous.subagent, ...(childId ? { childId } : {}) } };
+          break;
+        }
+        if (canonicalTool(call.tool) === 'exit_plan_mode') {
           // 继续完善计划时工具以错误返回，但这不是失败；其他错误（例如不在计划模式）照常显示
           const result = textOf(message?.content);
           const outcome =
@@ -252,11 +375,11 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
                   ? t('plan.dismissed')
                   : undefined;
           items[at.index] = outcome
-            ? { ...previous, status: 'ok', label: `${previous.label}  ${outcome}` }
+            ? { ...previous, status: 'ok', label: joinLabel(previous.label, outcome) }
             : { ...previous, status, ...(result ? { output: truncate(result) } : {}) };
           break;
         }
-        const output = truncate(call.tool === 'ask_user_question' ? answersText(textOf(message?.content)) : textOf(message?.content));
+        const output = truncate(canonicalTool(call.tool) === 'ask_user_question' ? answersText(textOf(message?.content)) : textOf(message?.content));
         let next: Activity = { ...previous, status, ...(output ? { output } : {}) };
         if (previous.variant === 'edit' && status === 'ok' && (diffs !== undefined || created)) {
           const content = typeof call.args.content === 'string' ? call.args.content : undefined;
@@ -274,14 +397,40 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
       }
       case 'workspace/changes': {
         changeSeqs.push(event.seq);
-        const card = changesCard(event.seq, input.changes?.(event.seq), turnEdits, input.workspacePath);
+        const summary = input.changes?.(event.seq);
+        const card = changesCard(event.seq, summary, turnEdits, input.workspacePath);
         if (card) items.push(card);
+        if (summary && summary !== 'unavailable') {
+          const covered = new Set<string>();
+          summary.files.forEach((file, index) => {
+            const path = input.workspacePath ? resolve(input.workspacePath, file.path) : file.path;
+            covered.add(path);
+            const edits = turnEdits.filter((e) => e.path === path);
+            const flags = [file.binary ? 'binary' : '', file.oversized ? 'oversized' : ''].filter((f): f is 'binary' | 'oversized' => f !== '');
+            pushStep(path, {
+              turnSeq: event.seq,
+              index,
+              calls: edits.map((e) => e.callId),
+              stats: { additions: file.added ?? 0, deletions: file.deleted ?? 0 },
+              fromSummary: true,
+              created: edits[0]?.created ?? false,
+              ...(flags.length ? { flags } : {}),
+            });
+          });
+          flushEdits(turnEdits.filter((e) => !covered.has(e.path)));
+        } else flushEdits(turnEdits);
+        turnEdits = [];
         break;
       }
       case 'turn/end': {
         turnOpen = false;
         const notice = turnEndNotice(event.seq, data.reason);
         if (notice) items.push(notice);
+        if (turnStartedAt !== undefined && event.time - turnStartedAt >= MIN_DURATION_MS) {
+          const kind = (data.reason as { kind?: string } | undefined)?.kind;
+          items.push({ kind: 'turnDone', id: `d:${event.seq}`, durationMs: event.time - turnStartedAt, completed: notice === undefined && kind !== 'aborted' });
+        }
+        turnStartedAt = undefined;
         const reason = data.reason as { error?: { code?: string; message?: string } } | undefined;
         if (reason?.error?.code === 'MISSING_CREDENTIAL') missingCredentialRef = /\bstore ([A-Z_][A-Z0-9_]*)\b/u.exec(reason.error.message ?? '')?.[1] ?? missingCredentialRef;
         else if (notice === undefined) missingCredentialRef = undefined; // 之后有成功的轮次：已经配置好了
@@ -292,7 +441,57 @@ export function projectEvents(input: Pick<ProjectionInput, 'events' | 'workspace
     }
   }
 
-  return { items, persistedRequestIds, turnOpen, toolCalls, changeSeqs, ...(missingCredentialRef ? { missingCredentialRef } : {}) };
+  // 进行中的一轮：已经完成的文件修改先计入
+  flushEdits(turnEdits);
+  const sessionChanges = sessionChangesView(fileHistory, input.workspacePath);
+  return {
+    items,
+    persistedRequestIds,
+    turnOpen,
+    toolCalls,
+    changeSeqs,
+    fileHistory,
+    ...(sessionChanges ? { sessionChanges } : {}),
+    ...(missingCredentialRef ? { missingCredentialRef } : {}),
+    ...(turnOpen && turnStartedAt !== undefined ? { turnStartedAt } : {}),
+  };
+}
+
+const ZERO: LineStats = { additions: 0, deletions: 0 };
+
+function groupEdits(edits: readonly TurnEdit[]): Map<string, TurnEdit[]> {
+  const byPath = new Map<string, TurnEdit[]>();
+  for (const edit of edits) {
+    const group = byPath.get(edit.path);
+    if (group) group.push(edit);
+    else byPath.set(edit.path, [edit]);
+  }
+  return byPath;
+}
+
+/**
+ * 会话改动栏：每个文件一行，增删行数是各轮之和（同一处改了几次会重复计算，是近似值）。
+ * 只统计已加载的历史；更早的轮次加载后才计入。
+ */
+function sessionChangesView(history: ReadonlyMap<string, readonly FileStep[]>, workspacePath?: string): SessionChangesView | undefined {
+  const files: ChangedFileView[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const [path, steps] of history) {
+    const stats = sumStats(steps.map((s) => s.stats));
+    const flags = [...new Set(steps.flatMap((s) => s.flags ?? []))];
+    additions += stats.additions;
+    deletions += stats.deletions;
+    files.push({
+      path: displayPath(path, workspacePath),
+      ref: { kind: 'session', path },
+      additions: stats.additions,
+      deletions: stats.deletions,
+      ...(steps[0]?.created ? { created: true } : {}),
+      ...(flags.length ? { flags } : {}),
+    });
+  }
+  return files.length ? { files, additions, deletions } : undefined;
 }
 
 /**
@@ -329,6 +528,7 @@ export function project(input: ProjectionInput, base: EventsProjection = project
       id: queued.rpcId ? `p:${queued.rpcId}` : `q:${queued.id}`,
       text,
       ...(attachments.length ? { attachments } : {}),
+      ...(queued.images.length ? { images: queued.images } : {}),
       pending: 'queued',
       ...(queued.rpcId ? { requestId: queued.rpcId } : {}),
       queue: { itemId: queued.id, target: queued.target },
@@ -341,11 +541,13 @@ export function project(input: ProjectionInput, base: EventsProjection = project
     if (persistedRequestIds.has(pending.requestId) || inboxRpcIds.has(pending.requestId)) continue;
     const state = pending.state === 'failed' ? 'failed' : pending.state === 'accepted' && running ? 'queued' : 'sending';
     const { text, attachments } = splitContext(pending.text);
+    const images = (pending.images ?? []).map((image): ImageView => ({ localId: image.localId, mediaType: image.mediaType, ...(image.name ? { name: image.name } : {}) }));
     items.push({
       kind: 'user',
       id: `p:${pending.requestId}`,
       text,
       ...(attachments.length ? { attachments } : {}),
+      ...(images.length ? { images } : {}),
       pending: state,
       requestId: pending.requestId,
       ...(pending.error ? { error: pending.error } : {}),
@@ -359,6 +561,8 @@ export function project(input: ProjectionInput, base: EventsProjection = project
     turnOpen,
     toolCalls: base.toolCalls,
     changeSeqs: base.changeSeqs,
+    fileHistory: base.fileHistory,
+    ...(base.sessionChanges ? { sessionChanges: base.sessionChanges } : {}),
     ...(base.missingCredentialRef ? { missingCredentialRef: base.missingCredentialRef } : {}),
   };
 }
@@ -367,6 +571,7 @@ interface InboxItem {
   readonly id: string;
   readonly rpcId?: string;
   readonly text: string;
+  readonly images: readonly ImageView[];
   readonly target: 'next-turn' | 'next-step';
 }
 
@@ -380,10 +585,23 @@ function inboxItems(inbox: unknown): InboxItem[] {
     for (const raw of list) {
       const item = raw as { id?: unknown; content?: unknown; source?: { kind?: unknown; rpcId?: unknown } };
       if (typeof item.id !== 'string' || item.source?.kind !== 'user') continue;
-      result.push({ id: item.id, text: textOf(item.content), target, ...(typeof item.source.rpcId === 'string' ? { rpcId: item.source.rpcId } : {}) });
+      result.push({ id: item.id, text: textOf(item.content), images: imagesOf(item.content), target, ...(typeof item.source.rpcId === 'string' ? { rpcId: item.source.rpcId } : {}) });
     }
   }
   return result;
+}
+
+/**
+ * 子代理结束通知的内容：第一段是摘要（「Background subagent <id> finished …」），
+ * 「Its closing message:」之后是子代理的最终回答。摘要里没有 finished 时当作失败或被停止。
+ */
+function settledResult(content: unknown, summary: string): { result?: string; failed: boolean } {
+  const texts = Array.isArray(content) ? (content as ContentBlock[]).filter((b) => b.type === 'text').map((b) => b.text ?? '') : [];
+  const marker = texts.findIndex((text) => /closing message:?\s*$/iu.test(text.trim()));
+  const head = summary || texts[0] || '';
+  const failed = !/\bfinished\b/iu.test(head);
+  const rest = (marker >= 0 ? texts.slice(marker + 1) : failed ? texts : texts.slice(1)).join('\n\n').trim();
+  return { ...(rest ? { result: truncate(rest) } : {}), failed };
 }
 
 /** 合并行的摘要：「读取 2 个文件，搜索 1 次」。 */
@@ -392,7 +610,7 @@ function summarizeExplore(group: Explore): Explore {
   let searches = 0;
   let lists = 0;
   for (const entry of group.entries) {
-    const tool = entry.label.split('  ', 1)[0] ?? '';
+    const tool = canonicalTool(splitLabel(entry.label).name);
     if (tool === 'read' || tool === 'read_image') reads++;
     else if (tool === 'ls' || tool === 'list') lists++;
     else searches++;
@@ -471,24 +689,23 @@ function isToolDiff(value: unknown): value is ToolDiff {
   return typeof d.newText === 'string' && (d.oldText === null || d.oldText === undefined || typeof d.oldText === 'string');
 }
 
-/** 工具参数是 JSON 字符串；不是合法 JSON 时当作没有参数。 */
-export function parseArguments(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw !== 'string') return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
+/** 消息里的图片：dsh 收下后存成附件 `{ type: 'image', attachment: { attachmentId, mediaType, width, height, name } }`。 */
+function imagesOf(content: unknown): ImageView[] {
+  if (!Array.isArray(content)) return [];
+  const images: ImageView[] = [];
+  for (const block of content as { type?: unknown; attachment?: unknown }[]) {
+    if (block?.type !== 'image' || !block.attachment || typeof block.attachment !== 'object') continue;
+    const a = block.attachment as { attachmentId?: unknown; mediaType?: unknown; width?: unknown; height?: unknown; name?: unknown };
+    if (typeof a.attachmentId !== 'string') continue;
+    images.push({
+      attachmentId: a.attachmentId,
+      mediaType: typeof a.mediaType === 'string' ? a.mediaType : 'image/png',
+      ...(typeof a.name === 'string' && a.name ? { name: a.name } : {}),
+      ...(typeof a.width === 'number' ? { width: a.width } : {}),
+      ...(typeof a.height === 'number' ? { height: a.height } : {}),
+    });
   }
-}
-
-function stringArg(args: Readonly<Record<string, unknown>>, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = args[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
+  return images;
 }
 
 function textOf(content: unknown): string {
@@ -503,44 +720,6 @@ function textOf(content: unknown): string {
 
 function truncate(text: string): string {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n${t('output.truncated')}` : text;
-}
-
-/** 工具调用的一行摘要：取最能说明这次调用的参数。 */
-export function activityLabel(tool: string, rawArguments: unknown, workspacePath?: string): string {
-  const args = parseArguments(rawArguments);
-  const pick = (...keys: string[]): string | undefined => stringArg(args, ...keys);
-  // 优先级：命令 > 目标文件 > 搜索词 / URL > 目录 > 描述
-  if (tool === 'exit_plan_mode') {
-    const plan = typeof args.plan === 'string' ? args.plan : '';
-    const heading = /^#{1,6}\s+(.+?)\s*$/mu.exec(plan)?.[1];
-    return `${t('plan.label')}  ${heading ?? t('plan.untitled')}`;
-  }
-  if (tool === 'ask_user_question') {
-    const first = (args.questions as { question?: unknown }[] | undefined)?.[0]?.question;
-    return typeof first === 'string' ? `${t('question.label')}  ${firstLine(first)}` : t('question.label');
-  }
-  const command = pick('command', 'cmd');
-  if (command) return `${tool}  ${firstLine(command)}`;
-  const file = pick('file_path', 'notebook_path');
-  if (file) return `${tool}  ${displayPath(file, workspacePath)}`;
-  const target = pick('pattern', 'query', 'url');
-  if (target) return `${tool}  ${firstLine(target)}`;
-  const path = pick('path');
-  if (path) return `${tool}  ${displayPath(path, workspacePath)}`;
-  const other = pick('description', 'prompt', 'name');
-  if (other) return `${tool}  ${firstLine(other)}`;
-  return tool;
-}
-
-function firstLine(text: string): string {
-  const line = text.split('\n', 1)[0] ?? '';
-  return line.length < text.length ? `${line} …` : line;
-}
-
-export function displayPath(path: string, workspacePath?: string): string {
-  if (!workspacePath || !isAbsolute(path)) return path;
-  const rel = relative(workspacePath, path);
-  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : path;
 }
 
 function turnEndNotice(seq: number, reason: unknown): Item | undefined {

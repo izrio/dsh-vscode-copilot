@@ -39,11 +39,11 @@ export function PermissionPicker({ disabled }: { disabled: boolean }) {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        title={current ? t('permission.title', permissionName(current, t)) : t('permission.label')}
+        title={current ? t('permission.title', permissions.labels?.[current]?.name ?? permissionName(current, t)) : t('permission.label')}
         data-testid="permission-picker"
       >
         <PresetIcon preset={current} />
-        <span className="toolbar-button__text permission-picker__text">{current ? permissionName(current, t) : t('permission.label')}</span>
+        <span className="toolbar-button__text permission-picker__text">{current ? (permissions.labels?.[current]?.name ?? permissionName(current, t)) : t('permission.label')}</span>
         <ChevronDownIcon />
       </button>
       <Popover open={open} onClose={close} className="model-menu permission-menu" label={t('permission.select')}>
@@ -53,13 +53,13 @@ export function PermissionPicker({ disabled }: { disabled: boolean }) {
               key={preset}
               active={preset === current}
               icon={<PresetIcon preset={preset} />}
-              hint={permissionHint(preset, t)}
+              hint={permissions.labels?.[preset]?.description ?? permissionHint(preset, t)}
               onSelect={() => {
                 close();
                 if (preset !== current) postToHost({ type: 'selectPermission', payload: { preset } });
               }}
             >
-              {permissionName(preset, t)}
+              {permissions.labels?.[preset]?.name ?? permissionName(preset, t)}
             </MenuItem>
           ))}
         </div>

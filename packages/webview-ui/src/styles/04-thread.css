@@ -1,0 +1,869 @@
+/* ---------- 对话流 ---------- */
+
+/* 对话流和「滚动到底部」按钮的容器：按钮浮在对话流右下角 */
+.thread-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.to-bottom {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--vscode-editorWidget-background, var(--bg));
+  color: var(--text);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 35%, transparent);
+  cursor: pointer;
+  animation: to-bottom-in 0.15s ease-out;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.to-bottom:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.to-bottom svg {
+  width: 16px;
+  height: 16px;
+}
+
+.to-bottom__dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--vscode-editorWidget-background, var(--bg));
+  border-radius: 50%;
+  background: var(--accent);
+  box-sizing: content-box;
+}
+
+@keyframes to-bottom-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 面板拖宽、或放到编辑器区域时，正文保持在适合阅读的行宽以内并居中 */
+  padding: 6px max(14px, calc((100% - var(--content-width)) / 2)) 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* 内容超出时由 .thread 滚动，条目本身不能被压缩（带 overflow 的卡片否则会被压扁） */
+.thread > * {
+  flex-shrink: 0;
+}
+
+/* 长会话：屏幕外的条目跳过布局和绘制（浏览器原生的"虚拟列表"），滚动位置不受影响 */
+.thread > .user,
+.thread > .assistant,
+.thread > .activity,
+.thread > .changes {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
+.thread__older {
+  text-align: center;
+  font-size: 0.9em;
+}
+
+.user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 15%;
+}
+
+.user__bubble {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--bubble);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user--sending .user__bubble,
+/* 排队中的消息淡一些，但文字仍要读得清（对比度 4.5:1 以上） */
+.user--queued .user__bubble {
+  opacity: 0.82;
+}
+
+.user--failed .user__bubble {
+  outline: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.user__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.user__meta .link-button {
+  white-space: nowrap;
+}
+
+/* 排队消息：状态文字和一组图标；窄的时候图标整组换到下一行，不会一个字一行 */
+.user__tools {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+/* 消息下面的操作：灰色小图标，悬停变亮 */
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.msg-action:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+
+.msg-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.user__meta--error {
+  color: var(--error-text);
+}
+
+.assistant {
+  min-width: 0;
+}
+
+.cursor,
+.assistant--streaming .markdown > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
+.assistant--streaming .markdown > :is(ul, ol):last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--vscode-editorCursor-foreground, var(--vscode-foreground));
+  animation: blink 1s steps(2, start) infinite;
+}
+
+/* 光标接在最后一段文字后面；最后是代码块、表格等时才单独放在下面 */
+.assistant--streaming .markdown:has(> :is(p, h1, h2, h3, h4, h5, h6, blockquote, ul, ol):last-child) + .cursor {
+  display: none;
+}
+
+.reasoning {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.reasoning__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.reasoning__body {
+  margin: 4px 0 0 18px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.chevron {
+  transition: transform 0.12s ease;
+}
+
+.chevron--open {
+  transform: rotate(90deg);
+}
+
+/* 运行状态：对话流末尾，在做什么 + 已用时间 */
+.run-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  font-size: 0.9em;
+}
+
+.run-status__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.run-status__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.run-status__time {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-status--waiting {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 50%, var(--border));
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 8%, transparent);
+}
+
+/* 一轮结束的用时：一行淡色小字 */
+.turn-done {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.turn-done svg {
+  width: 13px;
+  height: 13px;
+  color: var(--vscode-charts-green, #3fb950);
+}
+
+.shimmer {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* 工具调用：一行活动。连续的活动行之间留出约半行的间距，不挤在一起 */
+.activity {
+  margin: -4px 0;
+  font-size: 0.92em;
+}
+
+.activity + .activity {
+  margin-top: -2px;
+}
+
+.activity__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity__row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.activity__row:disabled {
+  cursor: default;
+}
+
+.activity__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.activity--error .activity__icon,
+.activity--error .activity__name {
+  color: var(--error-text);
+}
+
+.activity__name {
+  flex: none;
+  color: var(--text-strong);
+}
+
+.activity__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
+.activity__output {
+  margin: 4px 0 4px 20px;
+  padding: 6px 8px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, var(--surface));
+  font-family: var(--mono);
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.activity__detail--plain {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.activity__file--link {
+  color: var(--link);
+}
+
+/* 文件名在前、目录在后：放不下时省略的是目录 */
+.file-path {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.file-path__name {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-path__dir {
+  flex: 1 100 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.92em;
+  text-overflow: ellipsis;
+}
+
+.activity__row:hover .activity__file--link {
+  text-decoration: underline;
+}
+
+.activity__chevron {
+  flex: none;
+  opacity: 0;
+}
+
+.activity__row:hover .activity__chevron,
+.activity__row[aria-expanded='true'] .activity__chevron {
+  opacity: 1;
+}
+
+.stats {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.stats__add {
+  color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #3fb950)) 88%, var(--vscode-foreground));
+}
+
+/* 主题的删除色在深色背景上只有 3.8:1 左右：往前景色混一点，小字号也读得清 */
+.stats__del {
+  color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f85149)) 78%, var(--vscode-foreground));
+}
+
+.explore__list {
+  margin: 2px 0 4px 20px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.explore__entry {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.9;
+}
+
+.explore__tool {
+  flex: none;
+  color: var(--text);
+}
+
+.explore__target {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
+.explore__target--link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.explore__target--link:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.explore__entry--error .explore__tool,
+.explore__error {
+  color: var(--error-text);
+}
+
+/* 一轮结束的改动汇总 */
+.changes {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.92em;
+  overflow: hidden;
+}
+
+.changes__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.changes__list {
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.changes__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.changes__file:hover {
+  background: var(--hover);
+}
+
+.changes__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.changes__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.changes__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.changes__name {
+  color: var(--text);
+}
+
+.changes__file:hover .changes__name {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.changes__dir {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.changes__flag {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bubble);
+  color: var(--text);
+  font-size: 0.85em;
+}
+
+.changes__note {
+  margin: 0;
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+/* 审批和提问卡片 */
+.interaction {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.interaction__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.interaction--approval .interaction__header svg {
+  color: var(--vscode-editorWarning-foreground, currentColor);
+}
+
+.interaction__command {
+  margin: 0;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, var(--bubble));
+  font-family: var(--mono);
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.interaction__file {
+  align-self: flex-start;
+  font-family: var(--mono);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.interaction__reason {
+  margin: 0;
+}
+
+.interaction__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.interaction__warning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
+  border-radius: var(--radius);
+  font-size: 0.92em;
+}
+
+.interaction__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.interaction__actions .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.interaction__preview {
+  gap: 4px;
+}
+
+.question {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* 提问卡片：标题行 + 进度，逐题回答 */
+.question-card__header {
+  gap: 8px;
+}
+
+.question-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.question-card__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.question-card__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.question-card__count {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.question-steps {
+  display: flex;
+  gap: 4px;
+}
+
+.question-steps__dot {
+  flex: 1;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.question-steps__dot--done {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.question-steps__dot--current {
+  background: var(--accent);
+}
+
+.question-steps__dot:disabled {
+  cursor: default;
+}
+
+.question__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.question__text {
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.question__header {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bubble);
+  color: var(--muted);
+  font-size: 0.82em;
+}
+
+.question__detail {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.question__mode {
+  margin: -2px 0 6px;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+
+.question__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.question__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.question__option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: var(--hover);
+}
+
+.question__option--active,
+.question__option--active:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.question__option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* 单选是圆圈，多选是方框；选中时填充强调色并打勾 */
+.question__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 80%, transparent);
+  border-radius: 50%;
+  color: var(--accent-foreground);
+}
+
+.question__mark--box {
+  border-radius: 4px;
+}
+
+.question__mark svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.4;
+}
+
+.question__option--active .question__mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.question__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.question__label {
+  font-weight: 500;
+}
+
+.question__description {
+  color: var(--muted);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+
+.question__custom {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground, inherit);
+  font: inherit;
+}
+
+.question__custom:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.question-card__actions {
+  padding-top: 2px;
+}
+
+.question-card__spacer {
+  flex: 1;
+}
+
+.question-card__skip {
+  color: var(--muted);
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.notice--warning {
+  color: var(--warning-text);
+}
+
+.notice--error {
+  color: var(--error-text);
+}

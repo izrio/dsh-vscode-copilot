@@ -39,7 +39,7 @@ jobs:
       - name: UI end-to-end test
         run: |
           pnpm build
-          NODE_PATH="$(npm root -g)" pnpm --filter dsh-copilot e2e -- --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/e2e-screenshots"
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck e2e -- --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/e2e-screenshots"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -67,7 +67,7 @@ jobs:
       - name: Real VS Code test
         run: |
           pnpm package
-          NODE_PATH="$(npm root -g)" pnpm --filter dsh-copilot vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/vscode-screenshots"
+          NODE_PATH="$(npm root -g)" pnpm --filter harness-deck vscode-e2e -- --code-server "$(command -v code-server)" --dsh "$(command -v dsh)" --out "$GITHUB_WORKSPACE/vscode-screenshots"
       - if: always()
         uses: actions/upload-artifact@v4
         with:

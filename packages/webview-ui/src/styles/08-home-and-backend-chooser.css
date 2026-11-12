@@ -1,0 +1,559 @@
+/* ---------- 首页：标识、当前底层、示例任务、输入提示 ---------- */
+.home {
+  gap: 0;
+  overflow-y: auto;
+}
+
+.home__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 标志自带渐变的圆角方块；外层负责尺寸、投影和外圈的呼吸光晕 */
+.home__logo {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  box-shadow: 0 8px 26px color-mix(in srgb, #6a45f5 40%, transparent);
+}
+
+.home__logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home__logo::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 19px;
+  border: 1px solid color-mix(in srgb, #6a45f5 45%, transparent);
+  animation: home-halo 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 中间的节点轻轻闪烁 */
+.home__logo .hd-logo__glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hd-node 2.4s ease-in-out infinite;
+}
+
+@keyframes hd-node {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.home__logo--key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, var(--accent), #6a45f5);
+  color: #ffffff;
+}
+
+.home__logo--key svg {
+  width: 24px;
+  height: 24px;
+}
+
+.home__logo--small {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.home__logo--small::after {
+  inset: -5px;
+  border-radius: 14px;
+}
+
+@keyframes home-halo {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+
+.home .empty__title {
+  font-size: 1.3em;
+  letter-spacing: 0.01em;
+}
+
+.home__context {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.home__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+  color: var(--muted);
+  font-size: 0.86em;
+  line-height: 1.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__chip svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.home__chip .backend-logo {
+  width: 15px;
+  height: 15px;
+}
+
+.home__chip--backend {
+  color: var(--text-strong);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.home__chip--backend:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status-dot--ok {
+  background: var(--vscode-charts-green, #89d185);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-charts-green, #89d185) 25%, transparent);
+}
+
+.status-dot--missing {
+  background: var(--vscode-charts-orange, #d18616);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-charts-orange, #d18616) 25%, transparent);
+}
+
+.suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 380px;
+  margin: 22px auto 0;
+}
+
+.suggestion {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.suggestion:hover {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 22%, transparent);
+  transform: translateY(-1px);
+}
+
+.suggestion:active {
+  transform: translateY(0);
+}
+
+/* 图标放在淡色的小方块里，颜色跟图标一致 */
+.suggestion__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.suggestion__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 每个示例任务一种颜色（VS Code 图表色，每个主题都有定义） */
+.suggestion__icon--project {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+
+.suggestion__icon--bugs {
+  color: var(--vscode-charts-red, #f14c4c);
+}
+
+.suggestion__icon--tests {
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.suggestion__icon--commit {
+  color: var(--vscode-charts-purple, #b180d7);
+}
+
+.suggestion__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.suggestion__title {
+  font-size: 0.92em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.suggestion__desc {
+  color: var(--muted);
+  font-size: 0.8em;
+  line-height: 1.35;
+}
+
+.home__tips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.home__tips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.92em;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ---------- 底层选择卡片 ---------- */
+.empty--chooser {
+  justify-content: flex-start;
+  padding: 18px 14px;
+  overflow-y: auto;
+}
+
+/* 内容不满一屏时垂直居中，超出时从顶部滚动 */
+.empty--chooser > .chooser {
+  margin: auto;
+}
+
+.chooser {
+  width: 100%;
+  max-width: 400px;
+  text-align: left;
+}
+
+.chooser__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.chooser__title {
+  margin: 0 0 4px;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.chooser__hint {
+  max-width: 320px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.chooser__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backend-option {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.backend-option:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+.backend-option--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.backend-option__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backend-option__main:focus-visible {
+  outline-offset: -2px;
+}
+
+.backend-logo {
+  --tone: var(--accent);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.backend-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.backend-logo--sm {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+/* 没有底色的图标（DeepSeek 鲸鱼）放在白色圆角方块里 */
+.backend-logo--tile {
+  /* 用像素：百分比的内边距按父元素宽度计算，会把方块撑大 */
+  padding: 5px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.backend-logo--sm.backend-logo--tile {
+  padding: 1px;
+}
+
+/* 自定义代理：名称首字母，强调色渐变 */
+.backend-logo--monogram {
+  background: linear-gradient(135deg, var(--tone), color-mix(in srgb, var(--tone) 65%, #000000));
+  color: #ffffff;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.backend-logo--sm.backend-logo--monogram {
+  font-size: 0.5em;
+  letter-spacing: 0;
+}
+
+/* 菜单里的图标不跟随菜单项的颜色变化 */
+.menu-item__icon .backend-logo {
+  color: #ffffff;
+}
+
+.backend-option__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.backend-option__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.backend-option__tag {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.72em;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.backend-option__current {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.backend-option__desc {
+  color: var(--muted);
+  font-size: 0.86em;
+  line-height: 1.45;
+}
+
+.backend-option__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.backend-option__status svg {
+  width: 12px;
+  height: 12px;
+}
+
+.backend-option__status--ok {
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.backend-option__status--missing {
+  color: var(--vscode-charts-orange, #d18616);
+}
+
+.backend-option__check {
+  display: flex;
+  flex: none;
+  width: 16px;
+  color: var(--accent);
+}
+
+.backend-option__check svg {
+  width: 16px;
+  height: 16px;
+}
+
+.backend-option__install {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 11px 57px;
+  padding: 3px 3px 3px 9px;
+  border-radius: var(--radius);
+  background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 7%, transparent));
+}
+
+.backend-option__install code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8em;
+  overflow-wrap: anywhere;
+}
+
+.backend-option__install-text {
+  margin: 0 12px 11px 57px;
+  color: var(--muted);
+  font-size: 0.82em;
+}
+
+.chooser__foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.chooser__foot .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home__logo::after,
+  .home__logo .hd-logo__glow {
+    animation: none;
+  }
+
+  .suggestion:hover {
+    transform: none;
+  }
+}

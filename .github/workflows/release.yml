@@ -54,29 +54,29 @@ jobs:
 
       - name: Prepare assets and notes
         run: |
-          VSIX="packages/extension/dsh-copilot-${VERSION}.vsix"
+          VSIX="packages/extension/harness-deck-${VERSION}.vsix"
           test -f "$VSIX"
           mkdir -p release
           cp "$VSIX" release/
-          (cd release && sha256sum "dsh-copilot-${VERSION}.vsix" > "dsh-copilot-${VERSION}.vsix.sha256")
+          (cd release && sha256sum "harness-deck-${VERSION}.vsix" > "harness-deck-${VERSION}.vsix.sha256")
           # CHANGELOG 里 "## <版本>" 到下一个 "## " 之间的内容
           awk -v v="## ${VERSION}" '$0 == v {found=1; next} found && /^## / {exit} found {print}' packages/extension/CHANGELOG.md > release/changes.md
           {
             echo "## 安装 / Install"
             echo
-            echo "1. 下载下面的 \`dsh-copilot-${VERSION}.vsix\`。"
-            echo "   Download \`dsh-copilot-${VERSION}.vsix\` below."
+            echo "1. 下载下面的 \`harness-deck-${VERSION}.vsix\`。"
+            echo "   Download \`harness-deck-${VERSION}.vsix\` below."
             echo "2. VS Code 扩展视图右上角「⋯ → 从 VSIX 安装…」，或执行："
             echo "   In the Extensions view choose \"… → Install from VSIX…\", or run:"
             echo
             echo '   ```bash'
-            echo "   code --install-extension dsh-copilot-${VERSION}.vsix"
+            echo "   code --install-extension harness-deck-${VERSION}.vsix"
             echo '   ```'
             echo
-            echo "3. 需要能在终端运行 \`dsh\`（0.2.1-rc.5 及以上）：安装 DeepSeek Desktop 并在菜单「管理 dsh 命令…」中安装，或 \`npm install -g @deepseek-ai/dsh\`（Node ≥ 24.9）。使用说明见 [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/packages/extension/README.md)。"
-            echo "   Requires \`dsh\` 0.2.1-rc.5 or later on your PATH (DeepSeek Desktop → \"Manage dsh command…\", or \`npm install -g @deepseek-ai/dsh\` with Node ≥ 24.9)."
+            echo "3. 至少装好一个底层：dsh（0.2.1-rc.5 及以上，DeepSeek Desktop 菜单「管理 dsh 命令…」或 \`npm install -g @deepseek-ai/dsh\`）、oh-my-pi（\`bun install -g @oh-my-pi/pi-coding-agent\`）、CodeBuddy（\`npm install -g @tencent-ai/codebuddy-code\`）或 Claude（\`npm install -g @agentclientprotocol/claude-agent-acp\`）。第一次打开面板时会让你选底层。使用说明见 [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/packages/extension/README.md)。"
+            echo "   Install at least one backend: dsh 0.2.1-rc.5+ (DeepSeek Desktop → \"Manage dsh command…\", or \`npm install -g @deepseek-ai/dsh\`), oh-my-pi (\`bun install -g @oh-my-pi/pi-coding-agent\`), CodeBuddy (\`npm install -g @tencent-ai/codebuddy-code\`) or Claude (\`npm install -g @agentclientprotocol/claude-agent-acp\`). The panel asks which one to use on first open."
             echo
-            echo "SHA-256：\`$(cut -d' ' -f1 "release/dsh-copilot-${VERSION}.vsix.sha256")\`"
+            echo "SHA-256：\`$(cut -d' ' -f1 "release/harness-deck-${VERSION}.vsix.sha256")\`"
             echo
             echo "## 更新内容 / Changes"
             cat release/changes.md
@@ -89,11 +89,11 @@ jobs:
           if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS+=(--prerelease); fi
           if gh release view "$TAG" > /dev/null 2>&1; then
             # 重新运行时更新已有的 Release，替换安装包
-            gh release edit "$TAG" --title "DSH Copilot ${TAG}" --notes-file release/notes.md "${FLAGS[@]}"
+            gh release edit "$TAG" --title "Harness Deck ${TAG}" --notes-file release/notes.md "${FLAGS[@]}"
             gh release upload "$TAG" release/*.vsix release/*.sha256 --clobber
           else
             gh release create "$TAG" release/*.vsix release/*.sha256 \
-              --title "DSH Copilot ${TAG}" \
+              --title "Harness Deck ${TAG}" \
               --notes-file release/notes.md \
               --target "$GITHUB_SHA" \
               "${FLAGS[@]}"

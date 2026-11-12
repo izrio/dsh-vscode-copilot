@@ -1,10 +1,12 @@
 {
-  "name": "@dsh-copilot/shared",
+  "name": "@harness-deck/shared",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./limits": "./src/limits.ts",
+    "./labels": "./src/labels.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

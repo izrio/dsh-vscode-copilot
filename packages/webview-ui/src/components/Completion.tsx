@@ -8,6 +8,8 @@ export interface CompletionItem {
   readonly label: string;
   readonly detail?: string;
   readonly hint?: string;
+  /** 小标签，例如 skill。 */
+  readonly tag?: string;
 }
 
 export function Completion({
@@ -57,6 +59,7 @@ export function Completion({
         >
           <span className="completion__icon">{item.icon === 'command' ? <SlashIcon /> : item.icon === 'directory' ? <FolderIcon /> : <FileIcon />}</span>
           <span className="completion__label">{item.label}</span>
+          {item.tag ? <span className="completion__tag">{item.tag}</span> : null}
           {item.hint ? <span className="completion__hint">{item.hint}</span> : null}
           {item.detail ? <span className="completion__detail">{item.detail}</span> : null}
         </div>
