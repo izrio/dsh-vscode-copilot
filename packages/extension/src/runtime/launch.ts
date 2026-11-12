@@ -5,7 +5,7 @@
  * Host 就绪后在 stdout 打印带启动令牌的 URL（`http://127.0.0.1:<port>/?token=…`），
  * dsh 文档说明这一行就是就绪信号（packages/bundle/web-app/README）。
  */
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { redactSecrets } from '../util/redact.ts';
 import { t } from '../i18n.ts';
 
@@ -119,10 +119,37 @@ export function trackChild(child: ChildProcess): void {
   process.once('exit', () => {
     for (const live of liveChildren) {
       if (live.pid === undefined || live.exitCode !== null || live.signalCode !== null) continue;
-      if (process.platform === 'win32') live.kill();
-      else signalGroup(live.pid, 'SIGTERM');
+      killOnHostExit(live.pid, process.platform);
     }
   });
+}
+
+/**
+ * 扩展宿主退出时结束一个子进程树。`exit` 回调里只能做同步操作。
+ * Windows 上 dsh 是 `dsh.cmd`，经 cmd.exe 启动：`child.kill()` 只结束 cmd.exe，真正的 dsh 会留下来继续占着会话写锁
+ * （新窗口发消息得到 `session/writer-held`），所以要用 `taskkill /t /f` 同步结束整个进程树。
+ */
+export function killOnHostExit(
+  pid: number,
+  platform: NodeJS.Platform,
+  run: (file: string, args: string[]) => void = (file, args) => {
+    execFileSync(file, args, { windowsHide: true, stdio: 'ignore', timeout: 5_000 });
+  },
+): void {
+  if (platform !== 'win32') {
+    signalGroup(pid, 'SIGTERM');
+    return;
+  }
+  try {
+    run('taskkill', ['/pid', String(pid), '/t', '/f']);
+  } catch {
+    // 进程已经退出，或 taskkill 不可用
+    try {
+      process.kill(pid);
+    } catch {
+      // 进程已经退出
+    }
+  }
 }
 
 /**

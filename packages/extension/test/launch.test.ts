@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLaunchArgs, parseLaunchUrl, quoteForCmd, safeProfile, spawnSpec } from '../src/runtime/launch.ts';
+import { buildLaunchArgs, killOnHostExit, parseLaunchUrl, quoteForCmd, safeProfile, spawnSpec } from '../src/runtime/launch.ts';
 import { redactSecrets } from '../src/util/redact.ts';
 
 describe('parseLaunchUrl', () => {
@@ -74,5 +74,21 @@ describe('Windows 下启动 .cmd / .bat', () => {
     expect(safeProfile('web & calc')).toBe('web');
     expect(safeProfile('--patch')).toBe('web');
     expect(safeProfile('')).toBe('web');
+  });
+});
+
+describe('killOnHostExit', () => {
+  it('ends the whole process tree with taskkill on Windows, not just cmd.exe', () => {
+    const calls: [string, string[]][] = [];
+    killOnHostExit(4321, 'win32', (file, args) => calls.push([file, args]));
+    expect(calls).toEqual([['taskkill', ['/pid', '4321', '/t', '/f']]]);
+  });
+
+  it('does not throw when taskkill fails', () => {
+    expect(() =>
+      killOnHostExit(2 ** 22 + 7, 'win32', () => {
+        throw new Error('not found');
+      }),
+    ).not.toThrow();
   });
 });
